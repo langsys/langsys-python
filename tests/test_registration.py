@@ -3,26 +3,33 @@ import json
 
 from langsys import generate_custom_id
 from langsys.http import HttpClient
-from langsys.registration import Registrar
+from langsys.registration import Registrar, legacy_custom_ids
 
 API = "https://api.test/api"
 
 
-def test_custom_id_matches_backend_scheme():
-    # md5 of "category|phrase1|phrase2" — the scheme the stored catalog uses.
+def test_custom_id_is_the_canonical_cross_sdk_form():
+    """CID-1. The byte-level and fixture-anchored assertions live in
+    ``test_custom_id.py``; this pins the two properties this module cares about —
+    that the id is stable, and that the pre-release pipe-join scheme is gone."""
     cid = generate_custom_id("News", ["Home", "About"])
-    expected = hashlib.md5("News|Home|About".encode()).hexdigest()
-    assert cid == expected
-    assert generate_custom_id("News", ["Home", "About"]) == cid  # stable
-    assert generate_custom_id(None, ["x"]) == generate_custom_id("", ["x"])  # None == ""
+    assert cid == generate_custom_id("News", ["Home", "About"])  # stable
+    assert cid != hashlib.md5(b"News|Home|About").hexdigest()  # not the old scheme
+    assert generate_custom_id(None, ["x"]) == generate_custom_id("", ["x"])  # CID-2
 
 
-def test_custom_id_matches_a_real_catalog_block():
-    # The Kangen CAT_3 content block id, verified live.
-    assert (
-        generate_custom_id("CAT_3", ["Technical Support", "Customer Support", "image description"])
-        == "36efd6e4d5673f70474d02627be110c0"
-    )
+def test_a_real_catalog_block_registered_by_an_older_sdk_still_resolves():
+    """CID-3, on a live-observed id rather than a synthetic one.
+
+    ``36efd6e4…`` is the id this exact block was stored under, read from a real
+    catalog before the scheme was corrected. The current form no longer produces it —
+    that is the point of the correction — so it must be reachable through the
+    historical-id list, or every translation attached to that block is orphaned."""
+    phrases = ["Technical Support", "Customer Support", "image description"]
+    stored_id = "36efd6e4d5673f70474d02627be110c0"
+
+    assert generate_custom_id("CAT_3", phrases) != stored_id
+    assert stored_id in legacy_custom_ids("CAT_3", phrases)
 
 
 def test_phrase_item_normalization():

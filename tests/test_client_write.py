@@ -26,6 +26,7 @@ def auth(key_type):
             "target_locales": [],
             "default_locales": {},
             "key_type": key_type,
+            "write_enabled": key_type == "write",
             "langsys_settings": {"translatable_items": {"batch_limit": 200}},
         },
     }
@@ -37,13 +38,13 @@ def _items_body(httpx_mock):
 
 
 def test_register_requires_write_key(httpx_mock):
-    httpx_mock.add_response(url=AUTH, json=auth("read"))
+    httpx_mock.add_response(url=AUTH, json=auth("read"), is_reusable=True)
     with pytest.raises(AuthorizationError):
         make().register_phrases(["x"])
 
 
 def test_register_phrases_posts_items(httpx_mock):
-    httpx_mock.add_response(url=AUTH, json=auth("write"))
+    httpx_mock.add_response(url=AUTH, json=auth("write"), is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True})
     make().register_phrases([{"phrase": "Save", "category": "UI"}])
     body = _items_body(httpx_mock)
@@ -52,7 +53,7 @@ def test_register_phrases_posts_items(httpx_mock):
 
 
 def test_flush_pending_registers_and_clears_on_write(httpx_mock):
-    httpx_mock.add_response(url=AUTH, json=auth("write"))
+    httpx_mock.add_response(url=AUTH, json=auth("write"), is_reusable=True)
     httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}})
     httpx_mock.add_response(url=ITEMS, json={"status": True})
     client = make()
@@ -65,7 +66,7 @@ def test_flush_pending_registers_and_clears_on_write(httpx_mock):
 
 
 def test_flush_pending_skips_on_read_key(httpx_mock):
-    httpx_mock.add_response(url=AUTH, json=auth("read"))
+    httpx_mock.add_response(url=AUTH, json=auth("read"), is_reusable=True)
     httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}})
     client = make()
     client.translate("Save", category="UI", locale="en-US")
@@ -75,7 +76,7 @@ def test_flush_pending_skips_on_read_key(httpx_mock):
 
 
 def test_sync_registers_only_new_phrases(httpx_mock):
-    httpx_mock.add_response(url=AUTH, json=auth("write"))
+    httpx_mock.add_response(url=AUTH, json=auth("write"), is_reusable=True)
     httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {"Existing": "E"}}})
     httpx_mock.add_response(url=ITEMS, json={"status": True})
     httpx_mock.add_response(

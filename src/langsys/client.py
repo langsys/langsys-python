@@ -10,14 +10,14 @@ from .cache.backend import CacheBackend
 from .cache.file import FileCache
 from .catalog import CatalogStore
 from .config import Config
-from .exceptions import AuthorizationError, ConfigurationError
+from .exceptions import ApiError, AuthorizationError, ConfigurationError, NetworkError
 from .html.attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES
 from .http import HttpClient, encode_segment
 from .interpolate import interpolate
 from .locale import canonicalize_locale, detect_preferred_locale
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
-from .translate import resolve
+from .translate import lookup_block, resolve
 from .types import (
     UNCATEGORIZED,
     Catalog,
@@ -90,6 +90,8 @@ class LangsysClient:
             self._locale_source = self._owned_locale
 
         self._project: Optional[Project] = None
+        #: OBS-1 is once per process, not once per miss.
+        self._warned_unusable = False
         self._pending: dict[tuple[str, str], None] = {}
         self._pending_blocks: dict[str, dict[str, Any]] = {}
         self._translatable_attributes: list[str] = list(DEFAULT_TRANSLATABLE_ATTRIBUTES)
@@ -109,7 +111,11 @@ class LangsysClient:
     # -- authorization --------------------------------------------------------
 
     def authorize(self, force: bool = False) -> Project:
-        """Validate the key against the project and return its metadata (cached)."""
+        """Validate the key against the project and return its metadata (cached).
+
+        Project metadata is cacheable; the **write decision is not** and is never
+        part of what this returns — see :meth:`_resolve_write_enabled`.
+        """
         if self._project is not None and not force:
             return self._project
 
@@ -120,14 +126,29 @@ class LangsysClient:
                 self._project = Project.from_response(cached)
                 return self._project
 
+        data = _without_write_decision(self._authorize_data())
+        # Stripped before it reaches EITHER store. `Project` is held for the life of
+        # the client, so letting the flag ride along in `raw` would latch the decision
+        # in memory just as surely as caching it would (GATE-3).
+        self._cache.set(cache_key, data, self._config.cache_ttl)
+        self._project = Project.from_response(data)
+        return self._project
+
+    def _warm_authorize_payload(self) -> Optional[dict[str, Any]]:
+        """Already-known project metadata, if any. Never carries ``write_enabled``."""
+        if self._project is not None:
+            return self._project.raw
+        cached = self._cache.get(f"auth_{self._config.project_id}")
+        return cached if isinstance(cached, dict) else None
+
+    def _authorize_data(self) -> dict[str, Any]:
+        """One raw ``authorize-project`` response body. Never cached by this method."""
         path = f"authorize-project/{encode_segment(self._config.project_id)}"
         response = self._http.get(path)
         data = response.get("data")
         if not isinstance(data, dict):
             raise ConfigurationError("Langsys: unexpected authorize-project response.")
-        self._cache.set(cache_key, data, self._config.cache_ttl)
-        self._project = Project.from_response(data)
-        return self._project
+        return data
 
     @property
     def project(self) -> Project:
@@ -137,9 +158,110 @@ class LangsysClient:
     def key_type(self) -> KeyType:
         return self.authorize().key_type
 
+    def _resolve_write_enabled(self) -> bool:
+        """GATE-1 — the server decides, per response, whether this session may write.
+
+        Resolved fresh at the **send site** and returned, never stored: capability is
+        per-session and address-dependent, so the same key legitimately answers `true`
+        from an allow-listed address and `false` from another. A decision that outlives
+        the call would write-enable every anonymous visitor on the host (GATE-3), and
+        on a shared Redis, the fleet.
+
+        GATE-8 — a response with no ``write_enabled`` predates the capability. Only
+        then may ``key_type`` stand in, and only for the plain ``write`` arm: for
+        ``ip_write`` the answer is address-dependent and the absence of a positive
+        signal *is* the answer.
+
+        The flag is read from the payload that is **in hand at that moment**, and the
+        fallback is reached only when *that* payload genuinely lacked it. Order is the
+        whole rule here: reading a decision slot before authorize has populated it
+        makes a live ``write_enabled: false`` look like absence, and the fallback then
+        answers ``true`` — a closed gate reported open, which is the precise inversion
+        this family exists to prevent. (Found by the Ruby lane; nothing about the code
+        read wrong, only the order, and only execution caught it.)
+
+        On a **cache hit** the payload lacks the flag by construction, because
+        :meth:`authorize` strips it (GATE-4). Absence from any source is treated the
+        same way for plain ``read``/``write`` keys — sound because the server
+        guarantees ``write_enabled ≡ key_type`` for them — and never for ``ip_write``,
+        whose answer is address-dependent and which therefore pays a live authorize
+        rather than being inferred.
+        """
+        warm = self._warm_authorize_payload()
+        if warm is None:
+            # First call: nothing warm exists, so this payload is live and carries
+            # the flag if the server sends one at all.
+            data = self._live_authorize_payload()
+            if data is None:
+                return False
+            return self._decide(data, allow_fallback=True)
+
+        key_type = warm.get("key_type")
+        if key_type == "ip_write":
+            # Never inferred. Warm metadata cannot answer an address-dependent
+            # question, so pay the round-trip.
+            data = self._live_authorize_payload()
+            if data is None:
+                return False
+            return self._decide(data, allow_fallback=False)
+
+        return self._decide(warm, allow_fallback=True)
+
+    def _live_authorize_payload(self) -> Optional[dict[str, Any]]:
+        try:
+            return self._authorize_data()
+        except (NetworkError, ApiError, ConfigurationError) as exc:
+            # Never infer permission from a failure to ask.
+            logger.warning("langsys: could not resolve write capability (%s).", exc)
+            return None
+
+    def _decide(self, data: dict[str, Any], *, allow_fallback: bool) -> bool:
+        flag = data.get("write_enabled")
+        key_type = data.get("key_type")
+        if isinstance(flag, bool):
+            self._notice_unusable_capability(flag, key_type)
+            return flag
+
+        if not allow_fallback:
+            logger.debug(
+                "langsys: no write_enabled for key_type %r; the absence of a positive "
+                "signal is the answer.",
+                key_type,
+            )
+            return False
+
+        if key_type == "write":
+            logger.debug(
+                "langsys: no write_enabled in this payload; falling back to key_type "
+                "for the plain write arm only."
+            )
+            return True
+        logger.debug(
+            "langsys: no write_enabled in this payload and key_type is %r; treating as "
+            "not write-enabled.",
+            key_type,
+        )
+        return False
+
+    def _notice_unusable_capability(self, write_enabled: bool, key_type: Any) -> None:
+        """OBS-1 — a misconfigured integration is otherwise completely silent: no
+        request, no error, nothing in the catalog. One line, once per process."""
+        if write_enabled or key_type not in ("write", "ip_write"):
+            return
+        if self._warned_unusable:
+            return
+        self._warned_unusable = True
+        logger.warning(
+            "langsys: this session is NOT write-enabled although the key type is %r, so "
+            "nothing will be registered. For an ip_write key this usually means the "
+            "server's address is not allow-listed for this project.",
+            key_type,
+        )
+
     @property
     def can_write(self) -> bool:
-        return self.key_type == "write"
+        """Whether this session may write, resolved now. Not cached — see GATE-3."""
+        return self._resolve_write_enabled()
 
     # -- locale ---------------------------------------------------------------
 
@@ -160,14 +282,23 @@ class LangsysClient:
     def _effective_locale(self, explicit: Optional[str]) -> str:
         loc = explicit or self._locale_source.get() or self._config.base_locale
         if not loc:
-            loc = self.authorize().base_locale
+            try:
+                loc = self.authorize().base_locale
+            except (NetworkError, ApiError, ConfigurationError) as exc:
+                # WIRE-4 — resolving the locale is part of the render path.
+                logger.warning(
+                    "langsys: could not resolve the base locale from the API (%s).", exc
+                )
+                loc = ""
         return canonicalize_locale(loc)
 
     # -- translation ----------------------------------------------------------
 
     def get_translations(self, locale: Optional[str] = None, *, use_cache: bool = True) -> Catalog:
-        """Return the whole ``category -> phrase -> translation`` catalog for a locale."""
-        return self._catalog.get(self._effective_locale(locale), use_cache=use_cache)
+        """Return the whole ``category -> phrase -> translation`` catalog for a locale.
+
+        Empty when the API could not be reached — this never raises (WIRE-4)."""
+        return self._catalog.get(self._effective_locale(locale), use_cache=use_cache).catalog
 
     def translate(
         self,
@@ -181,9 +312,11 @@ class LangsysClient:
         """Translate ``phrase`` (falling back to the phrase itself if untranslated),
         then interpolate ``params`` with locale-aware CLDR formatting."""
         loc = self._effective_locale(locale)
-        catalog = self._catalog.get(loc)
-        result = resolve(catalog, phrase, category, content_block_id)
-        if result.missing and content_block_id is None:
+        fetch = self._catalog.get(loc)
+        result = resolve(fetch.catalog, phrase, category, content_block_id)
+        # WIRE-4 — without a catalog a miss is indistinguishable from a hit, so an
+        # outage would re-register everything that already exists. Record nothing.
+        if result.missing and content_block_id is None and fetch.ok:
             self._queue_missing(phrase, category)
         if params:
             return interpolate(result.text, params, loc)
@@ -206,14 +339,16 @@ class LangsysClient:
         phrases = extract_phrases(html, self._translatable_attributes)
         if not phrases:
             return html
-        # The stored id uses the resolved category token (``__uncategorized__`` when
-        # none), matching how the server-side SDKs register blocks.
-        custom_id = generate_custom_id(cat_name, phrases)
-        catalog = self._catalog.get(loc)
-        cat = catalog.get(cat_name)
-        block = cat.get(custom_id) if isinstance(cat, dict) else None
+        # CID-2 — the hash takes the *raw* category, `''` when there is none.
+        # `__uncategorized__` is a cache-lookup namespace and must never reach the id.
+        custom_id = generate_custom_id(category, phrases)
+        fetch = self._catalog.get(loc)
+        cat = fetch.catalog.get(cat_name)
+        block = lookup_block(cat, category, custom_id, phrases)
         if not isinstance(block, dict):
-            self._queue_content_block(html, cat_name, custom_id, phrases)
+            # WIRE-4 — see translate(): never queue off a catalog we could not read.
+            if fetch.ok:
+                self._queue_content_block(html, cat_name, custom_id, phrases)
             return html
         return apply_block_translations(html, block, self._translatable_attributes)
 
@@ -283,33 +418,65 @@ class LangsysClient:
         self._pending_blocks.clear()
 
     def flush_pending(self) -> dict[str, Any]:
-        """Register queued (discovered) phrases and content blocks. No-op with nothing
-        pending; a read key logs a warning and clears the queue without writing."""
+        """Register queued (discovered) phrases and content blocks.
+
+        REG-10 — one behaviour across every path: never throw into a render path,
+        always log, and **never return a success-shaped result for work that did not
+        happen**, a skipped write included. A caller that checks ``success`` is
+        entitled to believe it.
+        """
         if not self.has_pending:
             return {"phrases": 0, "content_blocks": 0, "success": True}
-        if not self.can_write:
+
+        # GATE-2 — collect always, choose the lane at the send site. Resolved here,
+        # once per flush, and never stored.
+        if not self._resolve_write_enabled():
+            phrase_count, block_count = len(self._pending), len(self._pending_blocks)
             logger.warning(
-                "langsys: read key cannot register %d phrase(s) / %d content block(s)",
-                len(self._pending),
-                len(self._pending_blocks),
+                "langsys: this session is not write-enabled; discarding %d phrase(s) and "
+                "%d content block(s) without registering them.",
+                phrase_count,
+                block_count,
             )
+            # Discarding a queue we have just been told we may not write is correct;
+            # reporting it as success is the defect.
             self.clear_pending()
-            return {"phrases": 0, "content_blocks": 0, "success": True, "skipped": True}
+            return {
+                "phrases": 0,
+                "content_blocks": 0,
+                "success": False,
+                "skipped": True,
+                "reason": "not-write-enabled",
+                "discarded_phrases": phrase_count,
+                "discarded_content_blocks": block_count,
+            }
 
         items: list[PhraseInput] = [
             {"phrase": phrase, "category": None if category == UNCATEGORIZED else category}
             for (category, phrase) in self._pending
         ]
-        phrase_count = len(items)
-        if items:
-            self._reg.register_phrases(items)
+        blocks = list(self._pending_blocks.values())
+        phrase_count, block_count = len(items), len(blocks)
 
-        block_count = len(self._pending_blocks)
-        for block in self._pending_blocks.values():
-            category = None if block["category"] == UNCATEGORIZED else block["category"]
-            self._reg.register_content_block(
-                block["content"], block["phrases"], category=category, custom_id=block["custom_id"]
-            )
+        try:
+            if items:
+                self._reg.register_phrases(items)
+            if blocks:
+                # REG-9 — one batched POST per chunk, not one per block.
+                self._reg.register_content_blocks(blocks)
+        except (NetworkError, ApiError) as exc:
+            # REG-8/GATE-5 — the queue stays, and nothing is marked as done. Retrying
+            # a phrase the server already accepted is harmless; suppressing one it
+            # never saw is not.
+            logger.warning("langsys: registration failed (%s); keeping the queue.", exc)
+            return {
+                "phrases": 0,
+                "content_blocks": 0,
+                "success": False,
+                "error": str(exc),
+                "queued_phrases": phrase_count,
+                "queued_content_blocks": block_count,
+            }
 
         self.clear_pending()
         self._catalog.clear()  # new items exist server-side now; refetch next time
@@ -343,8 +510,13 @@ class LangsysClient:
     ) -> dict[str, Any]:
         """Register any of ``local_phrases`` not already in the catalog, then refetch."""
         loc = self._effective_locale(locale)
-        catalog = self._catalog.get(loc, use_cache=False)
-        existing = _existing_keys(catalog)
+        fetch = self._catalog.get(loc, use_cache=False)
+        if not fetch.ok:
+            # WIRE-4 — without a catalog every phrase looks new; registering them
+            # all is the write storm this guard exists to prevent.
+            logger.warning("langsys: sync skipped — the catalog could not be read.")
+            return {"new_phrases": [], "synced": False, "success": False}
+        existing = _existing_keys(fetch.catalog)
 
         new_items: list[PhraseInput] = []
         for phrase in local_phrases:
@@ -355,7 +527,7 @@ class LangsysClient:
                 new_items.append(phrase)
 
         synced = False
-        if new_items and self.can_write:
+        if new_items and self._resolve_write_enabled():
             self._reg.register_phrases(new_items)
             self._catalog.clear(loc)
             self._catalog.get(loc, use_cache=False)
@@ -439,6 +611,18 @@ class LangsysClient:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+def _without_write_decision(data: dict[str, Any]) -> dict[str, Any]:
+    """GATE-4 — strip the write decision from anything about to be cached.
+
+    ``key_type`` is a property of the key and may be cached; ``write_enabled`` is a
+    property of the *session* and must not outlive it. The hazard is any store that
+    is process-external or shared by default: one request from an allow-listed office
+    address would otherwise write-enable every anonymous visitor on the host for the
+    TTL, and fleet-wide on a shared Redis.
+    """
+    return {k: v for k, v in data.items() if k != "write_enabled"}
 
 
 def _existing_keys(catalog: Catalog) -> set[str]:

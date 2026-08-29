@@ -16,13 +16,25 @@ across languages:
 from __future__ import annotations
 
 import datetime
+import logging
 import re
 from typing import Any, Optional, Union
 
 from babel import Locale, numbers
 from babel import dates as babel_dates
 
+from ._log import logger
+
 Params = dict[str, Any]
+
+#: ICU-4 dedup: one notice per ``(template, locale)`` for the process lifetime. The
+#: same phrase renders thousands of times and the developer needs to learn once.
+_NOTICED: set[tuple[str, str]] = set()
+
+
+def reset_recovery_notices() -> None:
+    """Forget which ``(template, locale)`` pairs have been noticed. Test seam."""
+    _NOTICED.clear()
 
 # Same detection as the JS/PHP SDKs: an argument whose second token is a known ICU
 # keyword. The trailing ``[,}]`` also matches style-less ``{n, number}``.
@@ -40,15 +52,54 @@ def is_icu(template: str) -> bool:
 
 
 def interpolate(template: str, params: Params, locale: str = "en") -> str:
-    """Render ``template`` against ``params`` in ``locale``."""
+    """Render ``template`` against ``params`` in ``locale``.
+
+    A ``select``/``plural`` whose argument was not supplied renders its ``other``
+    branch (ICU-1) rather than the raw source. Only the missing nodes are rewritten:
+    everything else keeps full CLDR selection through the same renderer (ICU-5).
+    """
     if is_icu(template):
+        recovered: list[str] = []
         try:
             nodes, _ = _parse(template, 0)
-            return _render(nodes, params, locale, plural_value=None, offset=0)
+            out = _render(
+                nodes, params, locale, plural_value=None, offset=0, recovered=recovered
+            )
         except Exception:
             # Malformed ICU (or an unexpected node) must never blow up a page.
             return _simple(template, params, locale)
+        if recovered:
+            _notice_recovery(template, locale, recovered)
+        return out
     return _simple(template, params, locale)
+
+
+def _notice_recovery(template: str, locale: str, recovered: list[str]) -> None:
+    """ICU-4 — say which arguments were defaulted, once per ``(template, locale)``.
+
+    The recovered argument never appears in the source phrase, so there is nothing
+    for a developer to grep for and no failing behaviour to notice. Debug level only:
+    a notice that ignores the log level warns in production on every render.
+    """
+    if not logger.isEnabledFor(logging.DEBUG):
+        # Not marked as noticed — otherwise enabling debug later would stay silent.
+        return
+    key = (template, locale)
+    if key in _NOTICED:
+        return
+    _NOTICED.add(key)
+    # dict.fromkeys preserves first-seen order while de-duplicating.
+    names = ", ".join(dict.fromkeys(recovered))
+    logger.debug(
+        "langsys: interpolation recovery in locale %s — defaulted to the 'other' branch "
+        "for argument(s): %s. This is normal when the target translation needs an "
+        "argument the source phrase never had; pass %s in params to select a branch. "
+        "Template: %s",
+        locale,
+        names,
+        names,
+        template,
+    )
 
 
 # -- simple {name} interpolation ---------------------------------------------
@@ -261,25 +312,71 @@ def _expect(text: str, i: int, ch: str) -> None:
 
 
 def _render(
-    nodes: list[_Node], params: Params, locale: str, plural_value: Optional[float], offset: int
+    nodes: list[_Node],
+    params: Params,
+    locale: str,
+    plural_value: Optional[float],
+    offset: int,
+    recovered: list[str],
+    hash_literal: Optional[str] = None,
 ) -> str:
     out: list[str] = []
     for node in nodes:
         if isinstance(node, str):
-            out.append(_apply_hash(node, plural_value, offset, locale))
+            out.append(_apply_hash(node, plural_value, offset, locale, hash_literal))
         else:
-            out.append(_render_arg(node, params, locale))
+            out.append(_render_arg(node, params, locale, recovered))
     return "".join(out)
 
 
-def _apply_hash(text: str, plural_value: Optional[float], offset: int, locale: str) -> str:
-    if plural_value is None or "#" not in text:
+def _apply_hash(
+    text: str,
+    plural_value: Optional[float],
+    offset: int,
+    locale: str,
+    hash_literal: Optional[str] = None,
+) -> str:
+    if "#" not in text:
+        return text
+    if hash_literal is not None:
+        # ICU-3 — inside a recovered plural there is no count. A plausible `0`
+        # reads as correct and states something false; `{count}` is visibly a gap.
+        return text.replace("#", hash_literal)
+    if plural_value is None:
         return text
     return text.replace("#", _format_number(plural_value - offset, locale))
 
 
-def _render_arg(arg: _Arg, params: Params, locale: str) -> str:
+def _recover(arg: _Arg, params: Params, locale: str, recovered: list[str]) -> str:
+    """ICU-1 — render the ``other`` branch of a node whose argument is missing.
+
+    Raises when there is no ``other`` branch: that node is malformed, and ICU-1 says
+    to leave it to normal error handling rather than invent a fallback. The caller's
+    ``except`` degrades the whole template to simple interpolation.
+    """
+    options = arg.options or {}
+    branch = options.get("other")
+    if branch is None:
+        raise ValueError(f"recovery needs an 'other' branch for {arg.name!r}")
+    recovered.append(arg.name)
+    return _render(
+        branch,
+        params,
+        locale,
+        plural_value=None,
+        offset=0,
+        recovered=recovered,
+        # `#` has no count to render; emit the argument name instead.
+        hash_literal="{" + arg.name + "}" if arg.kind != "select" else None,
+    )
+
+
+def _render_arg(arg: _Arg, params: Params, locale: str, recovered: list[str]) -> str:
     if arg.name not in params or params[arg.name] is None:
+        # ICU-2 — present-but-null is absent. For a branching node that means
+        # recovery (ICU-1); for a plain argument the slot stays visible.
+        if arg.kind in ("plural", "selectordinal", "select"):
+            return _recover(arg, params, locale, recovered)
         return "{" + arg.name + "}"
     value = params[arg.name]
 
@@ -295,16 +392,20 @@ def _render_arg(arg: _Arg, params: Params, locale: str) -> str:
     options = arg.options or {}
     if arg.kind == "select":
         branch = options.get(str(value)) or options.get("other") or []
-        return _render(branch, params, locale, plural_value=None, offset=0)
+        return _render(branch, params, locale, plural_value=None, offset=0, recovered=recovered)
 
-    # plural / selectordinal
+    # plural / selectordinal — supplied, so it keeps full CLDR selection (ICU-5).
     number = float(value)
     exact = options.get("=" + _int_key(number))
     if exact is not None:
-        return _render(exact, params, locale, plural_value=number, offset=arg.offset)
+        return _render(
+            exact, params, locale, plural_value=number, offset=arg.offset, recovered=recovered
+        )
     category = _plural_category(number - arg.offset, locale, ordinal=arg.kind == "selectordinal")
     branch = options.get(category) or options.get("other") or []
-    return _render(branch, params, locale, plural_value=number, offset=arg.offset)
+    return _render(
+        branch, params, locale, plural_value=number, offset=arg.offset, recovered=recovered
+    )
 
 
 def _int_key(number: float) -> str:

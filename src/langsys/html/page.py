@@ -19,6 +19,7 @@ from lxml.cssselect import CSSSelector
 from lxml.etree import _Element
 
 from ..registration import generate_custom_id
+from ..translate import lookup_block
 from ..types import UNCATEGORIZED
 from .parser import apply_element, extract_phrases, inner_html, text_content
 
@@ -168,13 +169,16 @@ def _apply_or_queue_block(
     phrases: list[str],
     inner: str,
 ) -> None:
-    custom_id = generate_custom_id(item_cat, phrases)
-    catalog = client._catalog.get(client._effective_locale(None))
-    category_map = catalog.get(item_cat)
-    block = category_map.get(custom_id) if isinstance(category_map, dict) else None
+    # CID-2 — the sentinel is a cache-lookup namespace and never a hash input, so the
+    # id is built from the raw category while the catalog is still keyed by the token.
+    raw_category = None if item_cat == UNCATEGORIZED else item_cat
+    custom_id = generate_custom_id(raw_category, phrases)
+    fetch = client._catalog.get(client._effective_locale(None))
+    block = lookup_block(fetch.catalog.get(item_cat), raw_category, custom_id, phrases)
     if isinstance(block, dict):
         apply_element(el, block, attrs)
-    else:
+    elif fetch.ok:
+        # WIRE-4 — never queue off a catalog we could not read.
         client._queue_content_block(inner, item_cat, custom_id, phrases)
 
 

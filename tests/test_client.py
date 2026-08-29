@@ -30,6 +30,7 @@ def authorize_payload(key_type="read"):
             "target_locales": ["es-es"],
             "default_locales": {},
             "key_type": key_type,
+            "write_enabled": key_type == "write",
             "langsys_settings": {"translatable_items": {"batch_limit": 200}},
         },
     }
@@ -40,7 +41,7 @@ def catalog_payload(data):
 
 
 def test_authorize_parses_project(httpx_mock):
-    httpx_mock.add_response(url=AUTH_URL, json=authorize_payload("write"))
+    httpx_mock.add_response(url=AUTH_URL, json=authorize_payload("write"), is_reusable=True)
     client = make()
     project = client.authorize()
     assert project.base_locale == "en-us"

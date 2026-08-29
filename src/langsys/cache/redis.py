@@ -27,7 +27,9 @@ class RedisCache:
                     "Install with: pip install langsys[redis]"
                 ) from exc
             client = redis.Redis(**options)
-        self._redis = client
+        # Deliberately Any: callers pass their own sync client, and redis-py's own
+        # hints widen every call to a sync/async union that no cast can narrow.
+        self._redis: Any = client
         self._prefix = prefix
 
     def _key(self, key: str) -> str:

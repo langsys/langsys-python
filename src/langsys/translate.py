@@ -8,8 +8,10 @@ not translated yet, so it falls back to the base phrase *without* re-queuing.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional, Sequence
 
+from ._log import logger
+from .registration import legacy_custom_ids
 from .types import UNCATEGORIZED, Catalog
 
 
@@ -50,3 +52,54 @@ def resolve(
         return Resolution(phrase, missing=False)
 
     return Resolution(phrase, missing=True)
+
+
+def _block_matches(block: dict[str, Any], phrases: Sequence[str]) -> bool:
+    """CID-4 — does this block's content actually match what we were looking for?
+
+    Compared as normalised for hashing, not as stored. A set comparison, because the
+    catalog returns a content block as a map keyed by source phrase and has therefore
+    already lost the order by the time this runs — which the rule allows explicitly.
+    It still defeats every collision mode, since all of them are collisions over
+    *differing* content.
+    """
+    return set(block.keys()) == set(phrases)
+
+
+def lookup_block(
+    cat: Any, category: Optional[str], custom_id: str, phrases: Sequence[str]
+) -> Optional[dict[str, Any]]:
+    """Find a registered content block, tolerating historical ids (CID-3).
+
+    A legacy hit is verified against the block's content before being attached to
+    (CID-4). The failure direction is deliberate: a false positive attaches the wrong
+    text and someone eventually notices, while a false negative silently restores
+    nothing and is indistinguishable from "this block had no legacy id".
+    """
+    if not isinstance(cat, dict):
+        return None
+
+    block = cat.get(custom_id)
+    if isinstance(block, dict):
+        return block
+
+    for legacy_id in legacy_custom_ids(category, phrases):
+        candidate = cat.get(legacy_id)
+        if not isinstance(candidate, dict):
+            continue
+        if not _block_matches(candidate, phrases):
+            # A collision, not a match. These id spaces are not injective.
+            logger.debug(
+                "langsys: historical content-block id %s resolved to a block whose "
+                "phrases differ; declining it rather than attaching to the wrong text.",
+                legacy_id,
+            )
+            continue
+        logger.debug(
+            "langsys: content block resolved under a historical id (%s). Its "
+            "translations still apply; it is never re-keyed and never re-registered "
+            "under that id.",
+            legacy_id,
+        )
+        return candidate
+    return None

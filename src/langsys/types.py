@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional, Union
 
-KeyType = Literal["read", "write"]
+#: ``ip_write`` is a distinct arm, not a flavour of ``read``: its session capability
+#: depends on the caller's address, which is precisely why GATE-8 forbids inferring a
+#: write decision for it from the key type. Collapsing it into ``read`` would hide the
+#: one key type whose answer no client-side value can express.
+KeyType = Literal["read", "write", "ip_write"]
 
 #: A translation value is either a phrase string (or ``None`` when untranslated) or a
 #: content block: a mapping of child-phrase -> translation.
@@ -89,7 +93,11 @@ class Project:
             base_locale=str(data.get("base_locale", "")),
             target_locales=list(data.get("target_locales") or []),
             default_locales=dict(data.get("default_locales") or {}),
-            key_type="write" if data.get("key_type") == "write" else "read",
+            key_type=_key_type(data.get("key_type")),
             batch_limit=int(items.get("batch_limit", 200)),
             raw=data,
         )
+
+
+def _key_type(value: object) -> KeyType:
+    return value if value in ("read", "write", "ip_write") else "read"  # type: ignore[return-value]
