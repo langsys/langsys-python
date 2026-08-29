@@ -431,3 +431,69 @@ def test_GRANT_no_write_grant_header_is_ever_sent(httpx_mock):
             "this SDK now sends a write grant — the read-key/key-type short-circuit "
             "documented alongside GATE-1 is no longer sound and must be removed"
         )
+
+
+# -- precedence between the two decision sources: recency, never source -------
+#
+# The latch-shaped failure this guards: a stale or empty slot outranking a live
+# answer, and failing open when it does. Both directions are asserted, because a
+# fixed precedence passes whichever single direction happens to match it.
+
+
+def _warm_plain_write(cache, httpx_mock):
+    """Warm the cache with a plain write key, so the key_type fallback is what the
+    observed flag has to beat."""
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True))
+    client = make(cache=cache)
+    client.authorize()
+    return client
+
+
+def test_PRECEDENCE_a_fresher_envelope_flag_beats_an_older_authorize_answer(httpx_mock):
+    """Shadow direction 1: the catalog envelope spoke last, so it wins — even though
+    the warm key_type fallback and the earlier authorize both said write."""
+    cache = MemoryCache()
+    client = _warm_plain_write(cache, httpx_mock)
+    assert client.can_write is True  # control: the earlier answer stands
+
+    httpx_mock.add_response(
+        url=TRANS, json={"status": True, "write_enabled": False, "data": {}}, is_reusable=True
+    )
+    client.get_translations("es-es")
+    assert client.can_write is False, "an older authorize answer outranked a fresher envelope"
+
+
+def test_PRECEDENCE_a_fresher_authorize_answer_beats_an_older_envelope_flag(httpx_mock):
+    """Shadow direction 2: same two sources, opposite order, opposite winner. This is
+    the direction Ruby's fixed source-precedence failed — the envelope latched and
+    outranked every later authorize."""
+    cache = MemoryCache()
+    client = _warm_plain_write(cache, httpx_mock)
+
+    httpx_mock.add_response(
+        url=TRANS, json={"status": True, "write_enabled": False, "data": {}}, is_reusable=True
+    )
+    client.get_translations("es-es")
+    assert client.can_write is False  # control: the envelope answer stands
+
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True))
+    client.authorize(force=True)
+    assert client.can_write is True, "a stale envelope flag outranked a fresher authorize"
+
+
+def test_PRECEDENCE_an_absent_envelope_flag_never_displaces_a_real_answer(httpx_mock):
+    """An empty slot is not an answer. A response that simply carries no flag must not
+    overwrite one that did — that is the 'stale-or-empty outranks live' shape."""
+    cache = MemoryCache()
+    client = _warm_plain_write(cache, httpx_mock)
+
+    httpx_mock.add_response(
+        url=TRANS, json={"status": True, "write_enabled": False, "data": {}}
+    )
+    client.get_translations("es-es")
+    assert client.can_write is False
+
+    # A catalog response with no write_enabled at all.
+    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
+    client.get_translations("fr-fr")
+    assert client.can_write is False, "an absent flag overwrote a real observed answer"

@@ -8,7 +8,7 @@
 | **Spec revision read** | langsys2 `origin/main` `fabe22b2a54a` · `docs/sdk-spec.mdx` blob `06ae105a0a1f` · fetched 2026-08-29T18:28:11Z |
 | **SDK revision** | `feature/838_write_key_gating`, cut from `origin/main` `bc5ca62` |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 218 tests in 14 files — 203 unit + 15 live (`pytest`, `pytest -m integration`) |
+| **Suite** | 221 tests in 14 files — 206 unit + 15 live (`pytest`, `pytest -m integration`) |
 | **Binding rules** | **41 of 67** (`all` + `server`, after the GRANT ruling) |
 
 **Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
@@ -17,7 +17,7 @@ reach. The document-level pin above is this file's provable revision claim. Omit
 rather than left pending, because a pending column invites someone to fill it with
 strings they have not read — CONF-1's failure one level up.
 
-**What surfaced while writing this.** Five things that were on nobody's list:
+**What surfaced while writing this.** Six things that were on nobody's list:
 
 1. **The canonical fixture exists in two versions, and the authoritative one is
    unmerged.** php-sdk `origin/main` carries a 12-row `custom-id-reference.json` (blob
@@ -34,11 +34,16 @@ strings they have not read — CONF-1's failure one level up.
    `authorize()` cached the entire response, and `Project.raw` held it for the life of
    the client. Nothing leaked only because the server field did not yet exist in this
    repo's view.
-4. **`Project.from_response` collapsed every non-`write` key type to `read`**, so an
+4. **A live authorize answer was being dropped before it was recorded.** `authorize()`
+   stripped `write_enabled` for storage (GATE-4, correct) but did so *before* anything
+   observed it, so a stale catalog-envelope answer outranked a fresher authorize —
+   the same latch shape from the other end. Caught by writing the second shadow-direction
+   test, not by reading the code, and only because both directions were asserted.
+5. **`Project.from_response` collapsed every non-`write` key type to `read`**, so an
    `ip_write` key reported as `read`. Found by a live test, not by reading: the gating
    logic reads the raw payload and was unaffected, so the defect was invisible to the
    mocked suite and to the code. `KeyType` now carries `ip_write` as its own arm.
-5. **One of my own guards was non-discriminating.** The first ICU-5 vector gave
+6. **One of my own guards was non-discriminating.** The first ICU-5 vector gave
    `few`/`many`/`other` identical branch text and could not have failed whatever the
    renderer did. Recorded rather than quietly fixed, because it is the trap the spec
    names and it took writing the mutation to notice.
@@ -67,6 +72,7 @@ CONF-2's own open item, which it says gates every claim in all 13 repos.
 | GATE-1 | implemented | live | `test_gating` write-key-not-enabled + ip_write-enabled pair (the discriminating vector: `key_type` and `write_enabled` disagree) · `test_integration` all three live key types · mutation: branching on `key_type` reddens 7 tests |
 | GATE-2 | n/a (synchronous) | n/a | Sync `httpx.Client`; no unknown window. **Perishable** — `http.py` documents an async twin for phase 3; all three `n/a (synchronous)` rows become live the day it lands |
 | GATE-3 | implemented | live | `test_gating` decision-not-latched-in-memory (`Project.raw`) + address-dependent-not-inherited-from-warm-store · `test_integration` GATE-4 cache read-back |
+| GATE-1 (precedence) | implemented | mock | `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()`, and letting an absent flag record as `False`, each redden a named test |
 | GATE-4 | implemented | live | `test_gating` stripped-before-anything-is-cached (asserts `key_type` survives, `write_enabled` does not) · mutation: caching the decision reddens 3 tests |
 | GATE-5 | implemented | mock | `test_gating` failed-registration-keeps-the-queue · clears-only-after-acceptance · no-persistent-marker-is-written. Structurally unreachable here: this SDK has no "already registered" store at all |
 | GATE-6 | partial | mock | Register half gated and tested. Report half is **vacuous** — no report lane exists (HINT-2), so it cannot fail. Recorded partial rather than green |
@@ -147,6 +153,37 @@ Assertion order in `tests/test_custom_id.py` is the contract: **codepoints first
 with the damaged input), then **bytes**, then the **blob pin**, then the hash — computed
 through `canonical_content_block_json`, the same function the id is hashed from, never a
 second expression written inside the test.
+
+### Tolerance breadth (CID-3)
+
+**A tolerance function must not normalise its inputs.** Normalising is right for the id
+you *emit* and exactly wrong for ids you *accept*, because the old paths did not
+normalise — that asymmetry is the whole point of the function. `legacy_custom_ids`
+therefore iterates the slots rather than folding them: an uncategorised block yields
+**both** `''` and `'__uncategorized__'` spellings, deduped, and a real category yields
+one. Mutation: collapsing the slots to `['']` — Ruby's bug — reddens the test that
+asserts both spellings.
+
+The scoping rule this follows: **legacy exposure scopes to whose ids you will read, not
+whose you minted.** This SDK's unpublished history means it never *wrote* a legacy id;
+it says nothing about what it must *resolve*.
+
+**Ruling recorded — the JS code-unit shape does not bind the server profile** (fleet
+precedent; pipe variants only). **This SDK retains it anyway**, deliberately, and the
+deviation is recorded rather than silent:
+
+- The ruling is permissive ("does not bind"), so retaining is conforming; and the same
+  message's generalised rule — scope to *what published JS/PHP wrote into catalogs you
+  will serve* — points at keeping it, since CID-1 states that **every id in production
+  came from a published JS SDK**.
+- The risk is asymmetric. Keeping it costs one extra dict lookup on a block miss and
+  cannot mis-attach, because CID-4 verifies content before attaching. Removing it, if
+  the premise is wrong, silently orphans every JS-registered block a Python server
+  serves — and a false negative there is indistinguishable from "this block had no
+  legacy id", which is the same silence that hid the original defect.
+
+If the fleet wants strict scoping, deleting the two `_md5_utf16_code_units` lines from
+`legacy_custom_ids` is the whole change; the tests that pin it are named in this file.
 
 ### The legacy JS hash
 

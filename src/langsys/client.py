@@ -92,6 +92,10 @@ class LangsysClient:
         self._project: Optional[Project] = None
         #: OBS-1 is once per process, not once per miss.
         self._warned_unusable = False
+        #: The most recently *observed* server answer, as ``(stamp, value)``.
+        #: Precedence is by **recency, never by source** — see :meth:`_observe_decision`.
+        self._observed_decision: Optional[tuple[int, bool]] = None
+        self._decision_stamp = 0
         self._pending: dict[tuple[str, str], None] = {}
         self._pending_blocks: dict[str, dict[str, Any]] = {}
         self._translatable_attributes: list[str] = list(DEFAULT_TRANSLATABLE_ATTRIBUTES)
@@ -126,13 +130,35 @@ class LangsysClient:
                 self._project = Project.from_response(cached)
                 return self._project
 
-        data = _without_write_decision(self._authorize_data())
+        live = self._authorize_data()
+        # Observe BEFORE stripping. This response is the freshest answer the server
+        # has given us, and dropping it on the floor here is the same latch-shaped
+        # failure from the other end: a stale slot outranking a live answer because
+        # the live one was never recorded.
+        flag = live.get("write_enabled")
+        self._observe_decision(flag if isinstance(flag, bool) else None)
+
+        data = _without_write_decision(live)
         # Stripped before it reaches EITHER store. `Project` is held for the life of
         # the client, so letting the flag ride along in `raw` would latch the decision
         # in memory just as surely as caching it would (GATE-3).
         self._cache.set(cache_key, data, self._config.cache_ttl)
         self._project = Project.from_response(data)
         return self._project
+
+    def _observe_decision(self, value: Optional[bool]) -> None:
+        """Record a server-computed ``write_enabled``, from **either** endpoint shape.
+
+        Precedence is by **recency, not by source**. Both shapes are equally
+        authoritative — they are the same server answering the same question — so the
+        only sound tiebreak is which answer is newer. Letting one source outrank the
+        other by construction is the latch-shaped failure this family keeps producing:
+        a stale or empty slot outranking a live answer, and failing open when it does.
+        """
+        if value is None:
+            return
+        self._decision_stamp += 1
+        self._observed_decision = (self._decision_stamp, value)
 
     def _warm_authorize_payload(self) -> Optional[dict[str, Any]]:
         """Already-known project metadata, if any. Never carries ``write_enabled``."""
@@ -205,6 +231,13 @@ class LangsysClient:
                 return False
             return self._decide(data, allow_fallback=False)
 
+        # Plain read/write on a warm cache. The payload lacks the flag by construction
+        # (our own GATE-4 strip), so the ruled key_type fallback applies — but a flag
+        # this session has actually *observed*, from either endpoint shape, is real
+        # evidence where key_type is only an inference, so it wins when we have one.
+        observed = self._observed_decision
+        if observed is not None:
+            return observed[1]
         return self._decide(warm, allow_fallback=True)
 
     def _live_authorize_payload(self) -> Optional[dict[str, Any]]:
@@ -219,6 +252,7 @@ class LangsysClient:
         flag = data.get("write_enabled")
         key_type = data.get("key_type")
         if isinstance(flag, bool):
+            self._observe_decision(flag)
             self._notice_unusable_capability(flag, key_type)
             return flag
 
@@ -298,7 +332,9 @@ class LangsysClient:
         """Return the whole ``category -> phrase -> translation`` catalog for a locale.
 
         Empty when the API could not be reached — this never raises (WIRE-4)."""
-        return self._catalog.get(self._effective_locale(locale), use_cache=use_cache).catalog
+        fetch = self._catalog.get(self._effective_locale(locale), use_cache=use_cache)
+        self._observe_decision(fetch.write_enabled)
+        return fetch.catalog
 
     def translate(
         self,
@@ -313,6 +349,7 @@ class LangsysClient:
         then interpolate ``params`` with locale-aware CLDR formatting."""
         loc = self._effective_locale(locale)
         fetch = self._catalog.get(loc)
+        self._observe_decision(fetch.write_enabled)
         result = resolve(fetch.catalog, phrase, category, content_block_id)
         # WIRE-4 — without a catalog a miss is indistinguishable from a hit, so an
         # outage would re-register everything that already exists. Record nothing.
@@ -343,6 +380,7 @@ class LangsysClient:
         # `__uncategorized__` is a cache-lookup namespace and must never reach the id.
         custom_id = generate_custom_id(category, phrases)
         fetch = self._catalog.get(loc)
+        self._observe_decision(fetch.write_enabled)
         cat = fetch.catalog.get(cat_name)
         block = lookup_block(cat, category, custom_id, phrases)
         if not isinstance(block, dict):
@@ -511,6 +549,7 @@ class LangsysClient:
         """Register any of ``local_phrases`` not already in the catalog, then refetch."""
         loc = self._effective_locale(locale)
         fetch = self._catalog.get(loc, use_cache=False)
+        self._observe_decision(fetch.write_enabled)
         if not fetch.ok:
             # WIRE-4 — without a catalog every phrase looks new; registering them
             # all is the write storm this guard exists to prevent.
