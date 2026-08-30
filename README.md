@@ -77,8 +77,28 @@ client.register_phrases([{"phrase": "Save", "category": "UI"}])
 client.sync(local_phrases, locale="en-US")   # register only what's new, then refetch
 
 # Phrases seen while rendering are queued; flush them (no-op on a read key):
-client.flush_pending()               # or pass auto_flush=True to flush at exit
+client.flush_pending()               # send what has been discovered so far
 ```
+
+**How discovered phrases actually get sent.** Three paths, and on a long-lived server
+you should not rely on the first two alone:
+
+| Path | Default | Notes |
+|---|---|---|
+| Debounce | on, `debounce=0.4` | A burst from one render coalesces into one request, sent from a short-lived **background timer thread**. Pass `debounce=0` to disable and send only on demand. |
+| Process exit | on, `auto_flush=True` | Best-effort only — an `atexit` hook does not run on an OOM kill or a hard timeout. |
+| `flush_pending()` | — | The reliable path, and the one a web framework should call at the end of each request. |
+
+Registration is resilient by design: a failed send keeps its queue and backs off
+exponentially rather than retrying into a failing endpoint, and a failure to reach the
+API at all is never treated as "you may not write" — the queue is held, not discarded.
+`flush_pending()` returns a result whose `success` is only ever `True` for work that
+actually happened.
+
+If you construct a client per short-lived script or worker run, the defaults are fine as
+they are. If you hold one for the life of a server process, call `flush_pending()` at
+your request boundary (and `reset_write_decision()` alongside it — write capability is
+per-session and must not leak between requests).
 
 ### Caching
 

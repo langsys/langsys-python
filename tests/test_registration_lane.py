@@ -480,3 +480,185 @@ def test_REG7_declining_keeps_the_queue_for_the_next_flush(httpx_mock):
     assert result["reason"] == "send-in-flight"
     assert result["queued_phrases"] == 1
     assert client.has_pending
+
+
+# -- GATE-2: true / false / UNKNOWN, and hold on unknown ----------------------
+#
+# Filed `n/a (synchronous)` in wave 1 and re-argued in wave 2 as "the decision resolves
+# synchronously inside the flush, so no window exists in which it is unknown". Review
+# punctured that: a resolution that FAILS is unknown, and this SDK collapsed it to
+# False and discarded the queue. The rule is live, and these are its tests.
+
+
+def _queued_client(httpx_mock, **kw):
+    httpx_mock.add_response(url=TRANS, json=catalog(), is_reusable=True)
+    client = make(**kw)
+    client.translate("Phrase", category="UI", locale="en-us")
+    assert client.has_pending, "control failed: nothing queued"
+    return client
+
+
+def test_GATE2_a_transient_authorize_failure_holds_the_queue(httpx_mock):
+    """The HIGH finding. A blip while ASKING whether we may write must not destroy the
+    work: recovery never resends, so the loss is permanent for the process."""
+    client = _queued_client(httpx_mock)
+    httpx_mock.add_exception(httpx.ConnectError("transient"), url=AUTH, is_reusable=True)
+    result = client.flush_pending()
+
+    assert client.has_pending, "the queue was discarded because we could not ASK"
+    assert result["reason"] == "capability-unknown"
+    assert result["success"] is False
+    assert client._backoff_seconds > 0, "unknown must arm a backoff like any other failure"
+
+
+def test_GATE2_a_server_no_still_discards(httpx_mock):
+    """The other half, and why this is not just "never discard": discarding a queue the
+    server has told us we may not write is correct. Only ignorance is different."""
+    client = _queued_client(httpx_mock)
+    httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False), is_reusable=True)
+    result = client.flush_pending()
+
+    assert client.has_pending is False
+    assert result["reason"] == "not-write-enabled"
+
+
+def test_GATE2_the_reason_string_does_not_misdiagnose_an_outage(httpx_mock):
+    """The original defect reported `not-write-enabled` for a network failure, sending
+    anyone debugging it to look at key permissions."""
+    client = _queued_client(httpx_mock)
+    httpx_mock.add_exception(httpx.ConnectError("transient"), url=AUTH, is_reusable=True)
+    assert client.flush_pending()["reason"] != "not-write-enabled"
+
+
+def test_GATE2_the_queue_survives_to_the_recovering_flush(httpx_mock):
+    """Holding is only worth anything if the work actually goes out afterwards."""
+    client = _queued_client(httpx_mock)
+    httpx_mock.add_exception(httpx.ConnectError("transient"), url=AUTH)
+    client.flush_pending()
+
+    httpx_mock.add_response(url=AUTH, json=auth(), is_reusable=True)
+    httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
+    assert client.flush_pending(force=True)["success"] is True
+    assert client.has_pending is False
+
+
+def test_GATE2_an_ip_write_session_does_not_lose_everything_on_a_blip(httpx_mock):
+    """`ip_write` pays a live authorize on every flush, so it is the key type most
+    exposed to this — and it is the 838 pilot type."""
+    cache = MemoryCache()
+    httpx_mock.add_response(url=AUTH, json=auth("ip_write", write_enabled=True))
+    make(cache=cache).authorize()
+
+    client = _queued_client(httpx_mock, cache=cache)
+    httpx_mock.add_exception(httpx.ConnectError("transient"), url=AUTH, is_reusable=True)
+    client.flush_pending()
+    assert client.has_pending, "an ip_write session lost its queue to a network blip"
+
+
+def test_GATE2_can_write_still_refuses_when_the_answer_is_unknown(httpx_mock):
+    """Holding the queue must not become inferring permission."""
+    httpx_mock.add_exception(httpx.ConnectError("transient"), url=AUTH, is_reusable=True)
+    assert make().can_write is False
+
+
+def test_GATE2_an_explicit_registration_names_ignorance_not_denial(httpx_mock):
+    """A caller debugging "nothing registered" is served very differently by "you may
+    not" and "we could not ask"."""
+    from langsys import NetworkError as PublicNetworkError
+
+    httpx_mock.add_exception(httpx.ConnectError("transient"), url=AUTH, is_reusable=True)
+    with pytest.raises(PublicNetworkError):
+        make().register_phrases(["Save"])
+
+
+# -- REG-2 (F2): a flush that leaves work must re-arm the debounce -------------
+
+
+def test_REG2_a_miss_arriving_during_a_slow_send_is_not_stranded(httpx_mock):
+    """Real threads, real overlap. The debounce fires mid-send, finds the send lock
+    held, declines — and the declining flush has already cancelled the timer on its way
+    in. Without a re-arm the phrase waits for an unrelated miss or process exit, which
+    is REG-2's send path quietly ceasing to exist in the case it is for."""
+    import threading
+
+    httpx_mock.add_response(url=AUTH, json=auth(), is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json=catalog(), is_reusable=True)
+    httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
+
+    client = make(debounce=0.05)
+    started, release = threading.Event(), threading.Event()
+    real_post = client._reg._post_items
+
+    def slow_post(items):
+        started.set()
+        release.wait(2)
+        return real_post(items)
+
+    client._reg._post_items = slow_post  # type: ignore[method-assign]
+    client.translate("First", category="UI", locale="en-us")
+
+    sender = threading.Thread(target=lambda: client.flush_pending(force=True))
+    sender.start()
+    assert started.wait(2), "the send never started"
+
+    client.translate("Second", category="UI", locale="en-us")  # arrives mid-send
+    time.sleep(0.2)  # its timer fires, finds the send in flight, declines
+    release.set()
+    sender.join(3)
+
+    assert wait_until(lambda: not client.has_pending, timeout=3), (
+        f"stranded: {[p['phrase'] for p in client.pending_phrases]} still queued with "
+        f"timer={client._timer}"
+    )
+    client.close()
+
+
+def test_REG2_a_declining_flush_leaves_a_timer_armed(httpx_mock):
+    """The same property, asserted directly rather than through timing."""
+    client = _queued_client(httpx_mock, debounce=0.5)
+    client._sending.acquire()
+    try:
+        assert client.flush_pending()["reason"] == "send-in-flight"
+    finally:
+        client._sending.release()
+    assert client._timer is not None, "a declining flush left nothing scheduled"
+    client.close()
+
+
+# -- F3: the public queue views are read from other threads -------------------
+
+
+def test_the_pending_views_are_safe_to_read_while_the_queue_mutates(httpx_mock):
+    """`pending_phrases` is public and a debounced send mutates the queue from a timer
+    thread, so an unlocked read raises RuntimeError mid-iteration."""
+    import threading
+
+    client = make()
+    errors: list[str] = []
+    stop = threading.Event()
+
+    def writer():
+        i = 0
+        while not stop.is_set():
+            client._queue_missing(f"p{i}", "UI")
+            i += 1
+            if i % 300 == 0:
+                client.clear_pending()
+
+    def reader():
+        while not stop.is_set():
+            try:
+                assert client.pending_phrases is not None
+                assert client.pending_content_blocks is not None
+            except RuntimeError as exc:  # pragma: no cover - the bug being guarded
+                errors.append(str(exc))
+                return
+
+    threads = [threading.Thread(target=writer), threading.Thread(target=reader)]
+    for t in threads:
+        t.start()
+    time.sleep(1.0)
+    stop.set()
+    for t in threads:
+        t.join(2)
+    assert errors == [], f"unlocked read: {errors[0]}"

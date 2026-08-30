@@ -8,7 +8,7 @@
 | **Spec revision read** | langsys2 `docs/sdk-spec.mdx` blob `06ae105a0a1f` — read at `origin/main` `fabe22b2a54a` (2026-08-29T18:28:11Z) and re-read at `origin/main` `7bee50d63e78` (2026-08-30T04:22:01Z). **The blob is unchanged across both**, so every row below is filed against the same spec text |
 | **SDK revision** | `feature/838_write_key_gating`, cut from `origin/main` `bc5ca62` |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 296 tests in 16 files — 281 unit + 15 live (`pytest`, `pytest -m integration`) |
+| **Suite** | 306 tests in 17 files — 291 unit + 15 live (`pytest`, `pytest -m integration`) |
 | **Binding rules** | **41 of 67** (`all` + `server`, after the GRANT ruling) |
 
 **Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
@@ -17,9 +17,26 @@ reach. The document-level pin above is this file's provable revision claim. Omit
 rather than left pending, because a pending column invites someone to fill it with
 strings they have not read — CONF-1's failure one level up.
 
-**What surfaced while writing this.** Six things that were on nobody's list:
+**What surfaced while writing this.** Eight things that were on nobody's list. The two
+that mattered most were found by review, not by me, and both are recorded first:
 
-1. **The canonical fixture exists in two versions, and the authoritative one is
+1. **A transient authorize failure destroyed the whole registration queue.** Found in
+   review, not by me. Asking *whether we may write* could fail, that failure collapsed to
+   "may not write", and the discard that is correct for a server **no** then ran for an
+   outage — permanently, since nothing resends. The control that proves the hole is
+   authorize-shaped: the identical outage on the registration POST retained the queue and
+   backed off correctly. It also punctured this file's own GATE-2 reasoning twice over,
+   and my REG-3 "never raises" test had been quietly enshrining the discard by asserting
+   only that nothing was thrown.
+
+2. **The miss that REG-6 saved was then stranded.** A debounce firing while a send held
+   the lock had its timer cancelled by the declining flush, and nothing re-armed it. My
+   first fix put the re-arm inside the send-lock's `try` — which the decline path returns
+   before ever reaching, so it missed the one case it was written for. It is now in the
+   outermost `finally`.
+
+
+3. **The canonical fixture exists in two versions, and the authoritative one is
    unmerged.** php-sdk `origin/main` carries a 12-row `custom-id-reference.json` (blob
    `ed7b512b6c0a`); the 13-row file every SDK validates against (blob `60dc9b33ecfd`)
    lives only on `feature/838_write_key_gating_reland`. The extra row is exactly the
@@ -27,23 +44,23 @@ strings they have not read — CONF-1's failure one level up.
    `serialized_hex` columns the vendoring norm requires. The 12 shared rows agree
    byte-for-byte, so main is not wrong — it is missing the edge the CID rules exist to
    pin.
-2. **`translate()` threw on an unreachable API.** Measured against a closed port, not
+4. **`translate()` threw on an unreachable API.** Measured against a closed port, not
    inferred. On a server core that is a visitor-facing 500 on any page with a `t()`
    call, which is why it outranked the `custom_id` breakage in the fix order.
-3. **GATE-3/GATE-4 was a landmine that would have armed itself with no change here.**
+5. **GATE-3/GATE-4 was a landmine that would have armed itself with no change here.**
    `authorize()` cached the entire response, and `Project.raw` held it for the life of
    the client. Nothing leaked only because the server field did not yet exist in this
    repo's view.
-4. **A live authorize answer was being dropped before it was recorded.** `authorize()`
+6. **A live authorize answer was being dropped before it was recorded.** `authorize()`
    stripped `write_enabled` for storage (GATE-4, correct) but did so *before* anything
    observed it, so a stale catalog-envelope answer outranked a fresher authorize —
    the same latch shape from the other end. Caught by writing the second shadow-direction
    test, not by reading the code, and only because both directions were asserted.
-5. **`Project.from_response` collapsed every non-`write` key type to `read`**, so an
+7. **`Project.from_response` collapsed every non-`write` key type to `read`**, so an
    `ip_write` key reported as `read`. Found by a live test, not by reading: the gating
    logic reads the raw payload and was unaffected, so the defect was invisible to the
    mocked suite and to the code. `KeyType` now carries `ip_write` as its own arm.
-6. **One of my own guards was non-discriminating.** The first ICU-5 vector gave
+8. **One of my own guards was non-discriminating.** The first ICU-5 vector gave
    `few`/`many`/`other` identical branch text and could not have failed whatever the
    renderer did. Recorded rather than quietly fixed, because it is the trap the spec
    names and it took writing the mutation to notice.
@@ -71,27 +88,33 @@ Counted from the table below, not asserted beside it. 67 rules, every one accoun
 
 | Status | Count | |
 |---|---|---|
-| `implemented` | 36 | |
+| `implemented` | 37 | |
 | `partial` | 4 | GATE-6, GATE-7 (report direction is profile-vacuous), CONF-1, CONF-3 |
 | `not implemented` | 0 | |
-| `n/a` (architecture) | 1 | GATE-2 — a claim about **this SDK**, not about the rule, and its reasoning was replaced this wave |
+| `n/a` (architecture) | 0 | **GATE-2 vacated this bucket** — see below |
 | `n/a` (profile) | 26 | browser/binding rules that do not apply to a server core |
 | **total** | **67** | of which **41 bind** (`all` + `server`) |
 
-The two `n/a` kinds are kept apart deliberately. A profile `n/a` is a claim about the
-rule's Profiles line; an architecture `n/a` is a claim about this SDK and expires when
-that changes. **This wave is the argument for the distinction:** REG-6 and REG-7 were
-filed `n/a (synchronous)` in wave 1 and are now `implemented`, because adding REG-2's
-debounce introduced the timer thread whose absence was the whole basis of the claim.
-Had they been collapsed into the profile bucket, two rules would have gone from
-vacuously-satisfied to silently-unmet with nothing pointing at them.
+The architecture-`n/a` bucket is empty and the fact is worth keeping, not deleting. It
+held three rules across the program's waves and every one of them left it by becoming
+**live**, not by staying true:
+
+* REG-6 and REG-7 exited when REG-2's debounce added a timer thread — the "async twin"
+  their expiry condition named, arriving through a side door.
+* GATE-2 exited when review showed that a *failed* capability resolution is exactly the
+  unknown the rule is about, so the row had never been vacuous at all.
+
+Three for three. An architecture `n/a` is a claim about this SDK that expires when the
+SDK changes, and on the evidence here it expires more often than it holds — which is the
+argument for keeping it separate from the profile bucket, where nothing would have been
+pointing at any of them.
 
 ## Status
 
 | Rule | Status | Evidence | Test |
 |---|---|---|---|
 | GATE-1 | implemented | live | `test_gating` write-key-not-enabled + ip_write-enabled pair (the discriminating vector: `key_type` and `write_enabled` disagree) · `test_integration` all three live key types · mutation: branching on `key_type` reddens 7 tests |
-| GATE-2 | n/a (decision resolved at the send site) | n/a | **Reasoning replaced this wave.** No longer "nothing runs concurrently" — REG-2's debounce added a timer thread. It is that the write decision is still resolved *synchronously inside the flush*, so no window exists in which the decision is unknown while a phrase waits on it. Expires if capability is ever resolved ahead of the send or off-thread. Stated next to the code in `client.py`'s concurrency note |
+| GATE-2 | implemented | mock | **No longer `n/a` — the row was wrong twice and this is the correction.** Wave 1 filed it `n/a (synchronous)`; wave 2 re-argued it as "the decision resolves synchronously inside the flush, so no window exists in which it is unknown". Review punctured that: a resolution that **fails** is unknown, and this SDK collapsed it to `False` and discarded the whole queue on a transient authorize blip — with the reason string misdiagnosing it as `not-write-enabled`, and no backoff, so recovery never resent it. `_resolve_write_enabled` now returns True/False/**None** and the flush **holds** on None: queue retained, backoff armed, honest reason. `test_registration_lane` GATE-2 block — held on unknown, still discarded on a server *no* (the half that makes this more than "never discard"), reason not misdiagnosed, survives to the recovering flush, `ip_write` protected specifically, `can_write` still refuses on unknown, explicit registration names ignorance rather than denial |
 | GATE-3 | implemented | live | `test_gating` decision-not-latched-in-memory (`Project.raw`) + address-dependent-not-inherited-from-warm-store · `test_integration` GATE-4 cache read-back |
 | GATE-1 (precedence) | implemented | mock | `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()` reddens a named test. **Correction:** an earlier revision of this file claimed the absent-flag-records-as-`False` mutation also did. It did not — under it all three original precedence tests passed, and the suite caught the mutant only incidentally, through a GRANT test erroring. The fourth test (`never_strips_a_real_yes`) was added to close that and *does* redden by name |
 | GATE-4 | implemented | live | `test_gating` stripped-before-anything-is-cached (asserts `key_type` survives, `write_enabled` does not) · mutation: caching the decision reddens 3 tests |
@@ -136,7 +159,7 @@ vacuously-satisfied to silently-unmet with nothing pointing at them.
 | WIRE-5 | implemented | n/a (pure) | Constructor `api_url` plus `LANGSYS_API_URL`; findable and redirectable to a double |
 | CONF-1 | partial | — | The live rows assert on server acceptance and on values read back from a real instance. The mocked rows do not meet the bar and are graded accordingly rather than relabelled |
 | CONF-2 | implemented | — | Grading adopted; every row carries a tier. No row claims `contract` — the shared fixture does not exist |
-| CONF-3 | partial | — | Four mutations recorded and re-run this session (GATE-1, GATE-4, WIRE-4, ICU-5); each reddens named tests. Not yet systematic across every rule |
+| CONF-3 | partial | — | Mutations recorded per rule across three waves — GATE-1, GATE-4, WIRE-4, ICU-5, CID-3 ×2, precedence ×2, byte-hash port, REG-2, REG-3, REG-6, REG-7, REG-8 ×2, REG-11 ×2, GATE-2, and the debounce re-arm — each verified to redden a **named** test, not merely to redden the suite. Still not systematic across every rule, and the `n/a` rows have nothing to mutate |
 
 ---
 

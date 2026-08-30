@@ -58,6 +58,15 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
 - **REG-6 / REG-7** — adding the debounce introduced a second thread, so the send now
   snapshots its batch and removes only what it sent (a miss recorded mid-send is no longer
   dropped), and only one send runs at a time.
+- **GATE-2** — a failure to reach the API while checking write capability is now treated
+  as **unknown** rather than as "not write-enabled". Previously a transient blip during
+  that check discarded every queued phrase permanently, reported the cause as a
+  permissions problem, and armed no retry. The queue is now held and retried with backoff.
+  An `ip_write` session, which re-checks on every flush, was the most exposed.
+- A phrase discovered while a send was already in flight could be left queued with nothing
+  scheduled to send it, until an unrelated discovery or process exit.
+- `pending_phrases` / `pending_content_blocks` are safe to read while a background send
+  mutates the queue.
 
 Initial release of the Python base SDK.
 

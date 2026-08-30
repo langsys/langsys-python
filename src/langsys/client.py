@@ -165,12 +165,13 @@ class LangsysClient:
     #     across a slow POST, so a render on the caller's thread overlaps it. `_lock`
     #     guards queue mutation; `_sending` guarantees one send at a time; the batch is
     #     snapshotted by key and only the sent keys are removed afterwards.
-    #   * GATE-2 remains `n/a`, but for a NEW reason. It is no longer "nothing runs
-    #     concurrently"; it is that the write decision is still resolved *synchronously
-    #     at the send site*, inside the flush, so there is no window in which the
-    #     decision is unknown while a phrase is waiting on it. If a future change
-    #     resolves capability ahead of the send, or off-thread, that reasoning expires
-    #     and GATE-2 becomes live.
+    #   * GATE-2 is LIVE and implemented — it is no longer `n/a` at all. An earlier
+    #     revision argued it stayed vacuous because the decision resolves synchronously
+    #     inside the flush, so "no window exists in which the decision is unknown".
+    #     That was wrong, and review caught it: a resolution that FAILS is unknown, and
+    #     collapsing that to False is the letter of what GATE-2 forbids. It cost the
+    #     whole queue on a transient authorize blip. `_resolve_write_enabled` now
+    #     returns True / False / None, and the flush HOLDS on None.
     #
     # Anything that adds a second concurrent path here must re-check all three.
 
@@ -298,7 +299,7 @@ class LangsysClient:
     def key_type(self) -> KeyType:
         return self.authorize().key_type
 
-    def _resolve_write_enabled(self) -> bool:
+    def _resolve_write_enabled(self) -> Optional[bool]:
         """GATE-1 — the server decides, per response, whether this session may write.
 
         Resolved fresh at the **send site** and returned, never stored: capability is
@@ -333,7 +334,7 @@ class LangsysClient:
             # the flag if the server sends one at all.
             data = self._live_authorize_payload()
             if data is None:
-                return False
+                return None
             return self._decide(data, allow_fallback=True)
 
         key_type = warm.get("key_type")
@@ -342,7 +343,7 @@ class LangsysClient:
             # question, so pay the round-trip.
             data = self._live_authorize_payload()
             if data is None:
-                return False
+                return None
             return self._decide(data, allow_fallback=False)
 
         # Plain read/write on a warm cache. The payload lacks the flag by construction
@@ -409,8 +410,14 @@ class LangsysClient:
 
     @property
     def can_write(self) -> bool:
-        """Whether this session may write, resolved now. Not cached — see GATE-3."""
-        return self._resolve_write_enabled()
+        """Whether this session may write, resolved now. Not cached — see GATE-3.
+
+        Collapses *unknown* to ``False``: never infer permission from a failure to ask.
+        Callers that must distinguish "the server said no" from "we could not reach the
+        server" — the flush lane does, because only the first justifies discarding a
+        queue — use :meth:`_resolve_write_enabled` and handle ``None``.
+        """
+        return self._resolve_write_enabled() is True
 
     # -- locale ---------------------------------------------------------------
 
@@ -604,20 +611,23 @@ class LangsysClient:
 
     @property
     def has_pending(self) -> bool:
-        return bool(self._pending or self._pending_blocks)
+        with self._lock:
+            return bool(self._pending or self._pending_blocks)
 
     @property
     def pending_phrases(self) -> list[dict[str, str]]:
         """Phrases seen during rendering that aren't registered yet."""
-        return [
-            {"phrase": phrase, "category": category}
-            for (category, phrase) in self._pending
-        ]
+        with self._lock:
+            return [
+                {"phrase": phrase, "category": category}
+                for (category, phrase) in self._pending
+            ]
 
     @property
     def pending_content_blocks(self) -> list[dict[str, Any]]:
         """Content blocks seen during rendering that aren't registered yet."""
-        return list(self._pending_blocks.values())
+        with self._lock:
+            return list(self._pending_blocks.values())
 
     def clear_pending(self) -> None:
         with self._lock:
@@ -632,6 +642,22 @@ class LangsysClient:
         happen**, a skipped write included. A caller that checks ``success`` is
         entitled to believe it.
         """
+        try:
+            return self._flush_outer(force=force)
+        finally:
+            # REG-2 — a flush that ends with work still queued MUST re-arm the timer.
+            # Every path cancels it on the way in, so without this the tail of a burst
+            # that arrived during a slow POST — or anything a *declining* flush left
+            # behind — waits for an unrelated miss or process exit. That is the debounce
+            # quietly ceasing to be a send path in exactly the case it exists for.
+            #
+            # In the outermost `finally` on purpose: an earlier revision put it inside
+            # the send-lock's try, which the decline path returns before ever reaching,
+            # so the one case this was written for was the one it missed.
+            if self.has_pending:
+                self._schedule_flush()
+
+    def _flush_outer(self, *, force: bool) -> dict[str, Any]:
         self._cancel_timer()
         if not self.has_pending:
             return {"phrases": 0, "content_blocks": 0, "success": True}
@@ -662,7 +688,6 @@ class LangsysClient:
         # request per interval against a payload that only grows.
         remaining = self._backoff_until - time.monotonic()
         if remaining > 0 and not force:
-            self._schedule_flush()
             return {
                 "phrases": 0,
                 "content_blocks": 0,
@@ -674,9 +699,37 @@ class LangsysClient:
                 "queued_content_blocks": len(self._pending_blocks),
             }
 
-        # GATE-2 — collect always, choose the lane at the send site. Resolved here,
-        # once per flush, and never stored.
-        if not self._resolve_write_enabled():
+        # GATE-2 — collect always, choose the lane at the send site; model the answer
+        # as true / false / **unknown**, and HOLD on unknown.
+        #
+        # The distinction is the whole rule. Discarding a queue the server has just
+        # told us we may not write is correct. Discarding it because we could not ASK
+        # loses every phrase permanently, on a transient blip, with nothing logged that
+        # names the real cause — the exact class of loss this spec exists to remove.
+        # An `ip_write` session pays a live authorize on every flush, so without this
+        # any network wobble discards everything.
+        decision = self._resolve_write_enabled()
+        if decision is None:
+            delay = self._note_failure()
+            logger.warning(
+                "langsys: could not determine write capability; keeping %d phrase(s) and "
+                "%d content block(s) queued and retrying in %.0fs.",
+                len(self._pending),
+                len(self._pending_blocks),
+                delay,
+            )
+            return {
+                "phrases": 0,
+                "content_blocks": 0,
+                "success": False,
+                "skipped": True,
+                "reason": "capability-unknown",
+                "retry_in_seconds": round(delay, 3),
+                "queued_phrases": len(self._pending),
+                "queued_content_blocks": len(self._pending_blocks),
+            }
+
+        if decision is False:
             phrase_count, block_count = len(self._pending), len(self._pending_blocks)
             logger.warning(
                 "langsys: this session is not write-enabled; discarding %d phrase(s) and "
@@ -811,7 +864,7 @@ class LangsysClient:
                 new_items.append(phrase)
 
         synced = False
-        if new_items and self._resolve_write_enabled():
+        if new_items and self._resolve_write_enabled() is True:
             self._reg.register_phrases(new_items)
             self._catalog.clear(loc)
             self._catalog.get(loc, use_cache=False)
@@ -823,10 +876,25 @@ class LangsysClient:
         }
 
     def _require_write(self) -> None:
-        if not self.can_write:
-            raise AuthorizationError(
-                "Langsys: a write key is required to register phrases.", status_code=403
+        """Gate an explicit registration call, distinguishing denial from ignorance.
+
+        Both refuse, but a caller debugging "why did nothing register" is served very
+        differently by "the server says this session may not write" and "we could not
+        reach the server to ask".
+        """
+        decision = self._resolve_write_enabled()
+        if decision is True:
+            return
+        if decision is None:
+            raise NetworkError(
+                "Langsys: could not reach the API to determine write capability, so "
+                "registration was not attempted. Nothing was lost; retry."
             )
+        raise AuthorizationError(
+            "Langsys: this session is not write-enabled, so phrases cannot be "
+            "registered.",
+            status_code=403,
+        )
 
     @property
     def _reg(self) -> Registrar:
