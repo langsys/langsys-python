@@ -8,7 +8,7 @@
 | **Spec revision read** | langsys2 `origin/main` `fabe22b2a54a` · `docs/sdk-spec.mdx` blob `06ae105a0a1f` · fetched 2026-08-29T18:28:11Z |
 | **SDK revision** | `feature/838_write_key_gating`, cut from `origin/main` `bc5ca62` |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 266 tests in 15 files — 251 unit + 15 live (`pytest`, `pytest -m integration`) |
+| **Suite** | 270 tests in 15 files — 255 unit + 15 live (`pytest`, `pytest -m integration`) |
 | **Binding rules** | **41 of 67** (`all` + `server`, after the GRANT ruling) |
 
 **Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
@@ -65,6 +65,24 @@ CONF-2's own open item, which it says gates every claim in all 13 repos.
 
 ---
 
+## Summary
+
+Counted from the table below, not asserted beside it. 67 rules, every one accounted for.
+
+| Status | Count | |
+|---|---|---|
+| `implemented` | 30 | |
+| `partial` | 7 | GATE-6, GATE-7, REG-2, REG-3, REG-8, CONF-1, CONF-3 |
+| `not implemented` | 1 | REG-11 |
+| `n/a (synchronous)` | 3 | GATE-2, REG-6, REG-7 — **binding rules**, satisfied vacuously by this SDK being sync. Perishable: an async twin makes all three live |
+| `n/a (profile)` | 26 | browser/binding rules that do not apply to a server core |
+| **total** | **67** | of which **41 bind** (`all` + `server`) |
+
+The two `n/a` kinds are kept apart deliberately. A profile `n/a` is a claim about the
+rule's Profiles line; a synchronous `n/a` is a claim about *this SDK's architecture*,
+and it expires the moment that changes. Collapsing them hides three rules that are one
+refactor from being unmet.
+
 ## Status
 
 | Rule | Status | Evidence | Test |
@@ -72,7 +90,7 @@ CONF-2's own open item, which it says gates every claim in all 13 repos.
 | GATE-1 | implemented | live | `test_gating` write-key-not-enabled + ip_write-enabled pair (the discriminating vector: `key_type` and `write_enabled` disagree) · `test_integration` all three live key types · mutation: branching on `key_type` reddens 7 tests |
 | GATE-2 | n/a (synchronous) | n/a | Sync `httpx.Client`; no unknown window. **Perishable** — `http.py` documents an async twin for phase 3; all three `n/a (synchronous)` rows become live the day it lands |
 | GATE-3 | implemented | live | `test_gating` decision-not-latched-in-memory (`Project.raw`) + address-dependent-not-inherited-from-warm-store · `test_integration` GATE-4 cache read-back |
-| GATE-1 (precedence) | implemented | mock | `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()`, and letting an absent flag record as `False`, each redden a named test |
+| GATE-1 (precedence) | implemented | mock | `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()` reddens a named test. **Correction:** an earlier revision of this file claimed the absent-flag-records-as-`False` mutation also did. It did not — under it all three original precedence tests passed, and the suite caught the mutant only incidentally, through a GRANT test erroring. The fourth test (`never_strips_a_real_yes`) was added to close that and *does* redden by name |
 | GATE-4 | implemented | live | `test_gating` stripped-before-anything-is-cached (asserts `key_type` survives, `write_enabled` does not) · mutation: caching the decision reddens 3 tests |
 | GATE-5 | implemented | mock | `test_gating` failed-registration-keeps-the-queue · clears-only-after-acceptance · no-persistent-marker-is-written. Structurally unreachable here: this SDK has no "already registered" store at all |
 | GATE-6 | partial | mock | Register half gated and tested. Report half is **vacuous** — no report lane exists (HINT-2), so it cannot fail. Recorded partial rather than green |
@@ -107,7 +125,7 @@ CONF-2's own open item, which it says gates every claim in all 13 repos.
 | BIND-1–6 | n/a (profile: binding) | n/a | This is a core. Django/FastAPI wrappers will carry these |
 | GRANT-1–4 | n/a (profile: browser) | live | Per the Reviewer ruling the families table governs over the four `Profiles: all` lines. Posture is **affirmative non-participation**: `test_gating` and `test_integration` assert `X-Write-Grant` is never sent, with a failure message naming the removal condition |
 | CACHE-1 | implemented | mock | `test_gating` — every key carries the project id; the catalog key carries the locale. PHP's unnamespaced `registered_items_<category>` has no analogue: that key does not exist here |
-| OBS-1 | implemented | mock | One warning per process when a write-capable key type resolves to not-write-enabled, on the resolved decision rather than the key type |
+| OBS-1 | implemented | mock | One warning per client session when a write-capable key type resolves to not-write-enabled, keyed on the resolved decision rather than the key type. Re-armed by `reset_write_decision()`, so a new request boundary can surface a still-broken integration rather than staying silent for the process lifetime |
 | WIRE-1 | implemented | n/a (pure) | `X-Authorization`, raw key, no `Bearer`; plus `X-Langsys-Capabilities: icu` |
 | WIRE-2 | implemented | n/a (pure) | Unparseable/empty body becomes `{}` rather than raising |
 | WIRE-3 | implemented | live | `test_gating` lowercase-on-the-wire + casing-variants-are-one-cache-entry + sentinel-never-sent · `test_integration` `es-ES` and `es-es` resolve identically on the deprecated route |
@@ -239,6 +257,30 @@ silently became a byte hash passes every ASCII row and fails there.
    fixture, not Python-blocked.
 6. **CONF-3 — mutation coverage is not systematic.** Four rules have recorded mutations;
    the rest rest on tests that have not been shown to be able to fail.
+
+## Declared obligation — framework wrappers must reset at request boundaries
+
+GATE-3 requires the write decision not to survive a single request, and says explicitly
+that runtimes whose object graph outlives the request MUST reset it rather than rely on
+process death. A `LangsysClient` held as a module-level singleton, a Django app config,
+or a FastAPI dependency behind `lru_cache` is exactly that shape.
+
+The core provides the seam — **`reset_write_decision()`** — and cannot call it itself,
+because a library has no request lifecycle of its own. **The obligation is therefore
+declared here and addressed to the Django/FastAPI wrapper wave:** each wrapper MUST call
+it at the request boundary (Django `request_finished`, FastAPI middleware / dependency
+teardown) and record that it does in its own conformance file.
+
+A short-lived script, worker or CLI that builds a client per run needs no reset — there
+the process *is* the boundary. The hazard is specifically the long-lived server, and it
+fails in both directions: one allow-listed request would write-enable every anonymous
+visitor on the host, and one anonymous request would make the allow-listed origin
+silently register nothing.
+
+Tested here: `test_gating` reset-clears-an-observed-answer, reset-does-not-disturb-
+cached-metadata (a reset that dropped `key_type` would make every boundary a
+round-trip), and reset-rearms-the-OBS-1-notice. Mutation: making the reset a no-op
+reddens two.
 
 ## Known trade-off, recorded rather than discovered
 

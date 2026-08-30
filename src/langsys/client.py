@@ -90,7 +90,8 @@ class LangsysClient:
             self._locale_source = self._owned_locale
 
         self._project: Optional[Project] = None
-        #: OBS-1 is once per process, not once per miss.
+        #: OBS-1 fires once per client session, not once per miss; a request-boundary
+        #: reset re-arms it. See reset_write_decision().
         self._warned_unusable = False
         #: The most recently *observed* server answer, as ``(stamp, value)``.
         #: Precedence is by **recency, never by source** — see :meth:`_observe_decision`.
@@ -159,6 +160,26 @@ class LangsysClient:
             return
         self._decision_stamp += 1
         self._observed_decision = (self._decision_stamp, value)
+
+    def reset_write_decision(self) -> None:
+        """Forget the observed write decision. **Call this at every request boundary.**
+
+        GATE-3 — the decision must not survive a single request. A client held for the
+        life of a process (a module-level singleton, a Django app config, a FastAPI
+        dependency with ``lru_cache``) outlives the request by construction, so
+        instance state documented as "request-scoped" is not, and process death is not
+        a boundary. The same shape as PHP under Octane/Swoole/RoadRunner.
+
+        Capability is address-dependent, and it fails in **both** directions: one
+        allow-listed request would otherwise write-enable every anonymous visitor on
+        the host, and one anonymous request would make the allow-listed origin
+        silently register nothing.
+
+        A framework wrapper owns calling this — see ``CONFORMANCE.md``. A short-lived
+        script or worker that builds a client per run needs no reset.
+        """
+        self._observed_decision = None
+        self._warned_unusable = False
 
     def _warm_authorize_payload(self) -> Optional[dict[str, Any]]:
         """Already-known project metadata, if any. Never carries ``write_enabled``."""
@@ -278,8 +299,9 @@ class LangsysClient:
         return False
 
     def _notice_unusable_capability(self, write_enabled: bool, key_type: Any) -> None:
-        """OBS-1 — a misconfigured integration is otherwise completely silent: no
-        request, no error, nothing in the catalog. One line, once per process."""
+        """OBS-1 — a misconfigured integration is otherwise completely
+        silent: no request, no error, nothing in the catalog. One line, once per client
+        session — re-armed at a request boundary by reset_write_decision()."""
         if write_enabled or key_type not in ("write", "ip_write"):
             return
         if self._warned_unusable:

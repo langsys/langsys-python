@@ -497,3 +497,79 @@ def test_PRECEDENCE_an_absent_envelope_flag_never_displaces_a_real_answer(httpx_
     httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
     client.get_translations("fr-fr")
     assert client.can_write is False, "an absent flag overwrote a real observed answer"
+
+
+def test_PRECEDENCE_an_absent_flag_never_strips_a_real_yes(httpx_mock):
+    """The mirror of the test above, and the direction that one cannot see.
+
+    "Absent must not displace a real answer" has two ways of being unsatisfied, and the
+    first test only covers one: its real answer is already `False`, so a mutation that
+    records absence *as* `False` displaces nothing visible. This is the fail-CLOSED
+    direction — a regression silently stripping write capability from a healthy
+    session, which registers nothing and logs nothing.
+
+    Built so the observed answer is the only thing holding the result up: the warm
+    cache carries a READ key, so the key_type fallback would say False, and a valid
+    write grant on a read key is exactly the shape GATE-1 exists for."""
+    cache = MemoryCache()
+    httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False))
+    client = make(cache=cache)
+    client.authorize()
+
+    httpx_mock.add_response(
+        url=TRANS, json={"status": True, "write_enabled": True, "data": {}}
+    )
+    client.get_translations("es-es")
+    assert client.can_write is True  # control: the observed yes stands over key_type
+
+    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
+    client.get_translations("fr-fr")
+    assert client.can_write is True, "an absent flag stripped a real write capability"
+
+
+# -- GATE-3: the request-boundary reset seam ---------------------------------
+
+
+def test_GATE3_reset_write_decision_clears_an_observed_answer(httpx_mock):
+    """A long-lived client outlives the request by construction, so the observed
+    decision needs an explicit boundary. Without this seam a framework wrapper has no
+    way to comply with GATE-3 at all."""
+    cache = MemoryCache()
+    httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False))
+    client = make(cache=cache)
+    client.authorize()
+
+    httpx_mock.add_response(
+        url=TRANS, json={"status": True, "write_enabled": True, "data": {}}
+    )
+    client.get_translations("es-es")
+    assert client.can_write is True  # control: an answer is being held
+
+    client.reset_write_decision()
+    # Nothing observed any more, so the warm read-key fallback decides — no round-trip.
+    assert client.can_write is False, "the decision survived the request boundary"
+
+
+def test_GATE3_reset_does_not_disturb_cached_project_metadata(httpx_mock):
+    """`key_type` is a property of the key and may be cached; only the decision resets.
+    A reset that dropped metadata would turn every request boundary into a round-trip."""
+    cache = MemoryCache()
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True))
+    client = make(cache=cache)
+    client.authorize()
+    client.reset_write_decision()
+    # No further AUTH response is registered: needing one would raise here.
+    assert client.project.key_type == "write"
+    assert client.project.batch_limit == 200
+
+
+def test_GATE3_reset_rearms_the_obs1_notice(httpx_mock):
+    """OBS-1 is once per process for a stable misconfiguration, but a reset boundary
+    starts a new session — the operator should hear about it again."""
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False), is_reusable=True)
+    client = make()
+    assert client._warned_unusable is False
+    assert client.can_write is False  # resolving is what arms the notice
+    assert client._warned_unusable is True
+    client.reset_write_decision()
+    assert client._warned_unusable is False
