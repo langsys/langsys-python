@@ -24,7 +24,8 @@ TRANS = re.compile(r"https://api\.test/api/translations")
 
 def make(cache=None, **kw):
     return LangsysClient(
-        "k", "proj-1", api_url=API, cache=cache or MemoryCache(), base_locale="en-us", **kw
+        "k", "proj-1", api_url=API, cache=cache or MemoryCache(), base_locale="en-us",
+        debounce=0, auto_flush=False, **kw
     )
 
 

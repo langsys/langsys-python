@@ -236,7 +236,8 @@ def test_CID4_a_block_stored_under_a_legacy_id_still_resolves(httpx_mock):
         is_reusable=True,
     )
     client = LangsysClient(
-        "k", "p", api_url="https://api.test/api", cache=MemoryCache(), base_locale="en-us"
+        "k", "p", api_url="https://api.test/api", cache=MemoryCache(), base_locale="en-us",
+        debounce=0, auto_flush=False,
     )
     out = client.translate_content_block(html, category="CAT")
     assert "Hola" in out and "Segunda" in out
@@ -263,7 +264,8 @@ def test_CID4_a_legacy_id_whose_content_differs_is_declined(httpx_mock):
         is_reusable=True,
     )
     client = LangsysClient(
-        "k", "p", api_url="https://api.test/api", cache=MemoryCache(), base_locale="en-us"
+        "k", "p", api_url="https://api.test/api", cache=MemoryCache(), base_locale="en-us",
+        debounce=0, auto_flush=False,
     )
     out = client.translate_content_block(html, category="CAT")
     assert "Otro" not in out and "Distinto" not in out

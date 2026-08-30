@@ -5,10 +5,10 @@
 | **SDK** | `langsys-python` (server core) |
 | **Profiles** | `all`, `server` |
 | **specVersion** | 7 |
-| **Spec revision read** | langsys2 `origin/main` `fabe22b2a54a` · `docs/sdk-spec.mdx` blob `06ae105a0a1f` · fetched 2026-08-29T18:28:11Z |
+| **Spec revision read** | langsys2 `docs/sdk-spec.mdx` blob `06ae105a0a1f` — read at `origin/main` `fabe22b2a54a` (2026-08-29T18:28:11Z) and re-read at `origin/main` `7bee50d63e78` (2026-08-30T04:22:01Z). **The blob is unchanged across both**, so every row below is filed against the same spec text |
 | **SDK revision** | `feature/838_write_key_gating`, cut from `origin/main` `bc5ca62` |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 270 tests in 15 files — 255 unit + 15 live (`pytest`, `pytest -m integration`) |
+| **Suite** | 296 tests in 16 files — 281 unit + 15 live (`pytest`, `pytest -m integration`) |
 | **Binding rules** | **41 of 67** (`all` + `server`, after the GRANT ruling) |
 
 **Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
@@ -71,24 +71,27 @@ Counted from the table below, not asserted beside it. 67 rules, every one accoun
 
 | Status | Count | |
 |---|---|---|
-| `implemented` | 30 | |
-| `partial` | 7 | GATE-6, GATE-7, REG-2, REG-3, REG-8, CONF-1, CONF-3 |
-| `not implemented` | 1 | REG-11 |
-| `n/a (synchronous)` | 3 | GATE-2, REG-6, REG-7 — **binding rules**, satisfied vacuously by this SDK being sync. Perishable: an async twin makes all three live |
-| `n/a (profile)` | 26 | browser/binding rules that do not apply to a server core |
+| `implemented` | 36 | |
+| `partial` | 4 | GATE-6, GATE-7 (report direction is profile-vacuous), CONF-1, CONF-3 |
+| `not implemented` | 0 | |
+| `n/a` (architecture) | 1 | GATE-2 — a claim about **this SDK**, not about the rule, and its reasoning was replaced this wave |
+| `n/a` (profile) | 26 | browser/binding rules that do not apply to a server core |
 | **total** | **67** | of which **41 bind** (`all` + `server`) |
 
 The two `n/a` kinds are kept apart deliberately. A profile `n/a` is a claim about the
-rule's Profiles line; a synchronous `n/a` is a claim about *this SDK's architecture*,
-and it expires the moment that changes. Collapsing them hides three rules that are one
-refactor from being unmet.
+rule's Profiles line; an architecture `n/a` is a claim about this SDK and expires when
+that changes. **This wave is the argument for the distinction:** REG-6 and REG-7 were
+filed `n/a (synchronous)` in wave 1 and are now `implemented`, because adding REG-2's
+debounce introduced the timer thread whose absence was the whole basis of the claim.
+Had they been collapsed into the profile bucket, two rules would have gone from
+vacuously-satisfied to silently-unmet with nothing pointing at them.
 
 ## Status
 
 | Rule | Status | Evidence | Test |
 |---|---|---|---|
 | GATE-1 | implemented | live | `test_gating` write-key-not-enabled + ip_write-enabled pair (the discriminating vector: `key_type` and `write_enabled` disagree) · `test_integration` all three live key types · mutation: branching on `key_type` reddens 7 tests |
-| GATE-2 | n/a (synchronous) | n/a | Sync `httpx.Client`; no unknown window. **Perishable** — `http.py` documents an async twin for phase 3; all three `n/a (synchronous)` rows become live the day it lands |
+| GATE-2 | n/a (decision resolved at the send site) | n/a | **Reasoning replaced this wave.** No longer "nothing runs concurrently" — REG-2's debounce added a timer thread. It is that the write decision is still resolved *synchronously inside the flush*, so no window exists in which the decision is unknown while a phrase waits on it. Expires if capability is ever resolved ahead of the send or off-thread. Stated next to the code in `client.py`'s concurrency note |
 | GATE-3 | implemented | live | `test_gating` decision-not-latched-in-memory (`Project.raw`) + address-dependent-not-inherited-from-warm-store · `test_integration` GATE-4 cache read-back |
 | GATE-1 (precedence) | implemented | mock | `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()` reddens a named test. **Correction:** an earlier revision of this file claimed the absent-flag-records-as-`False` mutation also did. It did not — under it all three original precedence tests passed, and the suite caught the mutant only incidentally, through a GRANT test erroring. The fourth test (`never_strips_a_real_yes`) was added to close that and *does* redden by name |
 | GATE-4 | implemented | live | `test_gating` stripped-before-anything-is-cached (asserts `key_type` survives, `write_enabled` does not) · mutation: caching the decision reddens 3 tests |
@@ -100,14 +103,14 @@ refactor from being unmet.
 | CAT-2 | implemented | n/a (pure) | `test_translate` — presence decides registration, value decides display |
 | CAT-3 | implemented | n/a (pure) | `test_translate` — a registered block is an object, not a null |
 | REG-1 | implemented | live | Gated on the resolved decision, not the key type — see GATE-1 |
-| REG-2 | partial | none | No fixed-interval poll exists (the failure the rule names), but no debounce either: flushing is explicit or `atexit`. A server core has no render loop to debounce against |
-| REG-3 | partial | mock | `atexit` teardown flush exists and correctly never raises, but is **off by default** (`auto_flush=False`) |
-| REG-6 | n/a (synchronous) | n/a | No await window. Perishable — see GATE-2 |
-| REG-7 | n/a (synchronous) | n/a | No concurrent sends. Perishable — see GATE-2 |
-| REG-8 | partial | mock | Failed sends stay queued and the failure is reported honestly (`test_gating`), but there is **no exponential backoff**. See gaps |
+| REG-2 | implemented | mock | `test_registration_lane` — a five-miss burst coalesces into **one** POST; the debounce is a real send path with no explicit flush anywhere in the test; an explicit flush still sends immediately and cancels the timer. Control: with the debounce off nothing sends by itself. Mutation: dropping the scheduling reddens both |
+| REG-3 | implemented | mock | The end-of-context flush is now **on by default** — opt-in was the shipping bug the rule names. The public manual flush is retained and required, because the automatic path is best-effort: a shutdown hook does not run on an OOM kill or hard timeout. `test_registration_lane` — registered by default, forces past an active backoff (last attempt, not a retry loop), never raises. Mutation: not forcing reddens the named test |
+| REG-6 | implemented | mock | **No longer `n/a`.** REG-2's debounce added a timer thread, so the send now releases the lock across a slow POST. The batch is snapshotted **by key** and only the sent keys are removed, so a miss recorded mid-send survives. Mutation: restoring `clear_pending()` reddens the named test |
+| REG-7 | implemented | mock | **No longer `n/a`**, same cause as REG-6. One send in flight, guarded before any costly work so a declining flush does not pay an authorize round-trip. A second flush arriving mid-send declines and keeps its queue. Mutation: disabling the guard reddens both named tests |
+| REG-8 | implemented | mock | 3s → doubling → 300s ceiling, reset on first success (not gradually). `test_registration_lane` — while backing off **nothing is sent** while the queue keeps growing; the debounce reschedules past the backoff rather than waking into it. Mutations: no backoff, and a decaying reset, each redden named tests |
 | REG-9 | implemented | mock | `test_gating` five-blocks-one-POST + batch-limit-comes-from-the-server (`[2,2,1]` at a server limit of 2) |
 | REG-10 | implemented | live | `test_gating` skipped-write-is-not-success + failure-does-not-throw · `test_integration` read-key flush reports `success: False` |
-| REG-11 | **not implemented** | none | No ellipsis warning. See gaps |
+| REG-11 | implemented | mock | Warns on `…` and `...`, naming the phrase, deduped per phrase. Suppresses **only** on the second signal — a longer catalog entry sharing the prefix — so `Loading…` still registers and a truncated paragraph does not. Mutations: blanket-skip and never-suppress each redden the opposite named tests |
 | REG-12 | implemented | n/a (pure) | Structural, not string-shaped: object-ness decides. No 32-hex guard exists |
 | REG-4, REG-5 | n/a (profile: browser) | n/a | No page teardown exists |
 | HINT-2 | implemented | n/a (pure) | **No report lane exists.** Falsifiable and genuinely green — this SDK has a write lane it could have hung reporting off |
@@ -241,22 +244,19 @@ silently became a byte hash passes every ASCII row and fails there.
 
 ## Gaps, ranked by cost
 
-1. **REG-8 — no exponential backoff.** Failed sends stay queued and are reported
-   honestly, but a failing server is retried at whatever rate the host flushes. The
-   cost is amplifying an outage rather than causing one, which is why it leads a short
-   list rather than a long one.
-2. **REG-11 — no ellipsis warning.** Truncated source text registers silently as a
-   phrase, and the customer's catalog fills with fragments nobody can translate.
-3. **REG-2/REG-3 — flushing is explicit or `atexit`, and `auto_flush` is off by
-   default.** A host that never calls `flush_pending()` discovers nothing. Defensible
-   for a library with no request lifecycle of its own, but it means the default
-   configuration registers nothing.
-4. **GATE-6/GATE-7 are half-vacuous.** The report direction cannot fail on a server
-   profile, so those rows carry less signal than their status suggests.
-5. **CONF-1/CONF-2 — most rows are `mock`.** Fleet-blocked on the shared contract
-   fixture, not Python-blocked.
-6. **CONF-3 — mutation coverage is not systematic.** Four rules have recorded mutations;
-   the rest rest on tests that have not been shown to be able to fail.
+Ranked by what the gap costs, not by rule order. Wave 2 closed every implementable
+Python-side gap; what remains is E2E-dependent or lives in another repo.
+
+1. **CONF-1 / CONF-2 / CONF-3 — evidence, not behaviour.** Most rows are `mock`-tier,
+   which CONF-2 says does not count, and the shared stateful contract fixture that would
+   let them count does not exist. Fleet-blocked, not Python-blocked. Mutation coverage
+   (CONF-3) is now broad but still not systematic across every rule.
+2. **GATE-6 / GATE-7 — half-vacuous by profile.** Their report direction cannot fail on a
+   server core, so those rows carry less signal than their status suggests. Filed
+   `partial` rather than green for exactly that reason.
+3. **The Django/FastAPI wrapper obligations** — `reset_write_decision()` at request
+   boundaries (GATE-3) and a request-end flush (REG-3). Declared below; neither can be
+   discharged from this repo.
 
 ## Declared obligation — framework wrappers must reset at request boundaries
 
@@ -270,6 +270,15 @@ because a library has no request lifecycle of its own. **The obligation is there
 declared here and addressed to the Django/FastAPI wrapper wave:** each wrapper MUST call
 it at the request boundary (Django `request_finished`, FastAPI middleware / dependency
 teardown) and record that it does in its own conformance file.
+
+**A second obligation joins it this wave, from REG-3.** The end-of-context flush is now
+on by default, but on the server profile the automatic path is explicitly best-effort:
+an `atexit` hook does not run on an OOM kill or a hard timeout, and unlike a browser
+there is no later page in the same session to recover on. A wrapper MUST therefore also
+**flush at the end of each request** rather than relying on process shutdown — the same
+hooks, and `flush_pending()` is the public seam for it. Left to `atexit` alone, a
+long-running server holds discovered phrases for its whole lifetime and loses them all
+if it is killed rather than stopped.
 
 A short-lived script, worker or CLI that builds a client per run needs no reset — there
 the process *is* the boundary. The hazard is specifically the long-lived server, and it

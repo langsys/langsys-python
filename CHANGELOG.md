@@ -41,6 +41,24 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Registration lane (wave 2).**
+
+- **REG-2** — discovered phrases now send on a short debounce (~400ms, `debounce=`), so a
+  burst from one render becomes one request instead of waiting on an explicit call.
+- **REG-3** — the end-of-context flush is on by default (`auto_flush=True`). It is
+  best-effort by nature: a shutdown hook does not run on an OOM kill or hard timeout, so
+  `flush_pending()` remains the reliable path and framework wrappers should call it at the
+  end of each request.
+- **REG-8** — failed sends back off exponentially (3s → doubling → 5min ceiling) and reset
+  on the first success. Previously a failing endpoint was retried as fast as it was asked,
+  against a queue that only grew.
+- **REG-11** — a phrase ending in `…` or `...` now warns, naming it. It is still
+  registered unless the catalog already holds a longer phrase with the same prefix, which
+  is the only signal that distinguishes upstream truncation from a legitimate `Loading…`.
+- **REG-6 / REG-7** — adding the debounce introduced a second thread, so the send now
+  snapshots its batch and removes only what it sent (a miss recorded mid-send is no longer
+  dropped), and only one send runs at a time.
+
 Initial release of the Python base SDK.
 
 ### Added

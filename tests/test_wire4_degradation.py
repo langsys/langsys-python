@@ -34,7 +34,8 @@ HTML = "<div><p>Hello there</p><p>Second line</p></div>"
 
 def make(**kw):
     return LangsysClient(
-        "k", "proj-1", api_url=API, cache=MemoryCache(), base_locale="en-us", **kw
+        "k", "proj-1", api_url=API, cache=MemoryCache(), base_locale="en-us",
+        debounce=0, auto_flush=False, **kw
     )
 
 
@@ -146,7 +147,9 @@ def test_WIRE4_an_authorize_failure_does_not_throw_from_translate(httpx_mock):
     an authorize outage reaches the render path too."""
     httpx_mock.add_exception(httpx.ConnectError("refused"), url=AUTH_URL, is_reusable=True)
     httpx_mock.add_exception(httpx.ConnectError("refused"), url=TRANS_URL, is_reusable=True)
-    client = LangsysClient("k", "proj-1", api_url=API, cache=MemoryCache())
+    client = LangsysClient(
+        "k", "proj-1", api_url=API, cache=MemoryCache(), debounce=0, auto_flush=False
+    )
     assert client.translate("Technical Support", category="CAT_3") == "Technical Support"
 
 

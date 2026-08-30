@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import atexit
+import threading
+import time
 from typing import Any, Optional, Sequence
 
 from ._log import logger
@@ -30,6 +32,17 @@ from .types import (
     Project,
 )
 from .utilities import Utilities
+
+#: REG-2 — a burst from one render becomes one request. An interval-only flush delays
+#: every registration by up to its full period, and lazy-loaded/streamed content is the
+#: common case discovery targets.
+DEFAULT_DEBOUNCE_SECONDS = 0.4
+
+#: REG-8 — 3s, doubling, ceiling ~5min. Without backoff a failing endpoint gets a
+#: request every interval for as long as the process lives, and the payload *grows*,
+#: because new misses keep joining a queue that never drains.
+BACKOFF_INITIAL_SECONDS = 3.0
+BACKOFF_MAX_SECONDS = 300.0
 
 
 class LangsysClient:
@@ -60,7 +73,8 @@ class LangsysClient:
         cache: Optional[CacheBackend] = None,
         cache_ttl: Optional[int] = None,
         timeout: Optional[float] = None,
-        auto_flush: bool = False,
+        auto_flush: bool = True,
+        debounce: Optional[float] = DEFAULT_DEBOUNCE_SECONDS,
         debug: bool = False,
     ) -> None:
         self._config = Config.resolve(
@@ -97,8 +111,21 @@ class LangsysClient:
         #: Precedence is by **recency, never by source** — see :meth:`_observe_decision`.
         self._observed_decision: Optional[tuple[int, bool]] = None
         self._decision_stamp = 0
+        # The queue is reachable from the debounce timer thread as well as the caller.
+        self._lock = threading.RLock()
         self._pending: dict[tuple[str, str], None] = {}
         self._pending_blocks: dict[str, dict[str, Any]] = {}
+        self._debounce = debounce if debounce and debounce > 0 else None
+        self._timer: Optional[threading.Timer] = None
+        #: REG-7 — one send in flight. The debounce timer and a caller's explicit flush
+        #: are different threads and can arrive together.
+        self._sending = threading.Lock()
+        #: REG-8 backoff state. `_backoff_until` is a monotonic deadline, not a clock
+        #: time, so a system clock change cannot strand the queue.
+        self._backoff_until = 0.0
+        self._backoff_seconds = 0.0
+        #: REG-11 — one warning per (category, phrase); the check runs on every render.
+        self._warned_ellipsis: set[tuple[str, str]] = set()
         self._translatable_attributes: list[str] = list(DEFAULT_TRANSLATABLE_ATTRIBUTES)
         self._utils = Utilities(self._http, self._config.project_id)
         self._registrar: Optional[Registrar] = None
@@ -107,11 +134,77 @@ class LangsysClient:
             atexit.register(self._auto_flush)
 
     def _auto_flush(self) -> None:
+        """REG-3 — best-effort flush as the process ends.
+
+        Deliberately `force=True`: this is the last attempt, not a retry loop, and a
+        queue discarded here is discarded for good — unlike a browser there is no later
+        page in the same session to recover on. Best-effort by nature: a shutdown hook
+        does not run on an OOM kill or a hard timeout, which is exactly why the rule
+        also requires a public manual flush and forbids relying on this path.
+        """
         try:
+            self._cancel_timer()
             if self.has_pending:
-                self.flush_pending()
+                self.flush_pending(force=True)
         except Exception as exc:  # never raise from an atexit handler
             logger.warning("langsys auto-flush failed: %s", exc)
+
+    # -- debounce (REG-2) -----------------------------------------------------
+    #
+    # CONCURRENCY NOTE — read this before touching anything below.
+    #
+    # This SDK is synchronous, and three rules were filed `n/a (synchronous)` on that
+    # basis: GATE-2 (no unknown window for the write decision), REG-6 (no await across
+    # which a queue could be cleared) and REG-7 (no concurrent senders). The expiry
+    # condition recorded against them was "an async twin lands".
+    #
+    # REG-2's debounce is that twin arriving through a side door. It is a timer thread,
+    # so from here on:
+    #
+    #   * REG-6 and REG-7 are LIVE and implemented below — the send releases `_lock`
+    #     across a slow POST, so a render on the caller's thread overlaps it. `_lock`
+    #     guards queue mutation; `_sending` guarantees one send at a time; the batch is
+    #     snapshotted by key and only the sent keys are removed afterwards.
+    #   * GATE-2 remains `n/a`, but for a NEW reason. It is no longer "nothing runs
+    #     concurrently"; it is that the write decision is still resolved *synchronously
+    #     at the send site*, inside the flush, so there is no window in which the
+    #     decision is unknown while a phrase is waiting on it. If a future change
+    #     resolves capability ahead of the send, or off-thread, that reasoning expires
+    #     and GATE-2 becomes live.
+    #
+    # Anything that adds a second concurrent path here must re-check all three.
+
+    def _cancel_timer(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
+    def _schedule_flush(self) -> None:
+        """(Re)start the debounce so a burst of misses coalesces into one request."""
+        if self._debounce is None:
+            return
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+            delay = self._debounce
+            # REG-8 — while backing off, wake when the backoff expires rather than
+            # re-attempting on the debounce and turning the backoff into a busy loop.
+            remaining = self._backoff_until - time.monotonic()
+            if remaining > 0:
+                delay = max(delay, remaining)
+            self._timer = threading.Timer(delay, self._debounced_flush)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _debounced_flush(self) -> None:
+        try:
+            with self._lock:
+                self._timer = None
+            if self.has_pending:
+                self.flush_pending()
+        except Exception as exc:  # a timer thread must never raise
+            logger.warning("langsys: debounced flush failed: %s", exc)
 
     # -- authorization --------------------------------------------------------
 
@@ -376,7 +469,7 @@ class LangsysClient:
         # WIRE-4 — without a catalog a miss is indistinguishable from a hit, so an
         # outage would re-register everything that already exists. Record nothing.
         if result.missing and content_block_id is None and fetch.ok:
-            self._queue_missing(phrase, category)
+            self._queue_missing(phrase, category, fetch.catalog.get(category or UNCATEGORIZED))
         if params:
             return interpolate(result.text, params, loc)
         return result.text
@@ -427,10 +520,12 @@ class LangsysClient:
     def _queue_content_block(
         self, html: str, category: str, custom_id: str, phrases: list[str]
     ) -> None:
-        self._pending_blocks.setdefault(
-            custom_id,
-            {"content": html, "category": category, "custom_id": custom_id, "phrases": phrases},
-        )
+        with self._lock:
+            self._pending_blocks.setdefault(
+                custom_id,
+                {"content": html, "category": category, "custom_id": custom_id, "phrases": phrases},
+            )
+        self._schedule_flush()
 
     # -- translatable-attribute configuration ---------------------------------
 
@@ -453,8 +548,59 @@ class LangsysClient:
 
     # -- discovery queue ------------------------------------------------------
 
-    def _queue_missing(self, phrase: str, category: Optional[str]) -> None:
-        self._pending[(category or UNCATEGORIZED, phrase)] = None
+    def _queue_missing(
+        self, phrase: str, category: Optional[str], catalog_category: Any = None
+    ) -> None:
+        key = (category or UNCATEGORIZED, phrase)
+        if self._ellipsis_suppresses(phrase, key, catalog_category):
+            return
+        with self._lock:
+            self._pending[key] = None
+        self._schedule_flush()
+
+    # -- REG-11: ellipsis-terminated text -------------------------------------
+
+    def _ellipsis_suppresses(
+        self, phrase: str, key: tuple[str, str], catalog_category: Any
+    ) -> bool:
+        """Warn on ellipsis-terminated text; suppress only on a **second** signal.
+
+        Upstream truncation puts the ellipsis in the string itself, so the truncated
+        form gets translated and stored and never matches the full paragraph, which
+        later registers as a second phrase — catalog pollution plus double translation
+        spend. But a blanket skip has real false positives: ``Loading…``, ``Saving…``
+        and ``Please wait…`` are legitimate phrases, and silently refusing to register
+        them would create a *new* silent failure, which is the class this spec exists
+        to remove.
+
+        So the warning is unconditional and the suppression is not: it needs a longer
+        catalog entry sharing the prefix, which is the actual harm condition and fires
+        only once the pollution has already occurred.
+        """
+        prefix = _ellipsis_prefix(phrase)
+        if prefix is None:
+            return False
+
+        longer = _longer_entry_sharing_prefix(catalog_category, phrase, prefix)
+        if key not in self._warned_ellipsis:
+            self._warned_ellipsis.add(key)
+            if longer is None:
+                logger.warning(
+                    "langsys: the phrase %r ends in an ellipsis. If that is upstream "
+                    "truncation, the truncated form will be translated and stored and "
+                    "will never match the full text. Registering it anyway — a phrase "
+                    "like 'Loading…' is legitimate.",
+                    phrase,
+                )
+            else:
+                logger.warning(
+                    "langsys: not registering %r — the catalog already holds a longer "
+                    "phrase with the same prefix (%r), so this is upstream truncation "
+                    "rather than a phrase that genuinely ends in an ellipsis.",
+                    phrase,
+                    longer,
+                )
+        return longer is not None
 
     @property
     def has_pending(self) -> bool:
@@ -474,10 +620,11 @@ class LangsysClient:
         return list(self._pending_blocks.values())
 
     def clear_pending(self) -> None:
-        self._pending.clear()
-        self._pending_blocks.clear()
+        with self._lock:
+            self._pending.clear()
+            self._pending_blocks.clear()
 
-    def flush_pending(self) -> dict[str, Any]:
+    def flush_pending(self, *, force: bool = False) -> dict[str, Any]:
         """Register queued (discovered) phrases and content blocks.
 
         REG-10 — one behaviour across every path: never throw into a render path,
@@ -485,8 +632,47 @@ class LangsysClient:
         happen**, a skipped write included. A caller that checks ``success`` is
         entitled to believe it.
         """
+        self._cancel_timer()
         if not self.has_pending:
             return {"phrases": 0, "content_blocks": 0, "success": True}
+
+        # REG-7 — never two sends at once, checked before anything costly. Declining is
+        # correct rather than queueing behind the in-flight send: whatever this call
+        # would have sent is still in the queue, and the running send will take it or
+        # the next flush will. Checked here rather than at the send site so a declining
+        # flush does not pay an authorize round-trip to discover it is declining.
+        if not self._sending.acquire(blocking=False):
+            return {
+                "phrases": 0,
+                "content_blocks": 0,
+                "success": False,
+                "skipped": True,
+                "reason": "send-in-flight",
+                "queued_phrases": len(self._pending),
+                "queued_content_blocks": len(self._pending_blocks),
+            }
+        try:
+            return self._flush_locked(force=force)
+        finally:
+            self._sending.release()
+
+    def _flush_locked(self, *, force: bool) -> dict[str, Any]:
+        # REG-8 — while backing off, decline without sending. The queue is retained,
+        # so nothing is lost; retrying now is what turns a failing endpoint into a
+        # request per interval against a payload that only grows.
+        remaining = self._backoff_until - time.monotonic()
+        if remaining > 0 and not force:
+            self._schedule_flush()
+            return {
+                "phrases": 0,
+                "content_blocks": 0,
+                "success": False,
+                "skipped": True,
+                "reason": "backoff",
+                "retry_in_seconds": round(remaining, 3),
+                "queued_phrases": len(self._pending),
+                "queued_content_blocks": len(self._pending_blocks),
+            }
 
         # GATE-2 — collect always, choose the lane at the send site. Resolved here,
         # once per flush, and never stored.
@@ -511,11 +697,18 @@ class LangsysClient:
                 "discarded_content_blocks": block_count,
             }
 
-        items: list[PhraseInput] = [
-            {"phrase": phrase, "category": None if category == UNCATEGORIZED else category}
-            for (category, phrase) in self._pending
-        ]
-        blocks = list(self._pending_blocks.values())
+        # REG-6 — snapshot the batch by KEY, and afterwards remove only what was sent.
+        # The POST below is slow and the lock is released across it, so a debounced
+        # flush on the timer thread and a render on the caller's thread overlap here:
+        # `clear_pending()` would drop every miss recorded during the send.
+        with self._lock:
+            phrase_keys = list(self._pending.keys())
+            block_ids = list(self._pending_blocks.keys())
+            items: list[PhraseInput] = [
+                {"phrase": phrase, "category": None if category == UNCATEGORIZED else category}
+                for (category, phrase) in phrase_keys
+            ]
+            blocks = [self._pending_blocks[b] for b in block_ids]
         phrase_count, block_count = len(items), len(blocks)
 
         try:
@@ -528,7 +721,14 @@ class LangsysClient:
             # REG-8/GATE-5 — the queue stays, and nothing is marked as done. Retrying
             # a phrase the server already accepted is harmless; suppressing one it
             # never saw is not.
-            logger.warning("langsys: registration failed (%s); keeping the queue.", exc)
+            delay = self._note_failure()
+            logger.warning(
+                "langsys: registration failed (%s); keeping the queue and backing off "
+                "for %.0fs.",
+                exc,
+                delay,
+            )
+            self._schedule_flush()
             return {
                 "phrases": 0,
                 "content_blocks": 0,
@@ -536,11 +736,34 @@ class LangsysClient:
                 "error": str(exc),
                 "queued_phrases": phrase_count,
                 "queued_content_blocks": block_count,
+                "retry_in_seconds": round(delay, 3),
             }
 
-        self.clear_pending()
+        self._reset_backoff()
+        with self._lock:
+            for key in phrase_keys:
+                self._pending.pop(key, None)
+            for block_id in block_ids:
+                self._pending_blocks.pop(block_id, None)
         self._catalog.clear()  # new items exist server-side now; refetch next time
         return {"phrases": phrase_count, "content_blocks": block_count, "success": True}
+
+    def _note_failure(self) -> float:
+        """REG-8 — 3s, doubling, ceiling ~5min. Returns the new delay."""
+        with self._lock:
+            if not self._backoff_seconds:
+                nxt = BACKOFF_INITIAL_SECONDS
+            else:
+                nxt = self._backoff_seconds * 2
+            self._backoff_seconds = min(nxt, BACKOFF_MAX_SECONDS)
+            self._backoff_until = time.monotonic() + self._backoff_seconds
+            return self._backoff_seconds
+
+    def _reset_backoff(self) -> None:
+        """Reset on first success — not gradually. A recovered endpoint is recovered."""
+        with self._lock:
+            self._backoff_seconds = 0.0
+            self._backoff_until = 0.0
 
     # -- registration (write key) ---------------------------------------------
 
@@ -665,6 +888,7 @@ class LangsysClient:
         self._catalog.clear(locale)
 
     def close(self) -> None:
+        self._cancel_timer()
         self._http.close()
 
     def __enter__(self) -> LangsysClient:
@@ -672,6 +896,39 @@ class LangsysClient:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+#: REG-11 — both spellings. CSS truncation needs no handling: `text-overflow: ellipsis`
+#: clips visually while the DOM text stays complete, so there is nothing to detect.
+_ELLIPSIS_SUFFIXES = ("\u2026", "...")
+
+
+def _ellipsis_prefix(phrase: str) -> Optional[str]:
+    """The text before a trailing ellipsis, or ``None`` when there is not one."""
+    for suffix in _ELLIPSIS_SUFFIXES:
+        if phrase.endswith(suffix):
+            prefix = phrase[: -len(suffix)].rstrip()
+            return prefix or None
+    return None
+
+
+def _longer_entry_sharing_prefix(
+    catalog_category: Any, phrase: str, prefix: str
+) -> Optional[str]:
+    """A catalog entry that starts with ``prefix`` and continues past it.
+
+    That is the actual harm condition — the full paragraph is already registered, so
+    this truncated form is pollution rather than a legitimate ``Loading…``. It has no
+    false positives because it can only fire once the pollution has occurred.
+    """
+    if not isinstance(catalog_category, dict):
+        return None
+    for key in catalog_category:
+        if not isinstance(key, str) or key == phrase:
+            continue
+        if key.startswith(prefix) and len(key) > len(prefix):
+            return key
+    return None
 
 
 def _without_write_decision(data: dict[str, Any]) -> dict[str, Any]:

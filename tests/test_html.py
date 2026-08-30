@@ -9,7 +9,9 @@ TRANS = re.compile(r"https://api\.test/api/translations")
 
 
 def make(**kw):
-    return LangsysClient("k", "proj-1", api_url=API, cache=MemoryCache(), **kw)
+    return LangsysClient(
+        "k", "proj-1", api_url=API, cache=MemoryCache(), debounce=0, auto_flush=False, **kw
+    )
 
 
 def catalog(data):
