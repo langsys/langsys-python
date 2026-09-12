@@ -78,6 +78,9 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   is another SDK's id and is left alone. Two readers previously disagreed about the empty
   value, so `<div data-ls-contentblock>` — the natural boolean spelling — silently
   dropped its contents from discovery.
+- Inside a single `translate_content_block` fragment, a nested block marker is folded
+  into the enclosing block rather than becoming a block of its own. Full-page
+  translation, which has somewhere for sub-blocks to live, still makes it one.
 
 **Registration lane (wave 2).**
 

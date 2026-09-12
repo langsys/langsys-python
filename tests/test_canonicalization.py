@@ -740,16 +740,49 @@ def test_MARK2_the_block_attribute_is_classified_three_ways_on_the_page_path(suf
 @pytest.mark.parametrize(
     ("suffix", "kind"), BLOCK_ATTR_CASES, ids=[c[0] or "bare" for c in BLOCK_ATTR_CASES]
 )
-def test_MARK2_the_block_path_classifies_it_the_same_way(suffix, kind):
-    """The same attribute, the same three meanings, on the tokenizer. Previously the
-    tokenizer was value-blind and excised a nested declaration flag — so the two files
-    defined "declaration" differently, which is the drift the shared classifier removes."""
+def test_MARK2_the_block_path_classifies_the_value_the_same_way(suffix, kind):
+    """The same attribute and the same three *classifications* on the tokenizer — but
+    not the same OUTCOME for a declaration, and the difference is deliberate.
+
+    An `identity` is excised on both paths. An `opt-out` is walked on both. A
+    `declaration` nested inside a fragment is **folded into the enclosing block** here,
+    where the page walker would make it a block of its own: `<div><div
+    data-ls-contentblock="1"><p>Hello</p><p>Second</p></div><p>Bye</p></div>` tokenizes
+    to `['Hello','Second','Bye']` — one block — while the page walker yields a block of
+    `['Hello','Second']` plus the phrase `Bye`.
+
+    That is the contract, not an oversight: `translate_content_block` is handed a
+    fragment and asked to translate it as **one** block. Honouring a nested declaration
+    would make a single call produce several registrations under ids the caller never
+    sees and cannot address. The page walker has a document to walk and somewhere for
+    sub-blocks to live; a fragment does not. Recorded in CONFORMANCE's MARK-2 row.
+
+    What it is NOT is the pre-classifier behaviour, which *excised* the subtree and lost
+    its content entirely."""
     attribute = "data-ls-contentblock" + suffix
     tokens = extract_phrases(f"<div><div {attribute}><p>Hello</p></div><p>Bye</p></div>")
     if kind == "identity":
         assert tokens == ["Bye"], f"a foreign identity was harvested: {tokens}"
     else:
+        # Folded, not excised — the content is present, in the enclosing block.
         assert tokens == ["Hello", "Bye"], f"non-identity subtree was excised: {tokens}"
+
+
+def test_MARK2_a_nested_declaration_is_folded_into_the_fragment_not_split_out():
+    """The folding stated as its own assertion rather than inferred from the row above,
+    with the page walker's differing outcome measured beside it so the divergence is
+    pinned rather than described."""
+    fragment = (
+        '<div><div data-ls-contentblock="1"><p>Hello</p><p>Second</p></div>'
+        "<p>Bye</p></div>"
+    )
+    assert extract_phrases(fragment) == ["Hello", "Second", "Bye"]
+
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(f"<html><body>{fragment}</body></html>", category="CAT")
+    assert [b["phrases"] for b in client.pending_content_blocks] == [["Hello", "Second"]]
+    assert [p["phrase"] for p in client.pending_phrases] == ["Bye"]
 
 
 def test_MARK2_one_classifier_answers_for_both_walkers():

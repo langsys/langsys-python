@@ -110,6 +110,28 @@ this one arrived from — **a rule can enter the bucket because a profile row wa
 not only leave it because the SDK changed. The bucket is where structural claims live,
 and a structural claim is exactly what is easiest to mis-file as a profile one.
 
+## Design choice — a nested declaration inside a fragment is folded, not split
+
+`translate_content_block` is handed a fragment and asked to translate it as **one**
+block, so a `data-ls-contentblock="1"` on a descendant is **folded into the enclosing
+block** rather than becoming a block of its own. The page walker, which has a document
+and somewhere for sub-blocks to live, does make it its own block. Measured:
+
+| path | `<div><div data-ls-contentblock="1"><p>Hello</p><p>Second</p></div><p>Bye</p></div>` |
+|---|---|
+| `translate_content_block` | one block, `['Hello','Second','Bye']` |
+| `translate_page` | block `['Hello','Second']` + phrase `Bye` |
+
+Honouring the declaration on the fragment path would make a single call produce several
+registrations under ids the caller never sees and cannot address. **Page parity is the
+coherent alternative** and would be new scope rather than a fix.
+
+*Corrected here:* an earlier revision of this row, and the commit that introduced the
+shared classifier, said the block path honours a nested declaration "the same way the
+page walker does". It does not — it classifies the value the same way and then folds.
+Both are strictly better than the behaviour before the classifier, which excised the
+subtree and lost its content; the overstatement was in the description, not the code.
+
 ## Deferred — announced but not yet normative
 
 Two v8 rules were announced as changing in **spec 8.0.1**, which is **not committed**:
@@ -146,7 +168,15 @@ file, and its `agreement` block still reads `{rows: 19}`.
 **not** match (Python under-collapses), `U+0085` is the reverse (Python over-collapses),
 and `U+180E`, `U+200B`, `U+2060` all agree — `U+180E` stopped being whitespace in
 Unicode 6.3 and Python followed, so the brief's prediction that Python collapses it does
-not hold here. Two divergences, in opposite directions. A node holding only one of
+not hold here.
+
+**Six divergences, not two, once the C0 separators are counted.** Measured on this
+runtime: `U+001C`, `U+001D`, `U+001E` and `U+001F` are all matched by Python's `\s` and
+removed by `str.strip()`, and JavaScript's `\s` matches none of them — so Python
+over-collapses on four more characters than the brief named. Rowed here ahead of the
+text, which the spec's Python note is being corrected to say. Direction summary:
+`U+FEFF` under-collapses; `U+0085` and `U+001C`–`U+001F` over-collapse; `U+180E`,
+`U+200B` and `U+2060` agree. A node holding only one of
 `U+FEFF`/`U+180E`/`U+200B`/`U+2060` currently yields a **one-token** phrase, which is the
 count case that moves block ids and the first thing to re-row when 8.0.1 lands.
 
@@ -204,7 +234,7 @@ count case that moves block ids and the first thing to re-row when 8.0.1 lands.
 | TOK-4 | implemented | n/a (pure) | Attribute values run through the same normaliser as text nodes, so `title="Buy   now"` and the paragraph reading `Buy now` produce one id |
 | TOK-5 | implemented | n/a (pure) | `%name%` accepted as the escape for `{name}`, on both the simple and ICU paths. Absent/null arguments stay literal exactly as `{name}` does (ICU-4's observability reaching this rule). The name must look like an identifier, so `100% of 50%` is prose rather than a slot — the commoner shape by far. Mutation: disabling the pattern reddens the named test |
 | MARK-1 | implemented | mock | Rendered blocks carry `data-ls-contentblock`. The expectation is **re-derived independently** by running the tokenizer over the same subtree — reading back the attribute the renderer just wrote proves only that it was written. Stamped on a miss too: the id is what the block *is*, not what the catalog held, and an unstamped miss is the case most needing inspection |
-| MARK-2 | implemented | mock | **The block attribute carries three meanings and one classifier answers for both walkers** (`classify_block_attribute`): a truthy flag is this SDK's authoring *declaration*, `""`/`"0"`/`"false"` and the bare boolean form are an *opt-out* walked as ordinary content, and anything else is another SDK's *identity* and is excised. Introduced as a regression — two readers eight lines apart disagreed about `""`, so opt-out subtrees vanished from discovery entirely — and shared now precisely so they cannot drift again. Mutation: emptying the opt-out set reddens 6 named rows across both paths | Both `data-ls-*` and `data-langsys-*` accepted on read, for block hosts and categories; writers emit `data-ls-*`. A reader knowing one spelling walks into the other's host and re-splits a block that already had an id. Control: an unmarked host is still not recognised. Mutation: dropping either prefix reddens the named rows |
+| MARK-2 | implemented | mock | **The block attribute carries three meanings and one classifier answers for both walkers** (`classify_block_attribute`): a truthy flag is this SDK's authoring *declaration*, `""`/`"0"`/`"false"` and the bare boolean form are an *opt-out* walked as ordinary content, and anything else is another SDK's *identity* and is excised. Introduced as a regression — two readers eight lines apart disagreed about `""`, so opt-out subtrees vanished from discovery entirely — and shared now precisely so they cannot drift again. **The two paths classify identically but do not act identically on a `declaration`, by design:** see the note below. Mutations, counted from the run rather than recalled: emptying the opt-out set reddens **11** named rows, making the tokenizer value-blind reddens **7** | Both `data-ls-*` and `data-langsys-*` accepted on read, for block hosts and categories; writers emit `data-ls-*`. A reader knowing one spelling walks into the other's host and re-splits a block that already had an id. Control: an unmarked host is still not recognised. Mutation: dropping either prefix reddens the named rows |
 | SRV-1 | implemented | mock | `test_server_render` — the served output carries the request locale's translation, with an absent phrase in the **same render** emitting base language and registering as a miss, which is what separates this from a catalog that happened to be complete |
 | SRV-2 | implemented | mock | `test_server_render` — two **concurrent** renders in `it`/`de` each see only their own locale. Run sequentially this proves nothing; the failure is the interleave |
 | SRV-3 | partial | mock | Read-only half implemented and tested, with a write key on the same render as the positive control — without it the assertion passes against an SDK that never pushes. Order-of-events: `translate()` queues without sending, and with the debounce on the send lands later from another thread. **The response-flush boundary itself is a wrapper obligation** (declared below): a library has no response to flush |
