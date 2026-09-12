@@ -4,7 +4,8 @@ Walks a document's ``<head>`` (title, description/keywords/author metas, OpenGra
 Twitter cards, ``<html lang>``, ``og:locale``) and ``<body>``, classifying each leaf
 block element as either a **simple phrase** (its whole text is one phrase) or a
 **content block** (markup-bearing / multi-phrase). Honors ``data-langsys-category``,
-``data-langsys-contentblock``, ``translate="no"``/``data-notrans``, and an optional
+``data-ls-contentblock`` / ``data-langsys-contentblock`` (both spellings, MARK-2),
+``translate="no"``/``data-notrans``, and an optional
 ``selector_categories`` map. Missing items are queued for registration.
 
 Requires lxml + cssselect (``pip install langsys[html]``).
@@ -193,11 +194,28 @@ def _item_category(effective: Optional[str], default_category: Optional[str]) ->
     return UNCATEGORIZED
 
 
+def _marked_attr(el: _Element, suffix: str) -> Optional[str]:
+    """MARK-2 — read both ``data-ls-*`` and ``data-langsys-*``.
+
+    The spellings already coexist in shipped code, and a page that mixes them is the
+    ordinary case rather than an edge: a PHP-rendered page hosting a JS-rendered
+    component is what a customer's site looks like. A reader that knows only one
+    spelling does not see the other's host as marked, so it walks straight into it and
+    splits a block that already had an id, producing a second registration for content
+    that is already identified.
+    """
+    for prefix in ("data-ls-", "data-langsys-"):
+        value = el.get(f"{prefix}{suffix}")
+        if value is not None:
+            return value
+    return None
+
+
 def _effective_category(el: _Element, inherited: Optional[str], selmap: _SelMap) -> Optional[str]:
     match = selmap.get(el)
     if match is not None and match[1]:  # selector override
         return match[0]
-    attr = el.get("data-langsys-category")
+    attr = _marked_attr(el, "category")
     if attr:
         return attr
     if inherited is not None:
@@ -208,7 +226,7 @@ def _effective_category(el: _Element, inherited: Optional[str], selmap: _SelMap)
 
 
 def _has_content_block_attr(el: _Element) -> bool:
-    value = el.get("data-langsys-contentblock")
+    value = _marked_attr(el, "contentblock")
     if value is None:
         return False
     return value != "" and value != "0" and value.lower() != "false"

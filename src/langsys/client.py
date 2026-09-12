@@ -489,7 +489,11 @@ class LangsysClient:
     def translate_content_block(self, html: str, category: Optional[str] = None) -> str:
         """Translate a block of HTML as one unit. Untranslated/unknown blocks return the
         original HTML (and are queued for registration). Requires ``pip install langsys[html]``."""
-        from .html.parser import apply_block_translations, extract_phrases
+        from .html.parser import (
+            apply_block_translations,
+            extract_phrases,
+            stamp_content_block,
+        )
 
         if not html:
             return html
@@ -509,8 +513,11 @@ class LangsysClient:
             # WIRE-4 — see translate(): never queue off a catalog we could not read.
             if fetch.ok:
                 self._queue_content_block(html, cat_name, custom_id, phrases)
-            return html
-        return apply_block_translations(html, block, self._translatable_attributes)
+            # MARK-1 — the id is what the block IS, not what the catalog happened to
+            # hold. An unstamped miss is the case you most need to inspect.
+            return stamp_content_block(html, custom_id)
+        translated = apply_block_translations(html, block, self._translatable_attributes)
+        return stamp_content_block(translated, custom_id)
 
     def translate_page(
         self,

@@ -41,6 +41,24 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Canonicalization and identity (spec v8).**
+
+- **TOK-1** — `<script>`, `<style>`, `<noscript>` and `<template>` content is no longer
+  turned into phrases by content-block extraction. It previously was, so a block
+  containing any of them registered its code or stylesheet as translatable text and
+  derived a content-block id no other SDK agreed with.
+- **TOK-5** — `%name%` is now accepted anywhere `{name}` is, for authors whose template
+  compiler treats `{` as an expression delimiter. An absent argument stays visible in
+  either form, and `100% of 50%` is still prose.
+- **MARK-1** — a rendered content block now carries `data-ls-contentblock` with its
+  resolved id, so the identity is inspectable in devtools instead of having to be
+  reasoned out from source. Blocks with no translation yet are stamped too.
+- **MARK-2** — `data-ls-*` and `data-langsys-*` are both accepted when reading a host's
+  identity or category. A page mixing them — a PHP-rendered page hosting a JS-rendered
+  component — previously had the unfamiliar spelling's blocks re-split and registered a
+  second time.
+- TOK-2, TOK-3 and TOK-4 were already satisfied; they now have tests.
+
 **Registration lane (wave 2).**
 
 - **REG-2** — discovered phrases now send on a short debounce (~400ms, `debounce=`), so a

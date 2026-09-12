@@ -8,6 +8,17 @@ API = "https://api.test/api"
 TRANS = re.compile(r"https://api\.test/api/translations")
 
 
+def _without_stamp(markup: str) -> str:
+    """Drop MARK-1's identity attribute.
+
+    The stamp is added on every rendered block including a miss, so a test asserting
+    "the content degraded to source" can no longer compare the whole string. Removing
+    only this attribute keeps the comparison strict about everything else, which is
+    what these tests are actually about.
+    """
+    return re.sub(r'\s+data-ls-contentblock="[^"]*"', "", markup)
+
+
 def make(**kw):
     return LangsysClient(
         "k", "proj-1", api_url=API, cache=MemoryCache(), debounce=0, auto_flush=False, **kw
@@ -84,7 +95,7 @@ def test_translate_content_block_queues_when_missing(httpx_mock):
     client = make()
     client.set_locale("es-ES")
     html = "<div><p>Brand new block phrase</p></div>"
-    assert client.translate_content_block(html, category="CAT_3") == html
+    assert _without_stamp(client.translate_content_block(html, category="CAT_3")) == html
     assert len(client.pending_content_blocks) == 1
 
 

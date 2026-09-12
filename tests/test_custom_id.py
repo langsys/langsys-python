@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,17 @@ SOURCE_BLOB_SHA = "60dc9b33ecfd5fa3256fca7d36063ceb8ef1a00a"
 SOURCE_REF = "langsys-php origin/feature/838_write_key_gating_reland @ 8862841+"
 
 ROWS = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def _without_stamp(markup: str) -> str:
+    """Drop MARK-1's identity attribute.
+
+    The stamp is added on every rendered block including a miss, so a test asserting
+    "the content degraded to source" can no longer compare the whole string. Removing
+    only this attribute keeps the comparison strict about everything else, which is
+    what these tests are actually about.
+    """
+    return re.sub(r'\s+data-ls-contentblock="[^"]*"', "", markup)
 
 
 def _git_blob_sha(data: bytes) -> str:
@@ -128,9 +140,9 @@ def test_CID1_custom_id_matches_the_fixture(row):
 def test_CID1_the_line_terminator_row_is_present_and_raw():
     """U+2028 arrives routinely via copy-paste from Word and PDF, and the divergence
     is silent: the lookup misses and the block re-registers forever."""
-    row = next(r for r in ROWS if " " in "".join(r["tokens"]))
+    row = next(r for r in ROWS if "\u2028" in "".join(r["tokens"]))
     produced = canonical_content_block_json(row["category"], row["tokens"])
-    assert " " in produced, "U+2028 was escaped; it must stay raw"
+    assert "\u2028" in produced, "U+2028 was escaped; it must stay raw"
     assert "e280a8" in produced.encode("utf-8").hex()
 
 
@@ -269,5 +281,5 @@ def test_CID4_a_legacy_id_whose_content_differs_is_declined(httpx_mock):
     )
     out = client.translate_content_block(html, category="CAT")
     assert "Otro" not in out and "Distinto" not in out
-    assert out == html, "declined block must degrade to source HTML"
+    assert _without_stamp(out) == html, "declined block must degrade to source HTML"
     assert client.pending_content_blocks, "a declined legacy match should still register"

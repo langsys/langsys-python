@@ -43,6 +43,18 @@ _ICU_PATTERN = re.compile(
 )
 _SIMPLE_SLOT = re.compile(r"\{([^{},]+)\}")
 
+#: TOK-5 — `%name%` is accepted as an escape for `{name}`.
+#:
+#: `{` is not inert in a template compiler: several of the frameworks we ship bindings
+#: for treat it as an expression delimiter, so an author who cannot get `{name}` past
+#: their own build needs a form that survives it — and having provided one, the fleet
+#: has to read it back.
+#:
+#: The name is required to look like an identifier. A looser pattern would read the `%`
+#: in `100% of 50%` as a delimiter and eat the text between them, which is a far more
+#: common shape in real copy than the escape itself.
+_PERCENT_SLOT = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")
+
 _DATE_STYLES = {"short", "medium", "long", "full"}
 
 
@@ -67,11 +79,11 @@ def interpolate(template: str, params: Params, locale: str = "en") -> str:
             )
         except Exception:
             # Malformed ICU (or an unexpected node) must never blow up a page.
-            return _simple(template, params, locale)
+            return _percent_slots(_simple(template, params, locale), params, locale)
         if recovered:
             _notice_recovery(template, locale, recovered)
-        return out
-    return _simple(template, params, locale)
+        return _percent_slots(out, params, locale)
+    return _percent_slots(_simple(template, params, locale), params, locale)
 
 
 def _notice_recovery(template: str, locale: str, recovered: list[str]) -> None:
@@ -113,6 +125,26 @@ def _simple(template: str, params: Params, locale: str) -> str:
         return _format_value(params[key], locale)
 
     return _SIMPLE_SLOT.sub(repl, template)
+
+
+def _percent_slots(text: str, params: Params, locale: str) -> str:
+    """TOK-5 — substitute the `%name%` escape for the same arguments as `{name}`.
+
+    Left literal when the argument is absent or null, exactly as `{name}` is: a slot
+    that vanishes silently is undiagnosable, and a visible one costs a bug report
+    (ICU-4's observability requirement reaching this rule). Left literal too when the
+    name is not an argument at all, so ordinary prose containing percents survives.
+    """
+    if "%" not in text:
+        return text
+
+    def repl(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in params or params[key] is None:
+            return match.group(0)
+        return _format_value(params[key], locale)
+
+    return _PERCENT_SLOT.sub(repl, text)
 
 
 def _format_value(value: Any, locale: str) -> str:

@@ -26,8 +26,10 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 
 __all__ = [
     "DEFAULT_TRANSLATABLE_ATTRIBUTES",
+    "SKIP_TAGS",
     "extract_phrases",
     "apply_block_translations",
+    "stamp_content_block",
     "apply_element",
     "inner_html",
     "text_content",
@@ -35,6 +37,25 @@ __all__ = [
 ]
 
 _WS = re.compile(r"\s+")
+
+#: TOK-1 — elements whose content is never tokenized. They hold code, inert content, or
+#: content no implementation can agree on.
+#:
+#: `noscript` is here on a REVERSAL. Its text does render to a visitor with scripting
+#: off, but with scripting ON — the HTML spec's default — a parser treats the body as
+#: raw text, so the token is a markup string, and sending markup to machine translation
+#: is the failure this family exists to prevent. libxml2 (what lxml uses) has no
+#: scripting flag and parses the children as elements, so excluding it is also what
+#: makes every parser agree by construction.
+#:
+#: `template` is a no-op for walkers that never reach fragment content — browsers hang
+#: it off `HTMLTemplateElement.content`. lxml is NOT one of those: it parses template
+#: children into the ordinary tree, so here it is a live vector rather than a free pass.
+#:
+#: Deliberately NOT `svg` or `math`: the revision in force names neither, and the
+#: announced 8.0.1 makes SVG text explicitly translatable. The page walker still skips
+#: both; that split is measured and reported rather than silently reconciled.
+SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
 
 
 def normalize_whitespace(text: Optional[str]) -> str:
@@ -46,6 +67,8 @@ def _parse_fragment(html: str) -> _Element:
 
 
 def _skip(el: _Element) -> bool:
+    if _tag(el) in SKIP_TAGS:
+        return True
     return el.get("translate") == "no" or bool(el.get("data-notrans"))
 
 
@@ -100,6 +123,32 @@ def _walk_extract(el: _Element, attrs: Sequence[str], out: list[str]) -> None:
             tail = normalize_whitespace(child.tail)
             if tail:
                 out.append(tail)
+
+
+def stamp_content_block(html: str, custom_id: str) -> str:
+    """MARK-1 — put the resolved ``custom_id`` on the rendered host.
+
+    An identity you cannot observe from the DOM is one nobody can debug: whether this
+    block resolved to the id you think, whether two SDKs derived the same one, whether
+    it is the block the Translation Manager is showing you — all answerable in a
+    devtools inspector if the id is on the host, and only by reasoning about source if
+    it is not. The audit and parity probes read it directly.
+
+    Writers emit the ``data-ls-*`` spelling; only readers accept both (MARK-2).
+
+    Returns ``html`` unchanged when the fragment has no single host element to stamp —
+    a bare text run, or several siblings with no common parent inside this call. There
+    is nothing to carry the attribute there, and inventing a wrapper would change the
+    markup the caller handed us.
+    """
+    if not html or not custom_id:
+        return html
+    root = _parse_fragment(html)
+    children = [c for c in root if isinstance(c.tag, str)]
+    if len(children) != 1 or (root.text or "").strip():
+        return html
+    children[0].set("data-ls-contentblock", custom_id)
+    return _inner_html(root)
 
 
 def apply_block_translations(

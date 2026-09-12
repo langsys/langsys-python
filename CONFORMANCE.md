@@ -4,12 +4,12 @@
 |---|---|
 | **SDK** | `langsys-python` (server core) |
 | **Profiles** | `all`, `server` |
-| **specVersion** | 7 |
-| **Spec revision read** | langsys2 `docs/sdk-spec.mdx` blob `06ae105a0a1f` — read at `origin/main` `fabe22b2a54a` (2026-08-29T18:28:11Z) and re-read at `origin/main` `7bee50d63e78` (2026-08-30T04:22:01Z). **The blob is unchanged across both**, so every row below is filed against the same spec text |
+| **specVersion** | 8 |
+| **Spec revision read** | **v8** — langsys2 `docs/sdk-spec.mdx` blob `b657b490f07615b889081c0ac5244ec4bd73bf81`, at `feature/838_write_key_gating` `483f98fb9c22155fdd51e0946239556470f57936`, read 2026-09-11. Re-derive with `git -C ~/Documents/dev/langsys2 ls-tree origin/feature/838_write_key_gating docs/sdk-spec.mdx`. Earlier waves were filed against v7 blob `06ae105a0a1f`; the v7 rows are unchanged in v8 |
 | **SDK revision** | `feature/838_write_key_gating`, cut from `origin/main` `bc5ca62` |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 306 tests in 17 files — 291 unit + 15 live (`pytest`, `pytest -m integration`) |
-| **Binding rules** | **41 of 67** (`all` + `server`, after the GRANT ruling) |
+| **Suite** | 405 tests in 19 files — 390 unit + 15 live (`pytest`, `pytest -m integration`) |
+| **Binding rules** | **51 of 79** (`all` + `server`, after the GRANT ruling) |
 
 **Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
 hashes are served by `langsys://internal/docs/sdk-spec/revisions`, which no SDK lane can
@@ -84,16 +84,17 @@ CONF-2's own open item, which it says gates every claim in all 13 repos.
 
 ## Summary
 
-Counted from the table below, not asserted beside it. 67 rules, every one accounted for.
+Counted from the table below by script, not asserted beside it. 79 rules, every one
+accounted for (v8 added TOK-1..5, MARK-1/2 and SRV-1..5 to v7's 67).
 
 | Status | Count | |
 |---|---|---|
-| `implemented` | 37 | |
-| `partial` | 4 | GATE-6, GATE-7 (report direction is profile-vacuous), CONF-1, CONF-3 |
+| `implemented` | 46 | |
+| `partial` | 5 | GATE-6, GATE-7 (report direction is profile-vacuous), SRV-3, CONF-1, CONF-3 |
 | `not implemented` | 0 | |
-| `n/a` (architecture) | 0 | **GATE-2 vacated this bucket** — see below |
-| `n/a` (profile) | 26 | browser/binding rules that do not apply to a server core |
-| **total** | **67** | of which **41 bind** (`all` + `server`) |
+| `n/a` (architecture) | 0 | the bucket is empty — see below |
+| `n/a` (profile) | 28 | browser/binding rules that do not apply to a server core |
+| **total** | **79** | of which **51 bind** (`all` + `server`) |
 
 The architecture-`n/a` bucket is empty and the fact is worth keeping, not deleting. It
 held three rules across the program's waves and every one of them left it by becoming
@@ -105,11 +106,27 @@ held three rules across the program's waves and every one of them left it by bec
   unknown the rule is about, so the row had never been vacuous at all.
 
 Three for three. An architecture `n/a` is a claim about this SDK that expires when the
-SDK changes, and on the evidence here it expires more often than it holds — which is the
-argument for keeping it separate from the profile bucket, where nothing would have been
-pointing at any of them.
+SDK changes, and on the evidence here it expires more often than it holds — a
+defect-in-waiting to be discharged rather than a status to carry.
+
+## Deferred — announced but not yet normative
+
+Two v8 rules were announced as changing in **spec 8.0.1**, which is **not committed**:
+`origin/feature/838_write_key_gating` still carries the v8 text this file is filed
+against, and `origin/main` is still v7. Neither change is implemented here, and neither
+is guessed from prose.
+
+| Rule | Announced change | Why deferred |
+|---|---|---|
+| TOK-1 | `svg` text becomes translatable; `math` joins the exclusions | The current text names neither. This SDK's **block** path excludes `script`/`style`/`noscript`/`template` only — deliberately not `svg`, since excluding it would be work to undo. Its **page** path skips `svg` and `math` today, which the rule does not ask for; that split is measured and reported rather than silently reconciled |
+| TOK-2 | The collapse set becomes JavaScript's `\s` **enumerated**, excluding `U+0085`/`U+180E`/`U+200B`/`U+2060` | Python's `\s` is Unicode-aware, so the host-language behaviour currently in force is satisfied. Against the *enumerated* set, measurement shows exactly two divergences, and one prediction in the brief did not hold on this runtime — see the completion report. Implementing to prose, before the text and the vectors exist, is what the evidence norms forbid |
+
+The updated shared fixture carrying rows for `U+FEFF`, `U+0085`, `U+180E` and
+`%name%`-in-markup does not exist yet either: the vendored copy below is the 19-case
+file, and its `agreement` block still reads `{rows: 19}`.
 
 ## Status
+
 
 | Rule | Status | Evidence | Test |
 |---|---|---|---|
@@ -157,6 +174,17 @@ pointing at any of them.
 | WIRE-3 | implemented | live | `test_gating` lowercase-on-the-wire + casing-variants-are-one-cache-entry + sentinel-never-sent · `test_integration` `es-ES` and `es-es` resolve identically on the deprecated route |
 | WIRE-4 | implemented | live | `test_wire4_degradation` — 14 tests: connect/500/401/authorize-failure all degrade; **a failed fetch queues nothing**, each paired with a positive control proving the same call does queue on success; a failure is not cached as an empty catalog. Mutation: queueing on a failed fetch reddens 4 |
 | WIRE-5 | implemented | n/a (pure) | Constructor `api_url` plus `LANGSYS_API_URL`; findable and redirectable to a double |
+| TOK-1 | implemented | mock | `script`/`style`/`noscript`/`template` excluded on the **content-block** path, which previously skipped nothing and harvested all four into block ids (3 of the 19 shared-fixture rows). `test_canonicalization` — one document carrying the sentence in all three plus ordinary markup yields exactly one phrase; the ordinary-markup control is the whole test. `template` is a live vector here, not the free pass browsers get: lxml parses its children into the ordinary tree. **`svg`/`math` deliberately NOT excluded on this path** — see the deferral note below. Mutation: emptying the skip set reddens 6 named rows |
+| TOK-2 | implemented | mock | Already satisfied before the rule existed — Python's `re` `\s` and `str.strip()` are Unicode-aware — but **measured rather than assumed**, which the rule asks for by name. All three vectors: internal, leading/trailing (the half-fix detector), and a whitespace-only node producing **no** token (the count case that moves block ids). Characters written as escapes; a sweep replaced every literal in the suite, including two `U+2028` in `test_custom_id.py` from an earlier wave. Mutation: narrowing the class to ASCII reddens the `nbsp-*` and `line-separators` rows |
+| TOK-3 | implemented | n/a (pure) | The twenty-seven, in order, verified against the rule's own prose rather than assumed. Order is normative: a same-set-different-order implementation agrees on every single-attribute element and diverges on exactly the ones hardest to notice |
+| TOK-4 | implemented | n/a (pure) | Attribute values run through the same normaliser as text nodes, so `title="Buy   now"` and the paragraph reading `Buy now` produce one id |
+| TOK-5 | implemented | n/a (pure) | `%name%` accepted as the escape for `{name}`, on both the simple and ICU paths. Absent/null arguments stay literal exactly as `{name}` does (ICU-4's observability reaching this rule). The name must look like an identifier, so `100% of 50%` is prose rather than a slot — the commoner shape by far. Mutation: disabling the pattern reddens the named test |
+| MARK-1 | implemented | mock | Rendered blocks carry `data-ls-contentblock`. The expectation is **re-derived independently** by running the tokenizer over the same subtree — reading back the attribute the renderer just wrote proves only that it was written. Stamped on a miss too: the id is what the block *is*, not what the catalog held, and an unstamped miss is the case most needing inspection |
+| MARK-2 | implemented | mock | Both `data-ls-*` and `data-langsys-*` accepted on read, for block hosts and categories; writers emit `data-ls-*`. A reader knowing one spelling walks into the other's host and re-splits a block that already had an id. Control: an unmarked host is still not recognised. Mutation: dropping either prefix reddens the named rows |
+| SRV-1 | implemented | mock | `test_server_render` — the served output carries the request locale's translation, with an absent phrase in the **same render** emitting base language and registering as a miss, which is what separates this from a catalog that happened to be complete |
+| SRV-2 | implemented | mock | `test_server_render` — two **concurrent** renders in `it`/`de` each see only their own locale. Run sequentially this proves nothing; the failure is the interleave |
+| SRV-3 | partial | mock | Read-only half implemented and tested, with a write key on the same render as the positive control — without it the assertion passes against an SDK that never pushes. Order-of-events: `translate()` queues without sending, and with the debounce on the send lands later from another thread. **The response-flush boundary itself is a wrapper obligation** (declared below): a library has no response to flush |
+| SRV-4, SRV-5 | n/a (profile) | n/a | The JS hydration and component half — a synchronous client seed and per-child capture. No Python analogue |
 | CONF-1 | partial | — | The live rows assert on server acceptance and on values read back from a real instance. The mocked rows do not meet the bar and are graded accordingly rather than relabelled |
 | CONF-2 | implemented | — | Grading adopted; every row carries a tier. No row claims `contract` — the shared fixture does not exist |
 | CONF-3 | partial | — | Mutations recorded per rule across three waves — GATE-1, GATE-4, WIRE-4, ICU-5, CID-3 ×2, precedence ×2, byte-hash port, REG-2, REG-3, REG-6, REG-7, REG-8 ×2, REG-11 ×2, GATE-2, and the debounce re-arm — each verified to redden a **named** test, not merely to redden the suite. Still not systematic across every rule, and the `n/a` rows have nothing to mutate |
@@ -180,7 +208,23 @@ required — this SDK must resolve blocks registered by the *published* JS and P
 
 ---
 
-## Vendored fixture
+## Vendored fixtures
+
+Both are pinned by **git blob SHA, not by path** — content-addressed, verified locally
+with no network, surviving deletion of the source branch. A live ref records provenance;
+one string never does both jobs.
+
+| Fixture | Blob (the check) | Provenance (a live ref) |
+|---|---|---|
+| `tests/fixtures/custom-id-reference.json` | `60dc9b33ecfd5fa3256fca7d36063ceb8ef1a00a` | `langsys-php origin/feature/838_write_key_gating_reland @ 8862841+` |
+| `tests/fixtures/canonicalization-reference.json` | `e4c1f185974fbf2ebda6154f36b8ed7416f1d7fa` | `langsys-js-typescript 6596faf` — derive with `git -C ~/Documents/dev/langsys-js-typescript rev-parse 6596faf:tests/fixtures/canonicalization-reference.json` |
+| `tests/fixtures/legacy-custom-id-reference.json` | `dc5556466dc54fe82e81ac9fdbf4549b2b76e7ce` | generated by executing `langsys-js-typescript` `md5Core` @ `6cdb388` |
+
+The canonicalization fixture is **authored** in langsys-js-typescript rather than vendored
+onward from a third repo, and declares the same spec blob this file is filed against.
+Python rows 19/19 on it.
+
+### CID fixture
 
 | | |
 |---|---|
