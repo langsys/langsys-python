@@ -26,6 +26,16 @@ from .parser import apply_element, extract_phrases, inner_html, text_content
 
 #: MARK-2 — a host carrying one of these is already identified. Both spellings.
 PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
+CONTENT_BLOCK_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
+
+#: This SDK lets an author *declare* a subtree to be one block by marking it with a
+#: truthy flag. The spec defines the attribute only as an **identity** (MARK-1), so a
+#: value that is not one of these flags is another SDK's id, not a request.
+#:
+#: The distinction is the value's meaning, not a guess at its shape: `"1"` is the
+#: documented declaration and a resolved id is never one of these words. Getting it
+#: wrong in the permissive direction is what re-registered JS-rendered blocks.
+DECLARATION_VALUES = frozenset({"1", "true", "yes", "on"})
 
 if TYPE_CHECKING:
     from ..client import LangsysClient
@@ -134,6 +144,12 @@ def _walk(
         # subtree leaves both alone.
         if any(child.get(attr) is not None for attr in PHRASE_HOST_ATTRS):
             continue
+        # MARK-2 — the same for a block host carrying a foreign identity. Walking into
+        # it re-tokenizes content that already has an id, files it under *this* page's
+        # category, queues it as a new block, and overwrites the other SDK's stamp with
+        # ours — one block, two ids, and the Translation Manager showing it twice.
+        if _is_identified_block_host(child):
+            continue
 
         effective = _effective_category(child, inherited, selmap)
 
@@ -237,6 +253,17 @@ def _effective_category(el: _Element, inherited: Optional[str], selmap: _SelMap)
     if match is not None and not match[1]:  # selector, non-override
         return match[0]
     return None
+
+
+def _is_identified_block_host(el: _Element) -> bool:
+    """True when a block attribute carries another SDK's id rather than a declaration."""
+    for attr in CONTENT_BLOCK_ATTRS:
+        value = el.get(attr)
+        if value is None:
+            continue
+        if value.strip().lower() not in DECLARATION_VALUES:
+            return True
+    return False
 
 
 def _has_content_block_attr(el: _Element) -> bool:

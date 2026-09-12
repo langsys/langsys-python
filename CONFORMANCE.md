@@ -126,10 +126,16 @@ is guessed from prose.
 leaf block hands its inner HTML to the block tokenizer, whose skip set does not name
 them, so `<p>Hello <b>there</b> <svg><text>Label</text></svg></p>` tokenizes as
 `['Hello', 'there', 'Label']`. Measured here, and reported by the Ruby and PHP lanes as
-the same shape. Left as measured rather than changed: when 8.0.1 lands, SVG text becomes
-translatable and `math` becomes excluded, and the fix is not "skip it in one more place"
-— `svg` will need walking as a **block** element on the page path, because PHP found
-that merely not-skipping lets a walker drop its text instead of registering it.
+the same shape. Left as measured rather than changed. When 8.0.1 lands the requirement is
+**behavioural**, and is recorded that way rather than as a mechanism: SVG text is
+tokenized on **every** path; an inline `svg` never causes the block's own text to be
+dropped; and translation replaces the text node in place.
+
+*Corrected here:* an earlier revision of this row said `svg` "will need walking as a
+block element on the page path". That mechanism is **retracted fleet-wide** — PHP
+implemented it, and it dropped the parent's direct text and flattened standalone `svg`.
+The behavioural form is what the other lanes are now filed against, and naming a
+mechanism in a conformance file is how one lane's wrong turn becomes four.
 
 The updated shared fixture carrying rows for `U+FEFF`, `U+0085`, `U+180E` and
 `%name%`-in-markup does not exist yet either: the vendored copy below is the 19-case

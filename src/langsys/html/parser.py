@@ -40,7 +40,19 @@ _WS = re.compile(r"\s+")
 
 #: The first start tag in a fragment, with its self-closing slash captured separately so
 #: an attribute can be inserted before it without disturbing the rest of the string.
-_OPEN_TAG = re.compile(r"<[A-Za-z][^\s/>]*(?:\s[^>]*?)?(?P<selfclose>/?)>")
+#:
+#: Quote-aware on purpose. A `>` inside an attribute value is legal and ordinary —
+#: `title="a>b"`, a `data-*` attribute holding JSON — and a pattern that stops at the
+#: first `>` inserts the stamp into the middle of that value, producing markup that is
+#: not merely different but broken.
+_OPEN_TAG = re.compile(
+    r"""<[A-Za-z][^\s/>]*(?:"[^"]*"|'[^']*'|[^>"'])*?(?P<selfclose>/?)>""",
+    re.VERBOSE | re.DOTALL,
+)
+
+#: An HTML comment may precede the host element and may itself contain markup, so the
+#: first `<tag` in the string is not necessarily the host's.
+_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 #: TOK-1 — elements whose content is never tokenized. They hold code, inert content, or
 #: content no implementation can agree on.
@@ -184,12 +196,25 @@ def stamp_content_block(html: str, custom_id: str) -> str:
     # and unquoted or single-quoted attribute values get rewritten. On the miss path
     # the caller is handed back its own markup, so those changes would be ours to
     # explain and none of them were asked for.
-    match = _OPEN_TAG.search(html)
+    match = _search_open_tag(html)
     if match is None:  # pragma: no cover - a single element always has an open tag
         return html
     attribute = f' data-ls-contentblock="{_attr_escape(custom_id)}"'
     cut = match.end() - len(match.group("selfclose")) - 1
     return html[:cut] + attribute + html[cut:]
+
+
+def _search_open_tag(html: str) -> Optional["re.Match[str]"]:
+    """The host element's start tag, skipping any comments that precede it."""
+    position = 0
+    while True:
+        comment = _COMMENT.match(html, position) or _COMMENT.search(html, position)
+        match = _OPEN_TAG.search(html, position)
+        if match is None:
+            return None
+        if comment is None or match.start() < comment.start():
+            return match
+        position = comment.end()
 
 
 def _attr_escape(value: str) -> str:
@@ -220,6 +245,16 @@ def _walk_apply(el: _Element, translations: dict[str, Optional[str]], attrs: Seq
         el.set("value", translations[button_attr] or button_attr)
     el.text = _translate_text(el.text, translations)
     for child in el:
+        # MARK-2 — mirror the extraction excision. DECISION, recorded rather than left
+        # implicit: a host we refuse to tokenize must also be one we refuse to rewrite.
+        # Its text is not in our phrase list, so any translation we applied would be one
+        # keyed to a *sibling's* phrase that happened to read the same — and the SDK
+        # that owns the host re-renders it anyway, so the write is both wrong and
+        # temporary. Only bites when the texts coincide, which is precisely when it is
+        # hardest to notice.
+        if isinstance(child.tag, str) and is_marked_host(child):
+            child.tail = _translate_text(child.tail, translations)
+            continue
         _walk_apply(child, translations, attrs)
         child.tail = _translate_text(child.tail, translations)
 

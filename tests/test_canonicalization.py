@@ -399,7 +399,13 @@ def test_MARK2_a_js_rendered_phrase_host_is_not_re_split_on_the_page_path():
     with patched:
         client.translate_page(PAGE_WITH_JS_HOST, category="CAT")
     queued = [p["phrase"] for p in client.pending_phrases]
-    assert "Hello" not in queued, f"the host's text was re-registered: {queued}"
+    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
+    # Asserting on pending_phrases alone is vacuous: with the tokenizer guard disabled
+    # the host's text does not become a loose phrase, it lands inside the enclosing
+    # BLOCK's phrase list — where it still re-registers and still shifts that block's
+    # id. Both queues have to be checked or the test passes against the defect.
+    assert "Hello" not in queued, f"re-registered as a phrase: {queued}"
+    assert "Hello" not in block_phrases, f"re-registered inside a block: {block_phrases}"
     assert "Outer" in queued, "control: ordinary content must still be discovered"
 
 
@@ -585,3 +591,99 @@ def test_MARK1_a_self_closing_root_is_stamped_inside_its_own_tag():
     assert stamp_content_block('<img src="a.png" alt="Hi"/>', "id1") == (
         '<img src="a.png" alt="Hi" data-ls-contentblock="id1"/>'
     )
+
+
+# -- MARK-2 on the page path: an identity is not a declaration ----------------
+
+
+JS_STAMPED_PAGE = (
+    "<html><body>"
+    '<div data-ls-contentblock="deadbeefdeadbeefdeadbeefdeadbeef">'
+    "<p>Hello <b>x</b></p><p>Second</p></div>"
+    "<p>Other <i>y</i></p>"
+    "</body></html>"
+)
+
+
+def test_MARK2_a_js_stamped_block_host_is_not_re_registered_on_the_page_path():
+    """The failure MARK-2's *Why* names, on the block half rather than the phrase half.
+
+    A `<Translate>` host rendered by the TypeScript core carries its resolved id. This
+    SDK also lets an author *declare* a block with a truthy flag, and treating any
+    non-empty value as a declaration meant a foreign identity was read as a request:
+    the subtree was re-tokenized, re-keyed under this page's category, queued as a new
+    block, and the other SDK's stamp overwritten. One block, two ids."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        out = client.translate_page(JS_STAMPED_PAGE, category="CAT")
+
+    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
+    assert "Hello" not in block_phrases, f"re-registered: {block_phrases}"
+    assert "Second" not in block_phrases, f"re-registered: {block_phrases}"
+    assert 'data-ls-contentblock="deadbeefdeadbeefdeadbeefdeadbeef"' in out, (
+        "the foreign stamp was overwritten with our own id"
+    )
+    assert "Other" in block_phrases, "control: ordinary blocks must still be discovered"
+
+
+@pytest.mark.parametrize("flag", ["1", "true", "yes", "on", "TRUE"])
+def test_MARK2_a_declaration_flag_is_still_an_authoring_request(flag):
+    """Reconciling with the declared-block feature: a truthy flag is this SDK's
+    documented way of saying "treat this subtree as one block", and it is not an
+    identity. It keeps working, and gets the id derived from its content."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        out = client.translate_page(
+            f'<html><body><div data-langsys-contentblock="{flag}"><p>A</p><p>B</p></div>'
+            "</body></html>",
+            category="CAT",
+        )
+    assert client.pending_content_blocks, f"declaration {flag!r} stopped declaring"
+    assert f'data-ls-contentblock="{client.pending_content_blocks[0]["custom_id"]}"' in out
+
+
+# -- MARK-1: the stamp must not corrupt the markup it is inserted into --------
+
+
+@pytest.mark.parametrize(
+    ("markup", "expected"),
+    [
+        ('<p title="a>b">Hi</p>', '<p title="a>b" data-ls-contentblock="id1">Hi</p>'),
+        ("<p title='a>b'>Hi</p>", "<p title='a>b' data-ls-contentblock=\"id1\">Hi</p>"),
+        (
+            '<!-- <b>note</b> --><p>Hi</p>',
+            '<!-- <b>note</b> --><p data-ls-contentblock="id1">Hi</p>',
+        ),
+    ],
+    ids=["gt-in-double-quotes", "gt-in-single-quotes", "leading-comment"],
+)
+def test_MARK1_the_stamp_honours_quotes_and_comments(markup, expected):
+    """A `>` inside an attribute value is legal and ordinary — a `title`, a `data-*`
+    holding JSON — and a pattern that stops at the first `>` inserts the attribute into
+    the middle of that value. The result is not merely different markup, it is broken
+    markup. A comment before the host can contain markup of its own, so the first
+    `<tag` in the string is not necessarily the host's."""
+    from langsys.html.parser import stamp_content_block
+
+    assert stamp_content_block(markup, "id1") == expected
+
+
+# -- MARK-2: the excision is symmetric ----------------------------------------
+
+
+def test_MARK2_a_marked_host_is_not_rewritten_either():
+    """DECISION, tested rather than left implicit: a host we refuse to tokenize is also
+    one we refuse to rewrite.
+
+    Its text is not in our phrase list, so a translation applied to it is one keyed to a
+    *sibling's* phrase that happened to read the same — and the SDK owning the host
+    re-renders it regardless, so the write is both wrong and temporary. It only bites
+    when the two texts coincide, which is exactly when it is hardest to notice."""
+    from langsys.html.parser import apply_block_translations
+
+    out = apply_block_translations(
+        '<p>Intro <span data-ls-phrase="x">Hello</span> end</p>',
+        {"Hello": "HOLA", "Intro": "INTRO"},
+    )
+    assert ">Hello<" in out, f"the foreign host's text was rewritten: {out}"
+    assert "INTRO" in out, "control: our own text must still be translated"
