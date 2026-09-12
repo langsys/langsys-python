@@ -6,6 +6,8 @@ without pulling in lxml (which is an optional extra). Matches the PHP SDK exactl
 
 from __future__ import annotations
 
+from typing import Optional
+
 DEFAULT_TRANSLATABLE_ATTRIBUTES: tuple[str, ...] = (
     "placeholder",
     "alt",
@@ -35,3 +37,41 @@ DEFAULT_TRANSLATABLE_ATTRIBUTES: tuple[str, ...] = (
     "data-empty-message",
     "data-placeholder",
 )
+
+
+# -- the block-identity attribute --------------------------------------------
+#
+# `data-ls-contentblock` (and its `data-langsys-` spelling) carries two different
+# meanings and they must be told apart in exactly ONE place. An earlier revision had a
+# reader in `page.py` and a reader eight lines below it disagreeing about what `""`,
+# `"0"` and `"false"` meant — one walked the subtree normally, the other read it as
+# another SDK's id and excised it from discovery entirely. That drift is what this
+# module exists to make impossible.
+
+#: MARK-1 — the attribute is an **identity**. This SDK additionally lets an author
+#: *declare* a subtree to be one block with a truthy flag; these are those flags.
+BLOCK_DECLARATION_VALUES = frozenset({"1", "true", "yes", "on"})
+
+#: The negative forms of the same flag, plus the bare attribute. `<div data-ls-contentblock>`
+#: is the natural boolean-attribute spelling and parses as `""`.
+#:
+#: These are **not** identities: a resolved `custom_id` is never empty, `0` or `false`,
+#: so reading them as one gains nothing and costs the subtree its discovery.
+BLOCK_OPT_OUT_VALUES = frozenset({"", "0", "false", "off", "no"})
+
+
+def classify_block_attribute(value: Optional[str]) -> str:
+    """``"absent"`` | ``"declaration"`` | ``"opt-out"`` | ``"identity"``.
+
+    ``opt-out`` and ``absent`` both mean *walk this subtree as ordinary content*; they
+    are distinct only so a caller can tell "the author said no" from "the author said
+    nothing". ``identity`` means another SDK already owns this block.
+    """
+    if value is None:
+        return "absent"
+    normalized = value.strip().lower()
+    if normalized in BLOCK_DECLARATION_VALUES:
+        return "declaration"
+    if normalized in BLOCK_OPT_OUT_VALUES:
+        return "opt-out"
+    return "identity"

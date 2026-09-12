@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Sequence, cast
 
-from .attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES
+from .attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES, classify_block_attribute
 
 try:
     from lxml import html as lxml_html
@@ -27,6 +27,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 __all__ = [
     "DEFAULT_TRANSLATABLE_ATTRIBUTES",
     "SKIP_TAGS",
+    "is_marked_host",
     "extract_phrases",
     "apply_block_translations",
     "stamp_content_block",
@@ -77,12 +78,11 @@ SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
 #: registers its text a second time under a new id. Both spellings, because a page
 #: mixing them is the ordinary case: a PHP-rendered page hosting a JS-rendered
 #: component is what a customer's site looks like.
-MARKED_HOST_ATTRS = (
-    "data-ls-phrase",
-    "data-langsys-phrase",
-    "data-ls-contentblock",
-    "data-langsys-contentblock",
-)
+#: A phrase host is value-blind: this SDK has no "declare a phrase" affordance, so the
+#: attribute's presence is always an identity. A BLOCK host is not — see
+#: `classify_block_attribute`, which both walkers share so the two cannot drift.
+PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
+BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
 
 
 def normalize_whitespace(text: Optional[str]) -> str:
@@ -94,8 +94,16 @@ def _parse_fragment(html: str) -> _Element:
 
 
 def is_marked_host(el: _Element) -> bool:
-    """True when this element already carries a Langsys identity (MARK-2)."""
-    return any(el.get(attr) is not None for attr in MARKED_HOST_ATTRS)
+    """True when this element already carries a Langsys identity (MARK-2).
+
+    A declaration flag or an opt-out is not an identity, so a subtree carrying one is
+    walked as ordinary content rather than excised.
+    """
+    if any(el.get(attr) is not None for attr in PHRASE_HOST_ATTRS):
+        return True
+    return any(
+        classify_block_attribute(el.get(attr)) == "identity" for attr in BLOCK_HOST_ATTRS
+    )
 
 
 def _skip(el: _Element) -> bool:

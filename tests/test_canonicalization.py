@@ -687,3 +687,79 @@ def test_MARK2_a_marked_host_is_not_rewritten_either():
     )
     assert ">Hello<" in out, f"the foreign host's text was rewritten: {out}"
     assert "INTRO" in out, "control: our own text must still be translated"
+
+
+# -- the block attribute has three meanings, classified in ONE place ----------
+#
+# Introduced as a regression and caught in review: the page walker gained a helper that
+# read anything not a declaration flag as a foreign identity — including `""`, `"0"`,
+# `"false"` and the bare attribute — and excised those subtrees from discovery
+# entirely, while a second helper eight lines below still called the same values "not a
+# declaration, walk normally". Two readers, one attribute, opposite answers.
+#
+# A resolved custom_id is never empty, `0` or `false`, so reading them as identities
+# gained nothing and cost the content its registration.
+
+BLOCK_ATTR_CASES = [
+    ("", "opt-out"),              # <div data-ls-contentblock> — the boolean form
+    ('=""', "opt-out"),
+    ('="0"', "opt-out"),
+    ('="false"', "opt-out"),
+    ('="FALSE"', "opt-out"),
+    ('="1"', "declaration"),
+    ('="true"', "declaration"),
+    ('="deadbeefdeadbeefdeadbeefdeadbeef"', "identity"),
+]
+
+
+@pytest.mark.parametrize(
+    ("suffix", "kind"), BLOCK_ATTR_CASES, ids=[c[0] or "bare" for c in BLOCK_ATTR_CASES]
+)
+def test_MARK2_the_block_attribute_is_classified_three_ways_on_the_page_path(suffix, kind):
+    """`opt-out` and the bare attribute must still be DISCOVERED as ordinary content.
+    Only a value that is actually another SDK's id is excised."""
+    attribute = "data-ls-contentblock" + suffix
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(
+            f"<html><body><div {attribute}><p>Hello</p><p>Second</p></div></body></html>",
+            category="CAT",
+        )
+    phrases = [p["phrase"] for p in client.pending_phrases]
+    blocks = [t for b in client.pending_content_blocks for t in b["phrases"]]
+
+    if kind == "opt-out":
+        assert phrases == ["Hello", "Second"], f"the subtree vanished from discovery: {phrases}"
+        assert blocks == []
+    elif kind == "declaration":
+        assert blocks == ["Hello", "Second"], f"the declaration stopped declaring: {blocks}"
+    else:
+        assert phrases == [] and blocks == [], "a foreign identity was re-registered"
+
+
+@pytest.mark.parametrize(
+    ("suffix", "kind"), BLOCK_ATTR_CASES, ids=[c[0] or "bare" for c in BLOCK_ATTR_CASES]
+)
+def test_MARK2_the_block_path_classifies_it_the_same_way(suffix, kind):
+    """The same attribute, the same three meanings, on the tokenizer. Previously the
+    tokenizer was value-blind and excised a nested declaration flag — so the two files
+    defined "declaration" differently, which is the drift the shared classifier removes."""
+    attribute = "data-ls-contentblock" + suffix
+    tokens = extract_phrases(f"<div><div {attribute}><p>Hello</p></div><p>Bye</p></div>")
+    if kind == "identity":
+        assert tokens == ["Bye"], f"a foreign identity was harvested: {tokens}"
+    else:
+        assert tokens == ["Hello", "Bye"], f"non-identity subtree was excised: {tokens}"
+
+
+def test_MARK2_one_classifier_answers_for_both_walkers():
+    """Pinned directly, because the defect was two helpers disagreeing rather than
+    either one being wrong in isolation."""
+    from langsys.html.attributes import classify_block_attribute
+
+    assert classify_block_attribute(None) == "absent"
+    assert classify_block_attribute("") == "opt-out"
+    assert classify_block_attribute("  FALSE  ") == "opt-out"
+    assert classify_block_attribute("1") == "declaration"
+    assert classify_block_attribute("On") == "declaration"
+    assert classify_block_attribute("deadbeef") == "identity"

@@ -72,6 +72,12 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   `&eacute;` and unquoted attribute values survive verbatim, where previously a block
   with no translation yet came back re-serialised.
 - Blocks rendered by full-page translation are stamped too, not only single-block ones.
+- A `data-ls-contentblock` attribute now means one of three things, decided in a single
+  place: a truthy value declares a subtree to be one block, an empty/`0`/`false` value or
+  the bare attribute opts out and the content is discovered normally, and anything else
+  is another SDK's id and is left alone. Two readers previously disagreed about the empty
+  value, so `<div data-ls-contentblock>` — the natural boolean spelling — silently
+  dropped its contents from discovery.
 
 **Registration lane (wave 2).**
 

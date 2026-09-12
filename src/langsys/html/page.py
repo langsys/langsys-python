@@ -22,20 +22,14 @@ from lxml.etree import _Element
 from ..registration import generate_custom_id
 from ..translate import lookup_block
 from ..types import UNCATEGORIZED
+from .attributes import classify_block_attribute
 from .parser import apply_element, extract_phrases, inner_html, text_content
 
 #: MARK-2 — a host carrying one of these is already identified. Both spellings.
 PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
 CONTENT_BLOCK_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
 
-#: This SDK lets an author *declare* a subtree to be one block by marking it with a
-#: truthy flag. The spec defines the attribute only as an **identity** (MARK-1), so a
-#: value that is not one of these flags is another SDK's id, not a request.
-#:
-#: The distinction is the value's meaning, not a guess at its shape: `"1"` is the
-#: documented declaration and a resolved id is never one of these words. Getting it
-#: wrong in the permissive direction is what re-registered JS-rendered blocks.
-DECLARATION_VALUES = frozenset({"1", "true", "yes", "on"})
+
 
 if TYPE_CHECKING:
     from ..client import LangsysClient
@@ -255,22 +249,24 @@ def _effective_category(el: _Element, inherited: Optional[str], selmap: _SelMap)
     return None
 
 
+def _block_attribute_kind(el: _Element) -> str:
+    """How this element's block attribute reads. One classifier, one answer."""
+    for attr in CONTENT_BLOCK_ATTRS:
+        kind = classify_block_attribute(el.get(attr))
+        if kind != "absent":
+            return kind
+    return "absent"
+
+
 def _is_identified_block_host(el: _Element) -> bool:
     """True when a block attribute carries another SDK's id rather than a declaration."""
-    for attr in CONTENT_BLOCK_ATTRS:
-        value = el.get(attr)
-        if value is None:
-            continue
-        if value.strip().lower() not in DECLARATION_VALUES:
-            return True
-    return False
+    return _block_attribute_kind(el) == "identity"
 
 
 def _has_content_block_attr(el: _Element) -> bool:
-    value = _marked_attr(el, "contentblock")
-    if value is None:
-        return False
-    return value != "" and value != "0" and value.lower() != "false"
+    """True only for an authoring *declaration*. An opt-out, a bare attribute, or
+    another SDK's identity are all handled elsewhere — see `classify_block_attribute`."""
+    return _block_attribute_kind(el) == "declaration"
 
 
 def _contains_nested_blocks(el: _Element) -> bool:
