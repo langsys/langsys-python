@@ -58,6 +58,20 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   component — previously had the unfamiliar spelling's blocks re-split and registered a
   second time.
 - TOK-2, TOK-3 and TOK-4 were already satisfied; they now have tests.
+- **A parameter value could reach another parameter.** `%name%` was resolved on rendered
+  output, so a value containing `%other%` pulled in a second argument — user-supplied
+  data reaching arguments it was never given. The escape is now resolved on the template
+  before rendering, so no substituted value is ever re-scanned. `{name}` never had this
+  exposure.
+- **Content already carrying a Langsys identity is no longer registered a second time.**
+  A host marked `data-ls-phrase` or `data-langsys-phrase` — typically rendered by another
+  SDK on the same page — was walked into and its text registered again under a new id. It
+  is now excluded from extraction entirely, so it also stops shifting the id of the block
+  containing it.
+- Stamping a content block no longer rewrites the markup around it: `&nbsp;`, `<br/>`,
+  `&eacute;` and unquoted attribute values survive verbatim, where previously a block
+  with no translation yet came back re-serialised.
+- Blocks rendered by full-page translation are stamped too, not only single-block ones.
 
 **Registration lane (wave 2).**
 

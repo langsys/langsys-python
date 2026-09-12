@@ -5,7 +5,7 @@
 | **SDK** | `langsys-python` (server core) |
 | **Profiles** | `all`, `server` |
 | **specVersion** | 8 |
-| **Spec revision read** | **v8** — langsys2 `docs/sdk-spec.mdx` blob `b657b490f07615b889081c0ac5244ec4bd73bf81`, at `feature/838_write_key_gating` `483f98fb9c22155fdd51e0946239556470f57936`, read 2026-09-11. Re-derive with `git -C ~/Documents/dev/langsys2 ls-tree origin/feature/838_write_key_gating docs/sdk-spec.mdx`. Earlier waves were filed against v7 blob `06ae105a0a1f`; the v7 rows are unchanged in v8 |
+| **Spec revision read** | **v8** — langsys2 `docs/sdk-spec.mdx` blob `b657b490f07615b889081c0ac5244ec4bd73bf81`, at `feature/838_write_key_gating` `483f98fb9c22155fdd51e0946239556470f57936`, read 2026-09-11. Re-derive with `git -C ~/Documents/dev/langsys2 rev-parse 483f98fb:docs/sdk-spec.mdx` — **by commit, not by branch**: the branch has since moved and now resolves a different blob, so the command originally recorded here no longer returns the revision these rows are filed against. Earlier waves were filed against v7 blob `06ae105a0a1f`; the v7 rows are unchanged in v8 |
 | **SDK revision** | `feature/838_write_key_gating`, cut from `origin/main` `bc5ca62` |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
 | **Suite** | 405 tests in 19 files — 390 unit + 15 live (`pytest`, `pytest -m integration`) |
@@ -84,30 +84,31 @@ CONF-2's own open item, which it says gates every claim in all 13 repos.
 
 ## Summary
 
-Counted from the table below by script, not asserted beside it. 79 rules, every one
-accounted for (v8 added TOK-1..5, MARK-1/2 and SRV-1..5 to v7's 67).
+Counted by `_dev_/conformance_counts.py`, which is committed and exits non-zero on an
+unaccounted-for or doubly-claimed rule id. Run it rather than trusting this table.
 
 | Status | Count | |
 |---|---|---|
 | `implemented` | 46 | |
 | `partial` | 5 | GATE-6, GATE-7 (report direction is profile-vacuous), SRV-3, CONF-1, CONF-3 |
-| `not implemented` | 0 | |
-| `n/a` (architecture) | 0 | the bucket is empty — see below |
-| `n/a` (profile) | 28 | browser/binding rules that do not apply to a server core |
-| **total** | **79** | of which **51 bind** (`all` + `server`) |
+| `not implemented` | 1 | SRV-4 |
+| `n/a` (architecture) | 1 | SRV-5 |
+| `n/a` (profile) | 26 | browser/binding rules that do not apply to a server core |
+| **total** | **79** | of which **53 bind** (`all` + `server`) |
 
-The architecture-`n/a` bucket is empty and the fact is worth keeping, not deleting. It
-held three rules across the program's waves and every one of them left it by becoming
-**live**, not by staying true:
+**The architecture bucket is occupied again, and by review rather than by choice.**
+SRV-4 and SRV-5 were filed `n/a (profile)` with the reason "no Python analogue". Their
+Profiles lines name `server` **first**, so the profile binds and that filing was wrong;
+the reason given was structural all along, which is what the architecture bucket is for.
+SRV-5 moves there; SRV-4 is **not implemented**, because a server SDK handing a client
+the catalog it rendered with is something PHP does and this does not.
 
-* REG-6 and REG-7 exited when REG-2's debounce added a timer thread — the "async twin"
-  their expiry condition named, arriving through a side door.
-* GATE-2 exited when review showed that a *failed* capability resolution is exactly the
-  unknown the rule is about, so the row had never been vacuous at all.
-
-Three for three. An architecture `n/a` is a claim about this SDK that expires when the
-SDK changes, and on the evidence here it expires more often than it holds — a
-defect-in-waiting to be discharged rather than a status to carry.
+That is four rules through the bucket now and the earlier claim needs correcting rather
+than quietly restating: the previous revision of this file said it "held three rules and
+every one left by becoming live". True of those three. What it missed is the direction
+this one arrived from — **a rule can enter the bucket because a profile row was wrong**,
+not only leave it because the SDK changed. The bucket is where structural claims live,
+and a structural claim is exactly what is easiest to mis-file as a profile one.
 
 ## Deferred — announced but not yet normative
 
@@ -118,22 +119,39 @@ is guessed from prose.
 
 | Rule | Announced change | Why deferred |
 |---|---|---|
-| TOK-1 | `svg` text becomes translatable; `math` joins the exclusions | The current text names neither. This SDK's **block** path excludes `script`/`style`/`noscript`/`template` only — deliberately not `svg`, since excluding it would be work to undo. Its **page** path skips `svg` and `math` today, which the rule does not ask for; that split is measured and reported rather than silently reconciled |
+| TOK-1 | `svg` text becomes translatable; `math` joins the exclusions | The current text names neither. This SDK's **block** path excludes `script`/`style`/`noscript`/`template` only — deliberately not `svg`, since excluding it would be work to undo. Its **page** path skips `svg` and `math`, **but only at the top level** — see the leak below |
 | TOK-2 | The collapse set becomes JavaScript's `\s` **enumerated**, excluding `U+0085`/`U+180E`/`U+200B`/`U+2060` | Python's `\s` is Unicode-aware, so the host-language behaviour currently in force is satisfied. Against the *enumerated* set, measurement shows exactly two divergences, and one prediction in the brief did not hold on this runtime — see the completion report. Implementing to prose, before the text and the vectors exist, is what the evidence norms forbid |
+
+**The page path's `svg`/`math` skip is top-level only, and the nested case leaks.** A
+leaf block hands its inner HTML to the block tokenizer, whose skip set does not name
+them, so `<p>Hello <b>there</b> <svg><text>Label</text></svg></p>` tokenizes as
+`['Hello', 'there', 'Label']`. Measured here, and reported by the Ruby and PHP lanes as
+the same shape. Left as measured rather than changed: when 8.0.1 lands, SVG text becomes
+translatable and `math` becomes excluded, and the fix is not "skip it in one more place"
+— `svg` will need walking as a **block** element on the page path, because PHP found
+that merely not-skipping lets a walker drop its text instead of registering it.
 
 The updated shared fixture carrying rows for `U+FEFF`, `U+0085`, `U+180E` and
 `%name%`-in-markup does not exist yet either: the vendored copy below is the 19-case
 file, and its `agreement` block still reads `{rows: 19}`.
+
+**On the enumerated whitespace set, measured on this runtime** (CPython 3.9.6, Unicode
+13) rather than taken from the brief: `U+FEFF` is JS whitespace that Python's `\s` does
+**not** match (Python under-collapses), `U+0085` is the reverse (Python over-collapses),
+and `U+180E`, `U+200B`, `U+2060` all agree — `U+180E` stopped being whitespace in
+Unicode 6.3 and Python followed, so the brief's prediction that Python collapses it does
+not hold here. Two divergences, in opposite directions. A node holding only one of
+`U+FEFF`/`U+180E`/`U+200B`/`U+2060` currently yields a **one-token** phrase, which is the
+count case that moves block ids and the first thing to re-row when 8.0.1 lands.
 
 ## Status
 
 
 | Rule | Status | Evidence | Test |
 |---|---|---|---|
-| GATE-1 | implemented | live | `test_gating` write-key-not-enabled + ip_write-enabled pair (the discriminating vector: `key_type` and `write_enabled` disagree) · `test_integration` all three live key types · mutation: branching on `key_type` reddens 7 tests |
+| GATE-1 | implemented | live | `test_gating` write-key-not-enabled + ip_write-enabled pair (the discriminating vector: `key_type` and `write_enabled` disagree) · `test_integration` all three live key types · mutation: branching on `key_type` reddens 7 tests · **Source precedence:** `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()` reddens a named test. **Correction:** an earlier revision of this file claimed the absent-flag-records-as-`False` mutation also did. It did not — under it all three original precedence tests passed, and the suite caught the mutant only incidentally, through a GRANT test erroring. The fourth test (`never_strips_a_real_yes`) was added to close that and *does* redden by name |
 | GATE-2 | implemented | mock | **No longer `n/a` — the row was wrong twice and this is the correction.** Wave 1 filed it `n/a (synchronous)`; wave 2 re-argued it as "the decision resolves synchronously inside the flush, so no window exists in which it is unknown". Review punctured that: a resolution that **fails** is unknown, and this SDK collapsed it to `False` and discarded the whole queue on a transient authorize blip — with the reason string misdiagnosing it as `not-write-enabled`, and no backoff, so recovery never resent it. `_resolve_write_enabled` now returns True/False/**None** and the flush **holds** on None: queue retained, backoff armed, honest reason. `test_registration_lane` GATE-2 block — held on unknown, still discarded on a server *no* (the half that makes this more than "never discard"), reason not misdiagnosed, survives to the recovering flush, `ip_write` protected specifically, `can_write` still refuses on unknown, explicit registration names ignorance rather than denial |
 | GATE-3 | implemented | live | `test_gating` decision-not-latched-in-memory (`Project.raw`) + address-dependent-not-inherited-from-warm-store · `test_integration` GATE-4 cache read-back |
-| GATE-1 (precedence) | implemented | mock | `test_gating` PRECEDENCE block — **both shadow directions**: a fresher envelope beats an older authorize, a fresher authorize beats an older envelope, and an *absent* flag never displaces a real answer. Precedence is by recency, never by source. Mutations: dropping the observe-before-strip in `authorize()` reddens a named test. **Correction:** an earlier revision of this file claimed the absent-flag-records-as-`False` mutation also did. It did not — under it all three original precedence tests passed, and the suite caught the mutant only incidentally, through a GRANT test erroring. The fourth test (`never_strips_a_real_yes`) was added to close that and *does* redden by name |
 | GATE-4 | implemented | live | `test_gating` stripped-before-anything-is-cached (asserts `key_type` survives, `write_enabled` does not) · mutation: caching the decision reddens 3 tests |
 | GATE-5 | implemented | mock | `test_gating` failed-registration-keeps-the-queue · clears-only-after-acceptance · no-persistent-marker-is-written. Structurally unreachable here: this SDK has no "already registered" store at all |
 | GATE-6 | partial | mock | Register half gated and tested. Report half is **vacuous** — no report lane exists (HINT-2), so it cannot fail. Recorded partial rather than green |
@@ -175,7 +193,7 @@ file, and its `agreement` block still reads `{rows: 19}`.
 | WIRE-4 | implemented | live | `test_wire4_degradation` — 14 tests: connect/500/401/authorize-failure all degrade; **a failed fetch queues nothing**, each paired with a positive control proving the same call does queue on success; a failure is not cached as an empty catalog. Mutation: queueing on a failed fetch reddens 4 |
 | WIRE-5 | implemented | n/a (pure) | Constructor `api_url` plus `LANGSYS_API_URL`; findable and redirectable to a double |
 | TOK-1 | implemented | mock | `script`/`style`/`noscript`/`template` excluded on the **content-block** path, which previously skipped nothing and harvested all four into block ids (3 of the 19 shared-fixture rows). `test_canonicalization` — one document carrying the sentence in all three plus ordinary markup yields exactly one phrase; the ordinary-markup control is the whole test. `template` is a live vector here, not the free pass browsers get: lxml parses its children into the ordinary tree. **`svg`/`math` deliberately NOT excluded on this path** — see the deferral note below. Mutation: emptying the skip set reddens 6 named rows |
-| TOK-2 | implemented | mock | Already satisfied before the rule existed — Python's `re` `\s` and `str.strip()` are Unicode-aware — but **measured rather than assumed**, which the rule asks for by name. All three vectors: internal, leading/trailing (the half-fix detector), and a whitespace-only node producing **no** token (the count case that moves block ids). Characters written as escapes; a sweep replaced every literal in the suite, including two `U+2028` in `test_custom_id.py` from an earlier wave. Mutation: narrowing the class to ASCII reddens the `nbsp-*` and `line-separators` rows |
+| TOK-2 | implemented | mock | Already satisfied before the rule existed — Python's `re` `\s` and `str.strip()` are Unicode-aware — but **measured rather than assumed**, which the rule asks for by name. All three vectors: internal, leading/trailing (the half-fix detector), and a whitespace-only node producing **no** token (the count case that moves block ids). Characters written as escapes; a sweep replaced every literal in the suite, including two `U+2028` in `test_custom_id.py` from an earlier wave. Mutation: narrowing the class to ASCII reddens the `nbsp-*` and `line-separators` rows. Runtime behaviour is pinned in-repo by `test_canonicalization` rather than by an external measurement report |
 | TOK-3 | implemented | n/a (pure) | The twenty-seven, in order, verified against the rule's own prose rather than assumed. Order is normative: a same-set-different-order implementation agrees on every single-attribute element and diverges on exactly the ones hardest to notice |
 | TOK-4 | implemented | n/a (pure) | Attribute values run through the same normaliser as text nodes, so `title="Buy   now"` and the paragraph reading `Buy now` produce one id |
 | TOK-5 | implemented | n/a (pure) | `%name%` accepted as the escape for `{name}`, on both the simple and ICU paths. Absent/null arguments stay literal exactly as `{name}` does (ICU-4's observability reaching this rule). The name must look like an identifier, so `100% of 50%` is prose rather than a slot — the commoner shape by far. Mutation: disabling the pattern reddens the named test |
@@ -184,7 +202,8 @@ file, and its `agreement` block still reads `{rows: 19}`.
 | SRV-1 | implemented | mock | `test_server_render` — the served output carries the request locale's translation, with an absent phrase in the **same render** emitting base language and registering as a miss, which is what separates this from a catalog that happened to be complete |
 | SRV-2 | implemented | mock | `test_server_render` — two **concurrent** renders in `it`/`de` each see only their own locale. Run sequentially this proves nothing; the failure is the interleave |
 | SRV-3 | partial | mock | Read-only half implemented and tested, with a write key on the same render as the positive control — without it the assertion passes against an SDK that never pushes. Order-of-events: `translate()` queues without sending, and with the debounce on the send lands later from another thread. **The response-flush boundary itself is a wrapper obligation** (declared below): a library has no response to flush |
-| SRV-4, SRV-5 | n/a (profile) | n/a | The JS hydration and component half — a synchronous client seed and per-child capture. No Python analogue |
+| SRV-4 | **not implemented** | none | **Re-bucketed on review.** Its Profiles line names `server` first, so it binds; filing it `n/a (profile)` was wrong. The reason given — no Python analogue — is structural, which is the architecture bucket, and PHP's precedent is that a server SDK can hand a client the catalog it rendered with. Nothing here does. See gaps |
+| SRV-5 | n/a (architecture) | n/a | Binds by profile, but this SDK performs no component render, so there are no children to capture once each. A **structural** claim about this SDK rather than about the rule — which is what the architecture bucket is for, and it means the bucket is no longer empty |
 | CONF-1 | partial | — | The live rows assert on server acceptance and on values read back from a real instance. The mocked rows do not meet the bar and are graded accordingly rather than relabelled |
 | CONF-2 | implemented | — | Grading adopted; every row carries a tier. No row claims `contract` — the shared fixture does not exist |
 | CONF-3 | partial | — | Mutations recorded per rule across three waves — GATE-1, GATE-4, WIRE-4, ICU-5, CID-3 ×2, precedence ×2, byte-hash port, REG-2, REG-3, REG-6, REG-7, REG-8 ×2, REG-11 ×2, GATE-2, and the debounce re-arm — each verified to redden a **named** test, not merely to redden the suite. Still not systematic across every rule, and the `n/a` rows have nothing to mutate |
@@ -314,14 +333,18 @@ silently became a byte hash passes every ASCII row and fails there.
 Ranked by what the gap costs, not by rule order. Wave 2 closed every implementable
 Python-side gap; what remains is E2E-dependent or lives in another repo.
 
-1. **CONF-1 / CONF-2 / CONF-3 — evidence, not behaviour.** Most rows are `mock`-tier,
+1. **SRV-4 — the client is never handed the catalog the server rendered with.** Not
+   implemented, and re-bucketed out of `n/a` on review: the profile binds. A client that
+   re-fetches what the server already had pays for the same catalog twice and can render
+   a different one, which is the flash SRV-1 exists to remove arriving one rule later.
+2. **CONF-1 / CONF-2 / CONF-3 — evidence, not behaviour.** Most rows are `mock`-tier,
    which CONF-2 says does not count, and the shared stateful contract fixture that would
    let them count does not exist. Fleet-blocked, not Python-blocked. Mutation coverage
    (CONF-3) is now broad but still not systematic across every rule.
-2. **GATE-6 / GATE-7 — half-vacuous by profile.** Their report direction cannot fail on a
+3. **GATE-6 / GATE-7 — half-vacuous by profile.** Their report direction cannot fail on a
    server core, so those rows carry less signal than their status suggests. Filed
    `partial` rather than green for exactly that reason.
-3. **The Django/FastAPI wrapper obligations** — `reset_write_decision()` at request
+4. **The Django/FastAPI wrapper obligations** — `reset_write_decision()` at request
    boundaries (GATE-3) and a request-end flush (REG-3). Declared below; neither can be
    discharged from this repo.
 

@@ -38,6 +38,10 @@ __all__ = [
 
 _WS = re.compile(r"\s+")
 
+#: The first start tag in a fragment, with its self-closing slash captured separately so
+#: an attribute can be inserted before it without disturbing the rest of the string.
+_OPEN_TAG = re.compile(r"<[A-Za-z][^\s/>]*(?:\s[^>]*?)?(?P<selfclose>/?)>")
+
 #: TOK-1 — elements whose content is never tokenized. They hold code, inert content, or
 #: content no implementation can agree on.
 #:
@@ -57,6 +61,17 @@ _WS = re.compile(r"\s+")
 #: both; that split is measured and reported rather than silently reconciled.
 SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
 
+#: MARK-2 — a host already carrying one of these has an identity, and walking into it
+#: registers its text a second time under a new id. Both spellings, because a page
+#: mixing them is the ordinary case: a PHP-rendered page hosting a JS-rendered
+#: component is what a customer's site looks like.
+MARKED_HOST_ATTRS = (
+    "data-ls-phrase",
+    "data-langsys-phrase",
+    "data-ls-contentblock",
+    "data-langsys-contentblock",
+)
+
 
 def normalize_whitespace(text: Optional[str]) -> str:
     return _WS.sub(" ", text).strip() if text else ""
@@ -64,6 +79,11 @@ def normalize_whitespace(text: Optional[str]) -> str:
 
 def _parse_fragment(html: str) -> _Element:
     return cast("_Element", lxml_html.fragment_fromstring(html, create_parent="div"))
+
+
+def is_marked_host(el: _Element) -> bool:
+    """True when this element already carries a Langsys identity (MARK-2)."""
+    return any(el.get(attr) is not None for attr in MARKED_HOST_ATTRS)
 
 
 def _skip(el: _Element) -> bool:
@@ -118,6 +138,16 @@ def _walk_extract(el: _Element, attrs: Sequence[str], out: list[str]) -> None:
         if text:
             out.append(text)
     for child in el:
+        # MARK-2 — EXCISION, not merely "do not re-register". The host's text must not
+        # reach the parent's phrase list at all: a content block's id derives from its
+        # phrases in order, so harvesting an already-identified host's text would also
+        # shift the id of the block containing it.
+        if isinstance(child.tag, str) and is_marked_host(child):
+            if child.tail:
+                tail = normalize_whitespace(child.tail)
+                if tail:
+                    out.append(tail)
+            continue
         _walk_extract(child, attrs, out)
         if child.tail:
             tail = normalize_whitespace(child.tail)
@@ -147,8 +177,23 @@ def stamp_content_block(html: str, custom_id: str) -> str:
     children = [c for c in root if isinstance(c.tag, str)]
     if len(children) != 1 or (root.text or "").strip():
         return html
-    children[0].set("data-ls-contentblock", custom_id)
-    return _inner_html(root)
+
+    # Injected into the ORIGINAL string rather than re-serialised from the parse tree.
+    # Round-tripping through lxml is not lossless for markup we were only asked to
+    # stamp: `&nbsp;` comes back as a raw U+00A0, `<br/>` as `<br>`, `&eacute;` as `é`,
+    # and unquoted or single-quoted attribute values get rewritten. On the miss path
+    # the caller is handed back its own markup, so those changes would be ours to
+    # explain and none of them were asked for.
+    match = _OPEN_TAG.search(html)
+    if match is None:  # pragma: no cover - a single element always has an open tag
+        return html
+    attribute = f' data-ls-contentblock="{_attr_escape(custom_id)}"'
+    cut = match.end() - len(match.group("selfclose")) - 1
+    return html[:cut] + attribute + html[cut:]
+
+
+def _attr_escape(value: str) -> str:
+    return value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
 
 def apply_block_translations(

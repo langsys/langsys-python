@@ -359,3 +359,229 @@ def test_MARK2_control_an_unmarked_host_is_not_recognised():
     from langsys.html.page import _has_content_block_attr
 
     assert _has_content_block_attr(LH.fragment_fromstring("<div><p>Hi</p></div>")) is False
+
+
+# -- MARK-2, the spec's own test: on a PAGE and on a BLOCK --------------------
+#
+# The earlier MARK-2 tests exercised two helper functions. A helper that answers
+# correctly proves nothing about a walker that never asks it, which is exactly what was
+# happening: no phrase-host reader existed on either path.
+
+PAGE_WITH_JS_HOST = (
+    "<html><body>"
+    '<p>Intro <span data-ls-phrase="abc123">Hello</span> end</p>'
+    "<div><p>Outer</p><p>Second</p></div>"
+    "</body></html>"
+)
+
+
+def _client_with_catalog(catalog):
+    from unittest.mock import patch
+
+    from langsys import LangsysClient
+    from langsys.cache import MemoryCache
+    from langsys.catalog import CatalogFetch
+
+    client = LangsysClient(
+        "k", "p", api_url="http://x.invalid/api", cache=MemoryCache(),
+        base_locale="en-us", debounce=0, auto_flush=False,
+    )
+    return client, patch.object(
+        client._catalog, "get", return_value=CatalogFetch(catalog, ok=True)
+    )
+
+
+def test_MARK2_a_js_rendered_phrase_host_is_not_re_split_on_the_page_path():
+    """The spec's test. A PHP-rendered page containing a JS-rendered `data-ls-phrase`
+    host is not re-split: the host is recognised and no new phrase is registered for
+    its text."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(PAGE_WITH_JS_HOST, category="CAT")
+    queued = [p["phrase"] for p in client.pending_phrases]
+    assert "Hello" not in queued, f"the host's text was re-registered: {queued}"
+    assert "Outer" in queued, "control: ordinary content must still be discovered"
+
+
+@pytest.mark.parametrize("spelling", ["data-ls-phrase", "data-langsys-phrase"])
+def test_MARK2_the_mirror_case_both_spellings_on_the_block_path(spelling):
+    """Run the mirror too, or the rule is proven in one direction and asserted in the
+    other."""
+    html = f'<p>Intro <span {spelling}="abc123">Hello</span> end</p>'
+    assert extract_phrases(html) == ["Intro", "end"]
+
+
+def test_MARK2_excision_not_merely_non_registration():
+    """The host's text must not reach the parent's phrase list AT ALL. A block's id
+    derives from its phrases in order, so harvesting an already-identified host would
+    shift the id of the block containing it — re-keying a block whose own content never
+    changed."""
+    marked = '<div><p>A</p><span data-ls-phrase="x">B</span><p>C</p></div>'
+    without = "<div><p>A</p><p>C</p></div>"
+    assert extract_phrases(marked) == extract_phrases(without) == ["A", "C"]
+    assert generate_custom_id("CAT", extract_phrases(marked)) == generate_custom_id(
+        "CAT", extract_phrases(without)
+    )
+
+
+def test_MARK2_a_nested_content_block_host_is_left_alone_on_the_block_path():
+    html = '<div><div data-ls-contentblock="abc"><p>Inner</p></div><p>Outer</p></div>'
+    assert extract_phrases(html) == ["Outer"]
+
+
+def test_MARK2_control_an_unmarked_span_is_still_harvested():
+    """Without this, an implementation that excised every span would pass every row
+    above."""
+    assert extract_phrases("<p>Intro <span>Hello</span> end</p>") == [
+        "Intro", "Hello", "end"
+    ]
+
+
+def test_MARK2_no_phrase_is_queued_for_the_host_text_on_the_block_path():
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_content_block(
+            '<div><p>Outer</p><span data-ls-phrase="x">Hosted</span></div>', category="CAT"
+        )
+    for block in client.pending_content_blocks:
+        assert "Hosted" not in block["phrases"], block["phrases"]
+
+
+# -- MARK-1 on the page path --------------------------------------------------
+
+
+def test_MARK1_page_rendered_blocks_are_stamped_too():
+    """A stamp on one path and not the other makes the identity inspectable only on
+    whichever path the customer did not use.
+
+    The markup is a leaf block with inline children, which is what actually produces a
+    content block on the page path. A container of block-level children is walked into
+    and yields simple phrases instead — an earlier version of this test used one and
+    asserted a stamp that could never appear."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        out = client.translate_page(
+            "<html><body><p>Hello <b>there</b> friend</p></body></html>", category="CAT"
+        )
+    assert client.pending_content_blocks, "control: no block was produced to stamp"
+    expected = client.pending_content_blocks[0]["custom_id"]
+    assert f'data-ls-contentblock="{expected}"' in out
+
+
+def test_MARK1_a_declared_block_host_is_stamped_with_its_derived_id():
+    """A `data-langsys-contentblock` authoring marker is a request to treat the subtree
+    as one block, not an identity. It gets the id derived from its content, alongside
+    the marker it was declared with."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        out = client.translate_page(
+            '<html><body><div data-langsys-contentblock="1"><p>A</p><p>B</p></div>'
+            "</body></html>",
+            category="CAT",
+        )
+    assert client.pending_content_blocks
+    assert f'data-ls-contentblock="{client.pending_content_blocks[0]["custom_id"]}"' in out
+
+
+# -- TOK-5: the injection, and the identifier guard ---------------------------
+
+
+def test_TOK5_a_parameter_value_cannot_reach_another_parameter():
+    """The escape is resolved on the TEMPLATE, never on rendered output. Rewriting the
+    output re-scans substituted values, so a user-supplied value containing `%other%`
+    would pull in an argument it was never given. `{name}` never had that exposure
+    because substitution happens once; the escape has to match it."""
+    assert interpolate("{a}", {"a": "%b%", "b": "INJECTED"}, "en-US") == "%b%"
+
+
+def test_TOK5_control_the_brace_form_has_the_same_property():
+    """The control that makes the assertion above mean something: `{b}` inside a value
+    is already left literal, so the escape is being held to the existing standard."""
+    assert interpolate("{a}", {"a": "{b}", "b": "INJECTED"}, "en-US") == "{b}"
+
+
+def test_TOK5_a_value_containing_a_percent_pair_survives_verbatim():
+    assert interpolate("{a}", {"a": "100% of 50%"}, "en-US") == "100% of 50%"
+
+
+@pytest.mark.parametrize(
+    "prose", ["100% of 50%", "%a b%", "50%-75% off", "%  %", "%1st%"]
+)
+def test_TOK5_two_percent_prose_is_not_read_as_a_slot(prose):
+    """The identifier guard. Without a vector carrying TWO percent signs, loosening the
+    pattern to `%([^%]+)%` passes the whole suite — the single-`%` control cannot see
+    the difference."""
+    assert interpolate(prose, {"a": "X", "b": "X", "n": "X"}, "en-US") == prose
+
+
+# -- the vectors that actually reach each guard -------------------------------
+#
+# Three of the fixes above were first written with tests that could not fail. Each is
+# kept here as the discriminating vector, because "the fix is in" and "a test can see
+# the fix" are different claims and only the second is worth anything.
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        '<html><body><p data-langsys-phrase="1">Solo</p><p>Other</p></body></html>',
+        '<html><body><div data-ls-phrase="a"><p>Hosted</p></div><p>Other</p></body></html>',
+    ],
+    ids=["host-is-the-block", "block-level-host"],
+)
+def test_MARK2_a_block_level_phrase_host_is_excised_by_the_page_walker(page):
+    """The page walker's own excision, as distinct from the tokenizer's.
+
+    An inline host inside a leaf block never reaches it: the leaf's inner HTML goes to
+    `extract_phrases`, which excises there. Only a host that IS a block — or contains
+    one — is a child the page walker would recurse into itself, so it is the only shape
+    that can tell the two guards apart. The first test written for this used the inline
+    vector and stayed green with the page-path guard disabled."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(page, category="CAT")
+    queued = [p["phrase"] for p in client.pending_phrases]
+    assert "Solo" not in queued and "Hosted" not in queued, queued
+    assert "Other" in queued, "control: ordinary content must still be discovered"
+
+
+def test_TOK5_a_non_identifier_name_is_not_a_slot_even_when_it_is_a_parameter():
+    """The identifier guard's discriminating vector.
+
+    Prose vectors cannot see a loosened pattern, because substitution is gated on the
+    name being a supplied argument: a loose match on text that is not a parameter
+    changes nothing and the assertion stays green. The difference is only visible when
+    the loosely-matched name IS a parameter — so the guard is what stops `%a b%` from
+    becoming a slot, and that is what this pins."""
+    assert interpolate("%a b%", {"a b": "SUBSTITUTED"}, "en-US") == "%a b%"
+
+
+def test_MARK1_the_stamp_does_not_re_serialise_the_markup():
+    """Byte preservation on the miss path.
+
+    The stamp is injected into the original string rather than written to a parse tree
+    and serialised back. Round-tripping through lxml is not lossless for markup we were
+    only asked to identify: entities decode, void tags lose their slash, and attribute
+    quoting is normalised. On a miss the caller is handed back its own markup, so every
+    one of those changes would be ours to explain and none was asked for."""
+    from langsys.html.parser import stamp_content_block
+
+    cases = [
+        ("<div><p>Buy&nbsp;now</p></div>", "&nbsp;"),
+        ("<div><p>A<br/>B</p></div>", "<br/>"),
+        ("<div><p>caf&eacute;</p></div>", "&eacute;"),
+        ("<div><input value='x' class=a></div>", "value='x'"),
+    ]
+    for markup, must_survive in cases:
+        stamped = stamp_content_block(markup, "abc123")
+        assert must_survive in stamped, f"{must_survive!r} was re-serialised: {stamped}"
+        assert 'data-ls-contentblock="abc123"' in stamped
+        assert stamped.replace(' data-ls-contentblock="abc123"', "") == markup
+
+
+def test_MARK1_a_self_closing_root_is_stamped_inside_its_own_tag():
+    from langsys.html.parser import stamp_content_block
+
+    assert stamp_content_block('<img src="a.png" alt="Hi"/>', "id1") == (
+        '<img src="a.png" alt="Hi" data-ls-contentblock="id1"/>'
+    )

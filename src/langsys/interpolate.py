@@ -70,6 +70,9 @@ def interpolate(template: str, params: Params, locale: str = "en") -> str:
     branch (ICU-1) rather than the raw source. Only the missing nodes are rewritten:
     everything else keeps full CLDR selection through the same renderer (ICU-5).
     """
+    # TOK-5 — the escape is resolved here, on the template, so everything downstream
+    # sees one placeholder form and no substituted value is ever re-scanned.
+    template = _rewrite_percent_slots(template, params)
     if is_icu(template):
         recovered: list[str] = []
         try:
@@ -79,11 +82,11 @@ def interpolate(template: str, params: Params, locale: str = "en") -> str:
             )
         except Exception:
             # Malformed ICU (or an unexpected node) must never blow up a page.
-            return _percent_slots(_simple(template, params, locale), params, locale)
+            return _simple(template, params, locale)
         if recovered:
             _notice_recovery(template, locale, recovered)
-        return _percent_slots(out, params, locale)
-    return _percent_slots(_simple(template, params, locale), params, locale)
+        return out
+    return _simple(template, params, locale)
 
 
 def _notice_recovery(template: str, locale: str, recovered: list[str]) -> None:
@@ -127,24 +130,30 @@ def _simple(template: str, params: Params, locale: str) -> str:
     return _SIMPLE_SLOT.sub(repl, template)
 
 
-def _percent_slots(text: str, params: Params, locale: str) -> str:
-    """TOK-5 — substitute the `%name%` escape for the same arguments as `{name}`.
+def _rewrite_percent_slots(template: str, params: Params) -> str:
+    """TOK-5 — rewrite the `%name%` escape to `{name}` **in the template**.
 
-    Left literal when the argument is absent or null, exactly as `{name}` is: a slot
-    that vanishes silently is undiagnosable, and a visible one costs a bug report
-    (ICU-4's observability requirement reaching this rule). Left literal too when the
-    name is not an argument at all, so ordinary prose containing percents survives.
+    Applied to the template before rendering, never to the rendered output. Rewriting
+    the output would re-scan substituted values, so a parameter whose *value* contained
+    `%other%` would pull in another parameter — user-supplied data reaching arguments
+    it was never given. `{name}` has never had that exposure because substitution
+    happens once; the escape has to match it.
+
+    Left exactly as authored when the argument is absent or null, so an unresolved slot
+    stays visible in the form the author wrote (ICU-4's observability requirement
+    reaching this rule), and when the name is not an argument at all, so prose
+    containing percent signs survives untouched.
     """
-    if "%" not in text:
-        return text
+    if "%" not in template:
+        return template
 
     def repl(match: re.Match[str]) -> str:
         key = match.group(1)
-        if key not in params or params[key] is None:
-            return match.group(0)
-        return _format_value(params[key], locale)
+        if key in params and params[key] is not None:
+            return "{" + key + "}"
+        return match.group(0)
 
-    return _PERCENT_SLOT.sub(repl, text)
+    return _PERCENT_SLOT.sub(repl, template)
 
 
 def _format_value(value: Any, locale: str) -> str:

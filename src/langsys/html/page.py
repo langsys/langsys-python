@@ -24,6 +24,9 @@ from ..translate import lookup_block
 from ..types import UNCATEGORIZED
 from .parser import apply_element, extract_phrases, inner_html, text_content
 
+#: MARK-2 — a host carrying one of these is already identified. Both spellings.
+PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
+
 if TYPE_CHECKING:
     from ..client import LangsysClient
 
@@ -125,6 +128,12 @@ def _walk(
             continue
         if child.get("translate") == "no" or child.get("data-notrans"):
             continue
+        # MARK-2 — EXCISION. A `<Phrase>` host rendered by another SDK already has an
+        # id; descending into it registers its text a second time under a new one, and
+        # on a leaf block it would also shift the parent block's id. Skipping the
+        # subtree leaves both alone.
+        if any(child.get(attr) is not None for attr in PHRASE_HOST_ATTRS):
+            continue
 
         effective = _effective_category(child, inherited, selmap)
 
@@ -181,6 +190,11 @@ def _apply_or_queue_block(
     elif fetch.ok:
         # WIRE-4 — never queue off a catalog we could not read.
         client._queue_content_block(inner, item_cat, custom_id, phrases)
+    # MARK-1 — stamp whichever way it went. The id is what the block IS, not what the
+    # catalog held, and an unstamped miss is the case most needing inspection. Set on
+    # the element in place: this path is already re-serialising the whole document, so
+    # there is no original string to preserve as there is on the block path.
+    el.set("data-ls-contentblock", custom_id)
 
 
 # -- category resolution ------------------------------------------------------
