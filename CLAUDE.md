@@ -38,6 +38,10 @@ state.
   if the same setup demonstrably makes requests when it should.
 - **Shadow directions.** A rule with two failure directions needs a test for each. The one
   you would write from your own mental model is usually the one that already passes.
+- **Mutate a copy, never the tree consumers import.** The Django and FastAPI wrappers install
+  this core editable, so a mutation written into this tree is what their suites test while
+  it is applied, and any count they take then is void. `_dev_/run_mutations.py` works in an
+  isolated copy for that reason; an ad-hoc mutation belongs in a `git worktree`.
 - **Discriminating vectors.** A test whose branches are indistinguishable cannot fail. If
   every CLDR category has the same expected text, the test proves nothing.
 

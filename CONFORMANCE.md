@@ -12,7 +12,7 @@
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
 | **Suite** | 578 tests in 21 files — 563 unit (561 pass, 2 strict xfail pinning SRV-3's measured order of events) + 15 live |
 | **Binding rules** | **53 of 79** (`all` + `server`) |
-| **Checked by** | `_dev_/conformance_counts.py` (accounting, vocabulary, header) · `_dev_/run_mutations.py` (CONF-3) |
+| **Checked by** | `_dev_/conformance_counts.py` (accounting, vocabulary, header) · `_dev_/run_mutations.py` (CONF-3, in an isolated copy) |
 
 **Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
 hashes are served by `langsys://internal/docs/sdk-spec/revisions`, which no SDK lane can
@@ -67,6 +67,15 @@ strings they have not read — CONF-1's failure one level up.
    double could prove better, and are `n/a (pure)`; WIRE-1 is `live`. Five rows remain
    `provisional`, each because the shared contract fixture would actually change its
    evidence.
+9. **My mutation battery rewrote core source in place, under consumers importing it.** The
+   Django and FastAPI wrappers install this core editable, so while a mutation was applied
+   their suites tested a mutated core: the Django lane measured a red SRV-2 with mixed
+   languages during one run, which passed once the files were restored. Restoring the file
+   protected this tree, not theirs, and any wrapper count taken during those runs is void.
+   The runner now mutates an isolated copy, refuses to start unless `langsys` imports from
+   that copy, and checks this tree's suite inputs are unchanged at the end.
+10. **A failing catalog is fetched again on every lookup.** Measured on request: *Failed
+    catalog fetches, measured*. No MUST is broken as the text stands.
 
 **Earlier waves (v7, v8).** Eight things that were on nobody's list. The two that mattered most were found by review, not by me, and both are recorded first:
 
@@ -229,7 +238,7 @@ is being decided for Ruby at the same time. `delegated` is a binding status and 
 | WIRE-1 | implemented | live | Every `test_integration` test authenticates against the real API with `X-Authorization` alone, `test_authorize` first. Unit: `test_wire::test_WIRE1_every_request_authenticates_with_the_x_authorization_header` — raw key, no scheme, no cookie, not in the URL, on authorize, catalog and registration. Mutation: `http.py::HttpClient.__init__` sends `Authorization` → named test red |
 | WIRE-2 | implemented | n/a (pure) | `test_wire::test_WIRE2_an_empty_204_is_a_success_not_a_parse_error` (a zero-length 204 on registration clears the queue); control `…_an_empty_error_body_is_still_a_failure`. Mutation: `http.py::HttpClient._send` re-raises the parse error → named test red |
 | WIRE-3 | implemented | live | `test_integration::test_locale_casing_resolves_to_the_same_entry` — the deprecated route resolves `es-ES` as `es-es` against the real catalog. Unit: lowercase on the wire, casing variants one fetch and one stored key, the sentinel never sent. Mutations: `catalog.py::CatalogStore.get` sends the locale as given → `test_gating::test_WIRE3_the_locale_goes_on_the_wire_lowercase` red; `_key` and `get` both key by the raw casing → `…_casing_variants_are_one_cache_entry_not_two` red |
-| WIRE-4 | implemented | live | `test_integration::test_WIRE4_an_unreachable_api_degrades_rather_than_throwing` (a closed port); `test_wire4_degradation` — 12 tests, each failure shape paired with a success control that does queue. Mutations: `client.py::translate` queues off a failed fetch → `…_a_failed_fetch_queues_nothing` red; `catalog.py::_fetch` catches `ApiError` only → `…_translate_degrades_to_the_source_phrase` red; `CatalogStore.get` caches a failed fetch → `…_a_failed_fetch_is_not_cached_as_an_empty_catalog` red |
+| WIRE-4 | implemented | live | `test_integration::test_WIRE4_an_unreachable_api_degrades_rather_than_throwing` (a closed port); `test_wire4_degradation` — 12 tests, each failure shape paired with a success control that does queue. Mutations: `client.py::translate` queues off a failed fetch → `…_a_failed_fetch_queues_nothing` red; `catalog.py::_fetch` catches `ApiError` only → `…_translate_degrades_to_the_source_phrase` red; `CatalogStore.get` caches a failed fetch → `…_a_failed_fetch_is_not_cached_as_an_empty_catalog` red. **Measured, not a MUST as written:** because a failure is never cached, every lookup fetches again — see *Failed catalog fetches, measured* |
 | WIRE-5 | implemented | n/a (pure) | `test_wire::test_WIRE5_*` — `LANGSYS_API_URL` redirects and a request **arrives** at the double; an explicit `api_url` wins; the base is read at construction, so a later environment change has no effect and there is no setter to call too late; the README documents both. Mutation: `config.py::Config.resolve` ignores the variable → `…_the_environment_redirects_the_base_and_a_request_arrives_there` red |
 | TOK-1 | implemented | n/a (pure) | **Every path:** block extraction (fixture rows `style-subtree`, `script-subtree`, `noscript-subtree`, `math-subtree`, `svg-inline-icon`); the page path, the same rows through `translate_page`, all matching; a standalone page-level svg (`test_spec_801::test_TOK1_a_standalone_svg_is_tokenized_on_the_page_path`); the simple-phrase route (`…_svg_only_text_on_the_simple_phrase_route_renders_in_place`); a declared block (`…_svg_inside_a_declared_block_is_tokenized`); apply, translating svg text in place with `<path>` intact (`…_inline_svg_translates_in_place_with_its_path_intact_on_a_real_render`, `…_a_standalone_svg_translates_in_place_with_its_path_intact`); the spec's own document (`…_the_spec_document_yields_exactly_the_ordinary_phrase`). **`<template>` is load-bearing on lxml:** on `<div><template><p>x</p></template><p>y</p></div>` the exclusion yields `['y']`, and removing it yields `['x', 'y']` (`…_template_exclusion_is_load_bearing_on_lxml`). Mutations: `parser.py::SKIP_TAGS` without script, style and noscript; without template; without math → each named test red; the `page.py::_walk` svg branch disabled → both standalone tests red; svg added to `BLOCK_ELEMENTS`, the retracted mechanism → `…_inline_svg_on_the_page_path_yields_the_same_tokens` red |
 | TOK-2 | held (strip ruling) | n/a (pure) | **Implemented for the enumerated set, on every path.** Membership asserted on `normalize_whitespace` directly: U+FEFF collapses and trims; U+0085, U+180E, U+200B and U+2060 survive the collapse and the trim; the real members still collapse (`test_spec_801::test_TOK2_*`). The trim is a second site and uses the same set. Fixture rows `nbsp-in-text`, `feff-in-text`, `nel-in-text`, `mvs-in-text` and `line-separators` match on the block AND page path, and register/lookup pairs normalise identically (CONF-1). **Held:** CPython's class also collapses U+001C–U+001F and JavaScript's does not; they are pinned at today's behaviour (`…_HELD_strip_ruling_characters_are_pinned_at_todays_behaviour`) and VT/FF are unchanged, pending the ruling on stripping C0 controls. The parser split is its own row, labelled libxml2 2.14.6 (*Parser model*). Mutations: U+FEFF dropped → the FEFF tests and `feff-in-text` red; U+0085 added → the non-member tests and `nel-in-text` red; `str.strip()` for the enumerated trim → `…_non_members_survive_trimming[U+0085]` red; JavaScript's set adopted wholesale → the HELD pins red |
@@ -240,7 +249,7 @@ is being decided for Ruby at the same time. `delegated` is a binding status and 
 | MARK-2 | implemented | n/a (pure) | Both spellings on read, for phrase hosts and block hosts, on every reader: the tokenizer (block path, extract and apply with the excision mirrored) and the page walker (block-level hosts and identified blocks), classified by one shared function. `test_canonicalization::test_MARK2_*`, each spelling on each reader. Mutations, one per reader × spelling (eight): e.g. the tokenizer reads only `data-ls-contentblock` → `…_a_nested_content_block_host_is_left_alone_on_the_block_path[data-langsys-contentblock]` red; the page walker reads only `data-ls-phrase` → `…_a_block_level_phrase_host_is_excised_by_the_page_walker[host-is-the-block]` red; opt-out values read as identities → `…_classified_three_ways_on_the_page_path` red. **A contested cell is recorded, and it is not a MARK-2 question:** what the bare attribute means (*Held and awaiting a decision*) |
 | CONF-1 | provisional | mock | **Assertion shape:** every row whose property depends on what the API answers has an acceptance- or state-shaped test — the live rows (GATE-1, REG-1, REG-10, WIRE-1, WIRE-3, WIRE-4) on the real server; GATE-2, GATE-5 and REG-8 on queue state after refusal and acceptance; REG-9 on what a refusing, stateful local double ends up holding. What is missing is only a shared double that can refuse. **Every path:** the TOK and MARK rows name each path proven on, and every register/lookup pair is pinned — attribute (raw and `trim()` reverts), button value, text node and `<option>`, the page leaf key, title, meta, and a head miss leaving authored text. Mutations: nine, one per pair site (`parser.py::_walk_apply`, `_translate_text`, `text_content`; `page.py::_process_head`, `_translate_meta`), each reddening its named test. **Waits on: CONF-2 shared contract fixture** |
 | CONF-2 | implemented | n/a (pure) | Every row carries a tier from the vocabulary, graded by the property the rule governs rather than by whether a double appears in the test. `_dev_/conformance_counts.py` checks the vocabulary, the status/tier pairing, one rule id per row and this file's header blob, and exits non-zero on any of them. No row claims `contract`: the shared fixture does not exist |
-| CONF-3 | implemented | n/a (pure) | Every row whose proof requires running something names its tests and a specific mutation — file, symbol, the exact text replaced and its replacement — in `_dev_/run_mutations.py`, the passing halves of `partial` rows included. **Last run: 98/98 caught across 49 rules, each by its named tests**, counted from the full output. Nothing to run for the `n/a` rows, CONF-2 or this row |
+| CONF-3 | implemented | n/a (pure) | Every row whose proof requires running something names its tests and a specific mutation — file, symbol, the exact text replaced and its replacement — in `_dev_/run_mutations.py`, the passing halves of `partial` rows included. Every mutation is applied in an isolated copy of the working tree, never in this tree, which the Django and FastAPI wrappers import editable; the runner refuses to start unless `langsys` imports from the copy. **Last run: 98/98 caught across 49 rules, each by its named tests**, counted from the full output. Nothing to run for the `n/a` rows, CONF-2 or this row |
 
 ---
 
@@ -306,6 +315,32 @@ Apply looks every node up by its own normalised text and walks with the same ski
 excision rules as extraction, so no positional shift is possible. The trade-off is that two
 nodes with identical text always receive the same translation — which is what one phrase id
 means anyway.
+
+## Failed catalog fetches, measured
+
+Asked because the Ruby core fetches the catalog again on every lookup while the fetch fails.
+So does this one. Re-run with `python3 _dev_/measure_catalog_refetch.py` (set the `LANGSYS_*`
+variables for the live rows). Each lookup uses a distinct phrase; catalog GETs counted at the
+transport.
+
+| Catalog answer | `translate()` × 5 | `translate_page`, 11 tokens | A miss queued |
+|---|---|---|---|
+| 200 (control) | 1 GET | 1 GET | yes |
+| 404 | 5 GETs | 11 GETs | no |
+| 422 | 5 GETs | 11 GETs | no |
+| 500 | 5 GETs | 11 GETs | no |
+| connection refused | 5 GETs | 11 GETs | no |
+| hung upstream, timeout 0.5s | 5 GETs, 2.51s | 11 GETs, 5.52s | no |
+| live nova, supported locale `es-es` | 1 GET | 1 GET | yes |
+| live nova, unsupported locale `zz-zz` (answers 422) | 5 GETs | 11 GETs | no |
+
+**One GET per lookup while the catalog fails, and no read-side backoff.** WIRE-4's MUSTs
+hold — nothing throws, nothing is queued, and the failure is not cached as an empty catalog.
+The cost is latency: every lookup pays the full timeout against a hung upstream, so at the
+default 30s an 11-token page would spend about 330s before serving source text, and an
+unsupported locale — an ordinary, permanent condition — re-fetches forever. Not changed: it
+is being routed to Langsys as a possible read-side clause, and a negative cache would need
+to stay short enough not to become the outage-caching WIRE-4 forbids.
 
 ## Parser model — libxml2 2.14.6
 
@@ -503,18 +538,22 @@ Ranked by what the gap costs, not by rule order.
    another's misses.** Registration POSTs land on the visitor's request path whenever a render
    outlasts 0.4s or a concurrent request flushes, in every wrapper built on this core. Needs a
    core seam; held for the operator's ruling, shared with Ruby.
-2. **The wrappers bypass GATE-2 and GATE-3 in the shape customers deploy.** Django and FastAPI
+2. **A failing or hung catalog is fetched on every lookup.** Against a hung upstream each
+   lookup pays the full timeout — about 330s for an 11-token page at the default 30s — and an
+   unsupported locale re-fetches on every lookup indefinitely. No MUST is broken as written;
+   routed as a possible read-side clause.
+3. **The wrappers bypass GATE-2 and GATE-3 in the shape customers deploy.** Django and FastAPI
    discard the queue whenever `can_write` is not true — an unknown answer included — and never
    call `reset_write_decision()`. A transient authorize failure loses the request's
    discoveries, and an allow-listed request's answer can outlive it. The fix lives in those
    repositories.
-3. **Page-path coverage — GATE-7, TOK-3, TOK-4.** On the page entry point, attribute text on
+4. **Page-path coverage — GATE-7, TOK-3, TOK-4.** On the page entry point, attribute text on
    top-level elements and on leaf hosts, and top-level link, textarea, select and bare text,
    register nothing, and seven shared fixture rows derive ids no other SDK agrees with. Waits
    on the registration-shape ruling.
-4. **CONF-2's shared contract fixture.** Five rows are `provisional` for want of a double that
+5. **CONF-2's shared contract fixture.** Five rows are `provisional` for want of a double that
    can refuse and holds state. Fleet-blocked.
-5. **TOK-2's held C0 characters.** Content carrying U+001C–U+001F derives a different id than
+6. **TOK-2's held C0 characters.** Content carrying U+001C–U+001F derives a different id than
    the JS family, and on a pre-2.14 libxml2 a different one again. Rare; waits on the strip
    ruling.
 

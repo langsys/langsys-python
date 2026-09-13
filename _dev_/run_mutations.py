@@ -7,6 +7,14 @@ name. This file IS that record for every runtime row in CONFORMANCE.md: each ent
 rule, the file, the exact text replaced and its replacement, and the tests that must go red.
 Committed so the record can be re-applied by anyone rather than remembered by one session.
 
+**Mutations are applied to an isolated copy, never to this tree.** The Django and FastAPI
+wrappers import this core through editable installs, so a mutation written here is what THEIR
+suites test while it is applied - a red run measured in a wrapper during one of these batteries
+was exactly that, and restoring the file afterwards protected this tree but not theirs. The
+runner copies the working tree (tracked and untracked, ignoring what git ignores) into a
+temporary directory, points the suite at the copy's `src`, refuses to start unless `langsys`
+imports from the copy, and checks this tree's bytes are unchanged at the end.
+
 Each mutation replaces exactly one anchor (it refuses if the anchor is missing or repeated),
 runs the unit suite, collects EVERY failing or erroring test from the full output, and restores
 the file byte-for-byte whatever happens. A mutation counts as caught only when the suite goes
@@ -22,9 +30,13 @@ discharged by CONFORMANCE.md and `_dev_/conformance_counts.py`.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -493,18 +505,56 @@ MUTATIONS = [
 ]
 
 
-def run_suite() -> tuple[int, list[str]]:
+def working_tree_files() -> list[str]:
+    """Tracked and untracked files, minus what git ignores and what the tree has deleted."""
+    listing = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        capture_output=True, check=True,
+    ).stdout.decode("utf-8")
+    return [rel for rel in listing.split("\0") if rel and (ROOT / rel).is_file()]
+
+
+#: What the unit suite reads. Only these can make a mutation result wrong, so only these are
+#: checked for change during a run; editing CONFORMANCE.md meanwhile voids nothing.
+SUITE_INPUTS = ("src/", "tests/", "pyproject.toml", "README.md")
+
+
+def tree_digest(files: list[str]) -> str:
+    digest = hashlib.sha256()
+    for rel in (f for f in files if f.startswith(SUITE_INPUTS)):
+        digest.update(rel.encode("utf-8") + b"\0" + (ROOT / rel).read_bytes())
+    return digest.hexdigest()
+
+
+def isolated_copy(dest: Path, files: list[str]) -> dict[str, str]:
+    """Copy the working tree into `dest` and return the environment that runs against it."""
+    for rel in files:
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / rel, target)
+    env = {**os.environ, "PYTHONPATH": str(dest / "src")}
+    imported = subprocess.run(
+        [sys.executable, "-c", "import langsys; print(langsys.__file__)"],
+        cwd=dest, env=env, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    if not Path(imported).resolve().is_relative_to(dest.resolve()):
+        raise SystemExit(f"refusing to run: langsys imports from {imported}, not the copy at {dest}")
+    return env
+
+
+def run_suite(workdir: Path, env: dict[str, str]) -> tuple[int, list[str]]:
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "-m", "not integration", "-q", "-p", "no:cacheprovider"],
-        cwd=ROOT,
+        cwd=workdir,
+        env=env,
         capture_output=True,
         text=True,
     )
     return proc.returncode, FAILED_LINE.findall(proc.stdout)
 
 
-def apply(mutation: Mutation) -> list[str]:
-    target = ROOT / mutation.path
+def apply(mutation: Mutation, workdir: Path, env: dict[str, str]) -> list[str]:
+    target = workdir / mutation.path
     original = target.read_bytes()
     text = original.decode("utf-8")
     found = text.count(mutation.old)
@@ -514,7 +564,7 @@ def apply(mutation: Mutation) -> list[str]:
         )
     try:
         target.write_text(text.replace(mutation.old, mutation.new), encoding="utf-8")
-        _, failures = run_suite()
+        _, failures = run_suite(workdir, env)
     finally:
         target.write_bytes(original)
     if target.read_bytes() != original:
@@ -529,13 +579,26 @@ def main(argv: list[str]) -> int:
         count = (ROOT / mutation.path).read_text(encoding="utf-8").count(mutation.old)
         if count != 1:
             raise SystemExit(f"{mutation.rule} / {mutation.name}: anchor matched {count}x")
-    code, failures = run_suite()
+    files = working_tree_files()
+    before = tree_digest(files)
+    with tempfile.TemporaryDirectory(prefix="langsys-mutations-") as scratch:
+        workdir = Path(scratch)
+        env = isolated_copy(workdir, files)
+        print(f"mutating an isolated copy at {workdir}; this tree is not touched")
+        uncaught = run_battery(selected, workdir, env)
+    if tree_digest(files) != before:
+        raise SystemExit("src/, tests/ or pyproject changed in this tree during the run - void")
+    return 1 if uncaught else 0
+
+
+def run_battery(selected: list[Mutation], workdir: Path, env: dict[str, str]) -> int:
+    code, failures = run_suite(workdir, env)
     if code != 0 or failures:
         raise SystemExit(f"unmutated suite is not green ({len(failures)} failing); fix that first")
 
     uncaught = 0
     for mutation in selected:
-        failures = apply(mutation)
+        failures = apply(mutation, workdir, env)
         missing = [e for e in mutation.expect if not any(e in f for f in failures)]
         caught = bool(failures) and not missing
         uncaught += 0 if caught else 1
@@ -549,7 +612,7 @@ def main(argv: list[str]) -> int:
     rules = sorted({m.rule for m in selected})
     print(f"\n{len(selected) - uncaught}/{len(selected)} mutations caught by their named tests, "
           f"across {len(rules)} rules: {', '.join(rules)}")
-    return 1 if uncaught else 0
+    return uncaught
 
 
 if __name__ == "__main__":
