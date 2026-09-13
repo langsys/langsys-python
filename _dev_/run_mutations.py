@@ -194,6 +194,10 @@ MUTATIONS = [
       '    if content_block_id is not None:\n        block = cat.get(content_block_id)',
       '    if len(phrase) == 32 and all(ch in "0123456789abcdef" for ch in phrase):\n        return Resolution(phrase, missing=False)\n    if content_block_id is not None:\n        block = cat.get(content_block_id)',
       "test_REG12_a_phrase_shaped_like_a_hash_is_still_a_phrase"),
+    m("REG-12", "sync() counts a block's children but not the block's own key", CLIENT,
+      '            keys.add(f"{category}::{phrase}")\n            if isinstance(value, dict):',
+      '            if not isinstance(value, dict):\n                keys.add(f"{category}::{phrase}")\n            if isinstance(value, dict):',
+      "test_REG12_presence_and_structure_agree_on_the_sync_path"),
     # -- HINT ---------------------------------------------------------------------------------
     m("HINT-2", "report a hint when the session cannot write", CLIENT,
       '            # Discarding a queue we have just been told we may not write is correct;',

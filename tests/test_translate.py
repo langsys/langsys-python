@@ -74,14 +74,12 @@ def test_REG12_a_phrase_shaped_like_a_hash_is_still_a_phrase():
     assert resolve({"UI": {BLOCK_ID: "tradotto"}}, BLOCK_ID, "UI").text == "tradotto"
 
 
-@pytest.mark.xfail(strict=True, reason="REG-12: measured divergence on the sync path, not yet fixed")
 def test_REG12_presence_and_structure_agree_on_the_sync_path():
     """Where presence and structure are tested in separate places both must agree, or text
     colliding with a block id re-registers forever. translate() reads presence and calls it
-    known; sync() flattens a block into its children and calls the same text new.
+    known; sync() used to flatten a block into its children and call the same text new.
 
-    Measured, not fixed. Strict, so the day it is fixed this reports XPASS and fails, and the
-    REG-12 row in CONFORMANCE.md has to move with it."""
+    Landed first as a strict xfail pinning the measured divergence, then fixed."""
     from unittest.mock import patch
 
     from langsys import LangsysClient

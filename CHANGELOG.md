@@ -61,6 +61,9 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   were registered raw where the body registered normalised text. Either way the lookup missed
   forever and the phrase re-registered on every render. A title or meta with no translation
   yet is left exactly as authored.
+- **REG-12 — `sync()` no longer re-registers text equal to a content block's id.** It counted
+  a block's child phrases as known but not the block's own key, so it disagreed with
+  `translate()` about what already existed and registered that text again on every call.
 
 **Canonicalization and identity (spec v8).**
 

@@ -1027,9 +1027,10 @@ def _existing_keys(catalog: Catalog) -> set[str]:
         for phrase, value in entries.items():
             if phrase.startswith("__") and phrase.endswith("__"):
                 continue
+            # REG-12 - presence decides, exactly as it does in translate(). A block's own key is
+            # known too: text equal to a block id is not new, or it re-registers on every sync.
+            keys.add(f"{category}::{phrase}")
             if isinstance(value, dict):
                 for child in value:
                     keys.add(f"{category}::{child}")
-            else:
-                keys.add(f"{category}::{phrase}")
     return keys

@@ -10,7 +10,7 @@
 | **SDK revision** | `feature/838_write_key_gating`, on `c79fd57`; cut from `origin/main` `bc5ca62` |
 | **Runtime measured** | CPython 3.9.6 · lxml 6.1.2 · libxml2 2.14.6. The pyproject floor is `lxml>=4.9`, so an older wheel can bring a libxml2 below 2.14 — see *Parser model* |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 578 tests in 21 files — 563 unit (560 pass, 3 strict xfail pinning measured gaps) + 15 live |
+| **Suite** | 578 tests in 21 files — 563 unit (561 pass, 2 strict xfail pinning SRV-3's measured order of events) + 15 live |
 | **Binding rules** | **53 of 79** (`all` + `server`) |
 | **Checked by** | `_dev_/conformance_counts.py` (accounting, vocabulary, header) · `_dev_/run_mutations.py` (CONF-3) |
 
@@ -48,8 +48,8 @@ strings they have not read — CONF-1's failure one level up.
    call.
 5. **REG-12's two checks disagree.** `translate()` treats text equal to a block id as known
    (presence); `sync()` flattens the block into its children and treats the same text as
-   new, so it re-registers on every call. Found while writing REG-12's first named test.
-   Measured and pinned, not fixed.
+   new, so it re-registered on every call. Found while writing REG-12's first named test,
+   pinned first by a strict xfail, then fixed on the operator's go-ahead.
 6. **Seven rows claimed `implemented` with no named test** although the behaviour was
    present: CAT-3, REG-12, HINT-2, WIRE-1, WIRE-2, WIRE-5, and OBS-1's diagnostic (only the
    flag behind it was asserted). A rule with no test is not implemented; each now has tests
@@ -144,19 +144,19 @@ rather than trusting this table.
 | Status | Tier | Count | Rules |
 |---|---|---|---|
 | implemented | live | 6 | GATE-1, REG-1, REG-10, WIRE-1, WIRE-3, WIRE-4 |
-| implemented | n/a (pure) | 34 | GATE-3, GATE-4, GATE-8, CAT-1–3, REG-2, REG-3, REG-6, REG-7, REG-11, HINT-2, ICU-1–5, CID-1–4, SRV-1, SRV-2, SRV-5, CACHE-1, OBS-1, WIRE-2, WIRE-5, TOK-1, TOK-5, MARK-1, MARK-2, CONF-2, CONF-3 |
+| implemented | n/a (pure) | 35 | GATE-3, GATE-4, GATE-8, CAT-1–3, REG-2, REG-3, REG-6, REG-7, REG-11, REG-12, HINT-2, ICU-1–5, CID-1–4, SRV-1, SRV-2, SRV-5, CACHE-1, OBS-1, WIRE-2, WIRE-5, TOK-1, TOK-5, MARK-1, MARK-2, CONF-2, CONF-3 |
 | provisional | mock | 5 | GATE-2, GATE-5, REG-8, REG-9, CONF-1 |
-| partial | — | 5 | GATE-7, REG-12, SRV-3, TOK-3, TOK-4 |
+| partial | — | 4 | GATE-7, SRV-3, TOK-3, TOK-4 |
 | held (strip ruling) | — | 1 | TOK-2 |
 | n/a (architecture) | — | 2 | GATE-6, SRV-4 |
 | n/a (profile) | — | 26 | REG-4, REG-5, HINT-1, HINT-3–12, SSR-1–3, BIND-1–6, GRANT-1–4 |
 | **total** | | **79** | 53 bind (`all` + `server`) |
 
 **Not green, and each blocker has an owner.** `provisional` ×5 waits on the CONF-2 shared
-contract fixture (fleet). `held` ×1 waits on the strip ruling (operator). Of the five
-`partial` rows, GATE-7, TOK-3 and TOK-4 wait on the registration-shape ruling (operator),
-SRV-3 on whether the request-scope seam is built (operator), and REG-12 on a go-ahead for a
-one-line fix. `delegated` is a binding status and appears on no row of a core.
+contract fixture (fleet). `held` ×1 waits on the strip ruling (operator). Of the four
+`partial` rows, GATE-7, TOK-3 and TOK-4 wait on the registration-shape ruling (operator), and
+SRV-3 on the operator's ruling on a request-scope seam, which adds public calls to the core and
+is being decided for Ruby at the same time. `delegated` is a binding status and appears on no row of a core.
 
 ## Status
 
@@ -184,7 +184,7 @@ one-line fix. `delegated` is a binding status and appears on no row of a core.
 | REG-9 | provisional | mock | **Acceptance-shaped:** `test_gating::test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item` — a local double refuses any batch over the server's limit and keeps what it accepted; the assertion is on what it ends up holding. Also `…_the_batch_limit_comes_from_the_server` and `…_content_blocks_are_batched_into_one_post`. Every path: the phrase flush, `register_phrases`, and the block flush that page-path blocks share. **Waits on: CONF-2 shared contract fixture**, which enforces the real limit. Mutations: `registration.py::Registrar.__init__` hardcodes 200 → both limit tests red; `client.py::_flush_locked` posts blocks one at a time → the batching test red |
 | REG-10 | implemented | live | `test_integration::test_REG10_a_read_key_flush_reports_failure_rather_than_success`; unit `test_gating::test_REG10_*` (a skip is not success, an empty queue is an honest success, a transport failure does not throw). Mutations: the not-write-enabled result reports `success: True` → `…_a_skipped_write_is_not_reported_as_success` red; the send catches `ApiError` only → `…_flush_does_not_throw_when_registration_fails` red |
 | REG-11 | implemented | n/a (pure) | `test_registration_lane::test_REG11_*` — warns naming the phrase, still registers without a second signal, suppresses only when a longer catalog entry shares the prefix, deduplicated. Mutations: `client.py::_ellipsis_suppresses` returns `False` → the suppression test red; returns `True` → the still-registers test red |
-| REG-12 | partial | n/a (pure) | **Translate path, structural:** `test_translate::test_REG12_a_nested_map_is_a_content_block_never_a_missing_phrase`, `…_a_phrase_shaped_like_a_hash_is_still_a_phrase`. Mutations: `translate.py::resolve` treats a nested map as missing → the first red; a 32-hex shape test added → the second red. **Partial — the sync path disagrees, measured:** text equal to a block id is *known* to `translate()` and *new* to `sync()`, whose `_existing_keys` flattens a block into its children and never records the block's own key, so `sync()` re-registers it on every call. Pinned by strict xfail `test_translate::test_REG12_presence_and_structure_agree_on_the_sync_path`. The fix is one line in `client.py::_existing_keys`; not built, awaiting a go-ahead |
+| REG-12 | implemented | n/a (pure) | **Both places that decide, agreeing.** Translate path, structural: `test_translate::test_REG12_a_nested_map_is_a_content_block_never_a_missing_phrase`, `…_a_phrase_shaped_like_a_hash_is_still_a_phrase`. Sync path, presence: `…_presence_and_structure_agree_on_the_sync_path` — text equal to a block id is known to `sync()` exactly as it is to `translate()`. That test landed first as a strict xfail pinning the measured divergence (`_existing_keys` recorded a block's children but never its own key, so `sync()` re-registered the text on every call), then the fix. Mutations: `translate.py::resolve` treats a nested map as missing → the first red; a 32-hex shape test added → the second red; `client.py::_existing_keys` records the key only for non-block values → the sync test red |
 | HINT-1 | n/a (profile: browser) | - | Reports begin at `window.location`; a server SDK never reports (HINT-2) |
 | HINT-2 | implemented | n/a (pure) | `test_server_render::test_HINT2_a_server_sdk_never_reports_across_a_whole_render[False]` and `[True]` — `translate`, `translate_content_block`, `translate_page` and a flush, against a double that **will** accept a hint: no request reaches a hint or discovery path, with positive controls that the render reached both the catalog and authorize. Mutation: `client.py::_flush_locked` posts `discovery/hint` when the session cannot write → `[False]` red |
 | HINT-3 | n/a (profile: browser) | - | |
@@ -240,7 +240,7 @@ one-line fix. `delegated` is a binding status and appears on no row of a core.
 | MARK-2 | implemented | n/a (pure) | Both spellings on read, for phrase hosts and block hosts, on every reader: the tokenizer (block path, extract and apply with the excision mirrored) and the page walker (block-level hosts and identified blocks), classified by one shared function. `test_canonicalization::test_MARK2_*`, each spelling on each reader. Mutations, one per reader × spelling (eight): e.g. the tokenizer reads only `data-ls-contentblock` → `…_a_nested_content_block_host_is_left_alone_on_the_block_path[data-langsys-contentblock]` red; the page walker reads only `data-ls-phrase` → `…_a_block_level_phrase_host_is_excised_by_the_page_walker[host-is-the-block]` red; opt-out values read as identities → `…_classified_three_ways_on_the_page_path` red. **A contested cell is recorded, and it is not a MARK-2 question:** what the bare attribute means (*Held and awaiting a decision*) |
 | CONF-1 | provisional | mock | **Assertion shape:** every row whose property depends on what the API answers has an acceptance- or state-shaped test — the live rows (GATE-1, REG-1, REG-10, WIRE-1, WIRE-3, WIRE-4) on the real server; GATE-2, GATE-5 and REG-8 on queue state after refusal and acceptance; REG-9 on what a refusing, stateful local double ends up holding. What is missing is only a shared double that can refuse. **Every path:** the TOK and MARK rows name each path proven on, and every register/lookup pair is pinned — attribute (raw and `trim()` reverts), button value, text node and `<option>`, the page leaf key, title, meta, and a head miss leaving authored text. Mutations: nine, one per pair site (`parser.py::_walk_apply`, `_translate_text`, `text_content`; `page.py::_process_head`, `_translate_meta`), each reddening its named test. **Waits on: CONF-2 shared contract fixture** |
 | CONF-2 | implemented | n/a (pure) | Every row carries a tier from the vocabulary, graded by the property the rule governs rather than by whether a double appears in the test. `_dev_/conformance_counts.py` checks the vocabulary, the status/tier pairing, one rule id per row and this file's header blob, and exits non-zero on any of them. No row claims `contract`: the shared fixture does not exist |
-| CONF-3 | implemented | n/a (pure) | Every row whose proof requires running something names its tests and a specific mutation — file, symbol, the exact text replaced and its replacement — in `_dev_/run_mutations.py`, the passing halves of `partial` rows included. **Last run: 97/97 caught across 49 rules, each by its named tests**, counted from the full output. Nothing to run for the `n/a` rows, CONF-2 or this row |
+| CONF-3 | implemented | n/a (pure) | Every row whose proof requires running something names its tests and a specific mutation — file, symbol, the exact text replaced and its replacement — in `_dev_/run_mutations.py`, the passing halves of `partial` rows included. **Last run: 98/98 caught across 49 rules, each by its named tests**, counted from the full output. Nothing to run for the `n/a` rows, CONF-2 or this row |
 
 ---
 
@@ -339,9 +339,8 @@ Nothing below is built. Each is either a ruling that is not this lane's to make,
 |---|---|---|---|
 | Stripping C0 controls: U+001C–U+001F, VT, FF, and the libxml2 split | TOK-2 | operator | U+001C–U+001F still collapse, one tuple (`parser.py::_HELD_C0_SEPARATORS`) |
 | Registration shape for a host's own attributes and for top-level void or inline elements | TOK-3, TOK-4, GATE-7 | operator (spec gap) | page path unchanged; 19/26 |
-| A request-scope send seam for SRV-3 | SRV-3 | operator — whether it is built | debounce and queue are process-wide; two strict xfails |
-| What a bare `data-ls-contentblock` means | — (noted on MARK-2) | operator | `attributes.py::BARE_BLOCK_ATTRIBUTE = "opt-out"`; PHP reads it as a declaration; one line flips it |
-| `sync()` presence vs structure | REG-12 | operator go-ahead | a one-line fix in `client.py::_existing_keys`; strict xfail |
+| A request-scope send seam for SRV-3 | SRV-3 | operator — held for a ruling shared with Ruby, since it adds public request-scope calls to the core | debounce and queue are process-wide; two strict xfails |
+| What a bare `data-ls-contentblock` means | — (noted on MARK-2) | operator — deferred to a fleet-wide ruling | `attributes.py::BARE_BLOCK_ATTRIBUTE = "opt-out"`; PHP reads it as a declaration; one line flips it |
 | The shared stateful contract fixture | GATE-2, GATE-5, REG-8, REG-9, CONF-1 | fleet | none exists |
 
 **On the bare attribute.** The value classifier was built to walk an opt-out *and* a bare
@@ -503,7 +502,7 @@ Ranked by what the gap costs, not by rule order.
 1. **SRV-3 — a server render can collect before its response, and one request drains
    another's misses.** Registration POSTs land on the visitor's request path whenever a render
    outlasts 0.4s or a concurrent request flushes, in every wrapper built on this core. Needs a
-   core seam; whether to build it is the operator's decision.
+   core seam; held for the operator's ruling, shared with Ruby.
 2. **The wrappers bypass GATE-2 and GATE-3 in the shape customers deploy.** Django and FastAPI
    discard the queue whenever `can_write` is not true — an unknown answer included — and never
    call `reset_write_decision()`. A transient authorize failure loses the request's
@@ -515,8 +514,7 @@ Ranked by what the gap costs, not by rule order.
    on the registration-shape ruling.
 4. **CONF-2's shared contract fixture.** Five rows are `provisional` for want of a double that
    can refuse and holds state. Fleet-blocked.
-5. **REG-12 on `sync()`.** Text equal to a block id re-registers on every sync. Rare; one line.
-6. **TOK-2's held C0 characters.** Content carrying U+001C–U+001F derives a different id than
+5. **TOK-2's held C0 characters.** Content carrying U+001C–U+001F derives a different id than
    the JS family, and on a pre-2.14 libxml2 a different one again. Rare; waits on the strip
    ruling.
 
@@ -561,7 +559,8 @@ one wrapper pattern defeats a rule this core meets:
   request scope (Celery, management commands, scripts) keeps REG-2's debounce; the binding
   only marks the scope and flushes after its response, since BIND-3 forbids it timers. The
   contract is an order-of-events test with two concurrent requests, ordered by events rather
-  than sleeps — the shape of the second SRV-3 xfail here.
+  than sleeps — the shape of the second SRV-3 xfail here. Held for the operator's ruling, which
+  is being made for the Ruby core at the same time.
 
 ## Known trade-off, recorded rather than discovered
 
