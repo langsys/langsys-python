@@ -41,6 +41,27 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Canonicalization re-row (spec 8.0.1).**
+
+- **TOK-1 — `<math>` content is no longer registered, and `<svg>` text now is, on every
+  path.** MathML is notation, and translating an operator corrupts it; SVG `<text>` is words
+  a reader sees. A standalone `<svg>` reached directly by full-page translation was
+  previously skipped entirely. It is now translated in place, and its `<path>` geometry
+  survives.
+- **TOK-2 — the whitespace that collapses is now exactly JavaScript's set**, so content
+  derives the same id here as in every other SDK. `U+FEFF` now collapses and is trimmed;
+  `U+0085`, previously collapsed, is now kept, as are `U+180E`, `U+200B` and `U+2060`.
+  Content containing these characters derives a different id than before. `U+001C`–`U+001F`
+  are unchanged, pending a fleet ruling on control characters.
+- **TOK-5 — `%name%` in captured markup now registers as `{name}`**, so
+  `<p>Hello %name%</p>` and `<p>Hello {name}</p>` are one phrase with one id instead of two.
+- **Attribute values, button values, page titles and meta descriptions containing extra
+  whitespace, a no-break space or `%name%` now translate.** Attribute and button values were
+  registered under their normalised text and looked up under the raw text; titles and metas
+  were registered raw where the body registered normalised text. Either way the lookup missed
+  forever and the phrase re-registered on every render. A title or meta with no translation
+  yet is left exactly as authored.
+
 **Canonicalization and identity (spec v8).**
 
 - **TOK-1** — `<script>`, `<style>`, `<noscript>` and `<template>` content is no longer

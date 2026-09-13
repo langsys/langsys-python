@@ -52,12 +52,19 @@ DEFAULT_TRANSLATABLE_ATTRIBUTES: tuple[str, ...] = (
 #: *declare* a subtree to be one block with a truthy flag; these are those flags.
 BLOCK_DECLARATION_VALUES = frozenset({"1", "true", "yes", "on"})
 
-#: The negative forms of the same flag, plus the bare attribute. `<div data-ls-contentblock>`
-#: is the natural boolean-attribute spelling and parses as `""`.
+#: The negative forms of the same flag. These are **not** identities: a resolved `custom_id`
+#: is never `0` or `false`, so reading them as one gains nothing and costs the subtree its
+#: discovery.
+BLOCK_OPT_OUT_VALUES = frozenset({"0", "false", "off", "no"})
+
+#: CONTESTED, awaiting the operator's ruling: what the BARE attribute means.
+#: `<div data-ls-contentblock>` is the natural boolean-attribute spelling and parses as `""`.
+#: This SDK reads it as an opt-out and walks the subtree as ordinary content. PHP's marker
+#: helper, which the TS core says it mirrors, treats presence as intent and reads it as a
+#: declaration. The identity class is not contested: an id value is excised on every path.
 #:
-#: These are **not** identities: a resolved `custom_id` is never empty, `0` or `false`,
-#: so reading them as one gains nothing and costs the subtree its discovery.
-BLOCK_OPT_OUT_VALUES = frozenset({"", "0", "false", "off", "no"})
+#: Kept as one constant so the ruling flips one line: `"declaration"` adopts PHP's reading.
+BARE_BLOCK_ATTRIBUTE = "opt-out"
 
 
 def classify_block_attribute(value: Optional[str]) -> str:
@@ -70,6 +77,8 @@ def classify_block_attribute(value: Optional[str]) -> str:
     if value is None:
         return "absent"
     normalized = value.strip().lower()
+    if normalized == "":
+        return BARE_BLOCK_ATTRIBUTE
     if normalized in BLOCK_DECLARATION_VALUES:
         return "declaration"
     if normalized in BLOCK_OPT_OUT_VALUES:

@@ -23,7 +23,13 @@ from ..registration import generate_custom_id
 from ..translate import lookup_block
 from ..types import UNCATEGORIZED
 from .attributes import classify_block_attribute
-from .parser import apply_element, extract_phrases, inner_html, text_content
+from .parser import (
+    apply_element,
+    extract_phrases,
+    inner_html,
+    normalize_phrase,
+    text_content,
+)
 
 #: MARK-2 — a host carrying one of these is already identified. Both spellings.
 PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
@@ -44,7 +50,10 @@ BLOCK_ELEMENTS = frozenset(
         "details", "summary", "dialog",
     }
 )
-SKIP_ELEMENTS = frozenset({"script", "style", "noscript", "template", "svg", "math"})
+#: TOK-1 (8.0.1) - `svg` is NOT here: its text is translated on every path, and the walker
+#: gives it its own handling below. Removing it from this set alone would make the walker
+#: recurse into it and never tokenize its `<text>`, which is the drop PHP hit.
+SKIP_ELEMENTS = frozenset({"script", "style", "noscript", "template", "math"})
 META_NAMES = ("description", "keywords", "author")
 OG_PROPERTIES = ("og:title", "og:description", "og:site_name")
 TWITTER_PROPERTIES = ("twitter:title", "twitter:description")
@@ -87,8 +96,17 @@ def _process_head(
         return
 
     title = head.find("title")
-    if title is not None and title.text and title.text.strip():
-        title.text = client.translate(title.text.strip(), category=category, locale=locale)
+    if title is not None and title.text:
+        # CONF-1 / TOK-2 - the head route registers the canonical phrase like every other
+        # path. It used to pass strip()ed raw text straight through, so a title registered
+        # `Buy   now` where the body registered `Buy now`: the "path that did nothing to the
+        # text" the spec names. The authored text is left alone on a miss, because the rule
+        # governs identity, not output.
+        key = normalize_phrase(title.text)
+        if key:
+            translated = client.translate(key, category=category, locale=locale)
+            if translated != key:
+                title.text = translated
 
     for meta in head.findall("meta"):
         content = meta.get("content")
@@ -97,12 +115,28 @@ def _process_head(
         name = meta.get("name") or ""
         prop = meta.get("property") or ""
         if name in META_NAMES or name in TWITTER_PROPERTIES:
-            meta.set("content", client.translate(content, category=category, locale=locale))
+            _translate_meta(client, meta, content, category, locale)
         elif prop:
             if prop == "og:locale":
                 meta.set("content", _og_locale(locale))
             elif prop in OG_PROPERTIES or prop in TWITTER_PROPERTIES:
-                meta.set("content", client.translate(content, category=category, locale=locale))
+                _translate_meta(client, meta, content, category, locale)
+
+
+def _translate_meta(
+    client: "LangsysClient",
+    meta: _Element,
+    content: str,
+    category: Optional[str],
+    locale: str,
+) -> None:
+    """Meta routes register the canonical phrase and leave authored content alone on a miss."""
+    key = normalize_phrase(content)
+    if not key:
+        return
+    translated = client.translate(key, category=category, locale=locale)
+    if translated != key:
+        meta.set("content", translated)
 
 
 def _og_locale(locale: str) -> str:
@@ -151,24 +185,46 @@ def _walk(
             _handle_block(client, child, attrs, locale, _item_category(effective, default_category))
             continue
 
+        # TOK-1 (8.0.1) - svg text is translated, and svg is handled as its own unit rather
+        # than as a block element. Adding svg to BLOCK_ELEMENTS is the retracted mechanism: a
+        # parent `<p>` holding an inline icon would then "contain a nested block", the walker
+        # would recurse into it, and the paragraph's own words would be dropped. Inline svg
+        # therefore stays inside its leaf block and is tokenized there; only an svg the walker
+        # reaches directly, with no leaf around it, arrives here.
+        if tag == "svg":
+            _translate_leaf(client, child, attrs, locale, default_category, effective)
+            continue
+
         if tag in BLOCK_ELEMENTS:
             if _contains_nested_blocks(child):
                 _walk(client, child, attrs, locale, default_category, effective, selmap)
                 continue
-            inner = inner_html(child)
-            phrases = extract_phrases(inner, attrs)
-            if not phrases:
-                continue
-            item_cat = _item_category(effective, default_category)
-            text = text_content(child)
-            if len(phrases) == 1 and phrases[0] == text:
-                category = None if item_cat == UNCATEGORIZED else item_cat
-                translated = client.translate(text, category=category, locale=locale)
-                apply_element(child, {text: translated}, attrs)
-            else:
-                _apply_or_queue_block(client, child, attrs, item_cat, phrases, inner)
+            _translate_leaf(client, child, attrs, locale, default_category, effective)
         else:
             _walk(client, child, attrs, locale, default_category, effective, selmap)
+
+
+def _translate_leaf(
+    client: "LangsysClient",
+    el: _Element,
+    attrs: list[str],
+    locale: str,
+    default_category: Optional[str],
+    effective: Optional[str],
+) -> None:
+    """One leaf: a single phrase when its whole text is one token, otherwise a content block."""
+    inner = inner_html(el)
+    phrases = extract_phrases(inner, attrs)
+    if not phrases:
+        return
+    item_cat = _item_category(effective, default_category)
+    text = text_content(el)
+    if len(phrases) == 1 and phrases[0] == text:
+        category = None if item_cat == UNCATEGORIZED else item_cat
+        translated = client.translate(text, category=category, locale=locale)
+        apply_element(el, {text: translated}, attrs)
+    else:
+        _apply_or_queue_block(client, el, attrs, item_cat, phrases, inner)
 
 
 def _handle_block(

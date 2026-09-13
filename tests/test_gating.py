@@ -324,13 +324,20 @@ def test_WIRE3_the_locale_goes_on_the_wire_lowercase(httpx_mock):
 
 
 def test_WIRE3_casing_variants_are_one_cache_entry_not_two(httpx_mock):
+    """Asserted on the fetches made and the keys stored. An earlier version relied on "no second
+    response is registered, so a second fetch would raise" - which does not hold on this
+    pytest-httpx, so it stayed green with both cache sites keyed by the raw casing."""
     cache = MemoryCache()
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {"a": "b"}}})
+    httpx_mock.add_response(
+        url=TRANS, json={"status": True, "data": {"UI": {"a": "b"}}}, is_reusable=True
+    )
     client = make(cache=cache)
     client.get_translations("es-ES")
-    # No second response registered: a second fetch would raise inside the store and
-    # degrade to {}, so an equal result proves the cache key unified the casing.
     assert client.get_translations("es-es") == {"UI": {"a": "b"}}
+    fetches = [str(r.url) for r in httpx_mock.get_requests() if "translations" in str(r.url)]
+    assert len(fetches) == 1, f"casing variants were fetched as two catalogs: {fetches}"
+    stored = sorted(k for k in cache._store if k.startswith("translations_"))
+    assert stored == ["translations_proj-1_es-es"], stored
 
 
 def test_WIRE3_the_sentinel_is_never_sent_as_a_category(httpx_mock):
@@ -574,3 +581,73 @@ def test_GATE3_reset_rearms_the_obs1_notice(httpx_mock):
     assert client._warned_unusable is True
     client.reset_write_decision()
     assert client._warned_unusable is False
+
+
+# -- OBS-1: the diagnostic itself, not the flag behind it ---------------------
+
+
+def _unusable_notices(caplog):
+    return [
+        r for r in caplog.records
+        if r.levelname == "WARNING" and "NOT write-enabled although" in r.getMessage()
+    ]
+
+
+def test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss(httpx_mock, caplog):
+    """REG-1 makes a misconfigured integration completely silent - no request, no error,
+    nothing in the catalog - and a server has no network tab either. One line is the only
+    signal. Asserted on the emitted record rather than on the flag guarding it: a flag can be
+    set by code that never logs."""
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False), is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    client = make()
+    with caplog.at_level("WARNING", logger="langsys"):
+        for phrase in ("One", "Two", "Three"):
+            client.translate(phrase, category="UI", locale="en-us")
+            client.flush_pending()
+    assert len(_unusable_notices(caplog)) == 1, [r.getMessage() for r in caplog.records]
+
+
+def test_OBS1_control_a_write_enabled_session_is_not_reported_unusable(httpx_mock, caplog):
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
+    client = make()
+    with caplog.at_level("WARNING", logger="langsys"):
+        client.translate("One", category="UI", locale="en-us")
+        assert client.flush_pending()["success"] is True
+    assert _unusable_notices(caplog) == []
+
+
+# -- REG-9 against a double that can refuse -----------------------------------
+
+
+def test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item(httpx_mock):
+    """The acceptance-shaped REG-9 test (CONF-1). The double enforces the batch limit the way
+    the server does - an oversized batch is refused - and keeps what it accepted, so the
+    assertion is on what the server ends up holding, not on the shape of what was sent. A
+    request-shape test that happens to use the hardcoded number passes; this does not."""
+    limit = 2
+    accepted: list[str] = []
+
+    def translatable_items(request: httpx.Request) -> httpx.Response:
+        items = json.loads(request.content)["translatable_items"]
+        if len(items) > limit:
+            return httpx.Response(422, json={"error": f"batch of {len(items)} exceeds {limit}"})
+        accepted.extend(item["phrase"] for item in items)
+        return httpx.Response(200, json={"status": True})
+
+    httpx_mock.add_response(
+        url=AUTH, json=auth("write", write_enabled=True, batch_limit=limit), is_reusable=True
+    )
+    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_callback(translatable_items, url=ITEMS, is_reusable=True)
+    client = make()
+    phrases = [f"Phrase {i}" for i in range(5)]
+    for phrase in phrases:
+        client.translate(phrase, category="UI", locale="en-us")
+
+    result = client.flush_pending()
+    assert result["success"] is True, result
+    assert sorted(accepted) == sorted(phrases), "the server does not hold every discovered phrase"
+    assert not client.has_pending

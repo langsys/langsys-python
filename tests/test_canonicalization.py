@@ -14,12 +14,10 @@ literal `U+00A0` looks exactly like the spaces beside it, so a reviewer cannot s
 the test is about and anyone tidying whitespace silently turns it into an assertion
 about ordinary spaces that still passes.
 
-SCOPE — two rules in this family are deliberately NOT implemented here, because their
-normative text does not exist yet. Spec 8.0.1 was announced as changing TOK-1 (SVG text
-becomes translatable, MATH becomes excluded) and TOK-2 (an enumerated JavaScript `\\s`
-set rather than the host language's). Neither is committed: the 838 branch still carries
-the v8 text this file is filed against. Both are recorded in CONFORMANCE as deferred
-with that reason rather than guessed from prose.
+SCOPE — this file carries the v8 identity rows and the shared 26-row fixture, and is
+EXTENDED, not replaced, by `test_spec_801.py`, which holds the 8.0.1 re-row: math
+excluded, svg text translated on every path, the enumerated whitespace set, `%name%`
+normalised at capture, and the CONF-1 every-path register/lookup pairs.
 """
 
 from __future__ import annotations
@@ -40,11 +38,14 @@ from langsys.html.parser import extract_phrases  # noqa: E402
 FIXTURE = Path(__file__).parent / "fixtures" / "canonicalization-reference.json"
 
 #: THE CHECK — content-addressed.
-SOURCE_BLOB_SHA = "e4c1f185974fbf2ebda6154f36b8ed7416f1d7fa"
+SOURCE_BLOB_SHA = "1ae7bc2900c073085ae3ebbf1f81cd37c81d553b"
 #: THE PROVENANCE — a live ref.
-SOURCE_REF = "langsys-js-typescript 6596faf tests/fixtures/canonicalization-reference.json"
+SOURCE_REF = "langsys-js-typescript 4eac870 tests/fixtures/canonicalization-reference.json"
 #: The spec revision these rows are filed against.
-SPEC_BLOB = "b657b490f07615b889081c0ac5244ec4bd73bf81"  # langsys2 483f98fb, specVersion 8
+#: What the fixture was AUTHORED against (langsys 63df13c7) - an ancestor of the target.
+FIXTURE_SPEC_BASIS = "8e2527b9f30e4e8a38121eeb7c401d4db60dfa6c"
+#: What this SDK is FILED against (langsys 5cff03a, specVersion 8.0.1, unpublished).
+TARGET_SPEC_BLOB = "5c5c0723f88fb8e6b13f58876c7adca8b6b35691"
 
 _DOC = json.loads(FIXTURE.read_text(encoding="utf-8"))
 ROWS = _DOC["cases"]
@@ -68,10 +69,17 @@ def test_the_vendored_fixture_is_the_pinned_blob():
     )
 
 
-def test_the_fixture_is_filed_against_the_spec_revision_we_read():
-    assert SPEC_BLOB in _DOC["spec_blob"], (
-        f"fixture declares {_DOC['spec_blob']!r}, this file is filed against {SPEC_BLOB}"
-    )
+def test_the_fixture_declares_the_spec_revision_it_was_authored_against():
+    """The fixture and this SDK are filed against DIFFERENT blobs, and that is recorded, not missed.
+
+    The fixture was authored at langsys `63df13c7` (blob `8e2527b9`). This SDK is filed against
+    the target `5cff03a` (blob `5c5c0723`), three commits later, and TOK-1/TOK-2/TOK-5 text
+    changed in between - including a commit that dropped two ids it could not derive. The rows
+    are behaviour-anchored and still hold, but a reader comparing this header to CONFORMANCE's
+    would otherwise see a mismatch without knowing it was known. Pinned so that the day the
+    fixture is re-authored against the target, this fails and says why."""
+    assert FIXTURE_SPEC_BASIS in _DOC["spec_blob"], _DOC["spec_blob"]
+    assert TARGET_SPEC_BLOB not in _DOC["spec_blob"], "fixture now declares the target; update"
 
 
 @pytest.mark.parametrize("row", ROWS, ids=lambda r: r["id"])
@@ -106,7 +114,7 @@ def test_custom_id_matches_the_fixture(row):
 # The control is the whole test: without a phrase that must survive, an implementation
 # that tokenizes nothing at all passes.
 
-TOK1_EXCLUDED = ["script", "style", "noscript"]
+TOK1_EXCLUDED = ["script", "style", "noscript", "math"]
 
 
 @pytest.mark.parametrize("tag", TOK1_EXCLUDED)
@@ -140,12 +148,9 @@ def test_TOK1_template_content_produces_no_token():
 
 
 def test_TOK1_does_not_exclude_svg_on_the_block_path():
-    """Deliberately pinning CURRENT behaviour, not a preference.
-
-    TOK-1 at the revision this file is filed against names script/style/template/
-    noscript and says nothing about `svg`. The announced 8.0.1 makes SVG text
-    explicitly translatable, so excluding it here would be work to undo. The page path
-    still skips svg — that split is measured and reported, not silently reconciled."""
+    """8.0.1 makes svg text translatable on every path, so it is not excluded here - and the
+    page path now handles it too, rather than skipping it at the top level. Both paths are
+    asserted in `test_spec_801.py`; a single-path proof is what CONF-1 now forbids."""
     assert extract_phrases("<svg><text>Label</text></svg>") == ["Label"]
 
 
@@ -430,8 +435,12 @@ def test_MARK2_excision_not_merely_non_registration():
     )
 
 
-def test_MARK2_a_nested_content_block_host_is_left_alone_on_the_block_path():
-    html = '<div><div data-ls-contentblock="abc"><p>Inner</p></div><p>Outer</p></div>'
+@pytest.mark.parametrize("spelling", ["data-ls-contentblock", "data-langsys-contentblock"])
+def test_MARK2_a_nested_content_block_host_is_left_alone_on_the_block_path(spelling):
+    """Both spellings: an identity written by either SDK is excised on the block path. The first
+    version carried only the JS spelling, and dropping the PHP one from the block path's reader
+    turned nothing red."""
+    html = f'<div><div {spelling}="abc"><p>Inner</p></div><p>Outer</p></div>'
     assert extract_phrases(html) == ["Outer"]
 
 
@@ -625,6 +634,25 @@ def test_MARK2_a_js_stamped_block_host_is_not_re_registered_on_the_page_path():
     )
     assert "Other" in block_phrases, "control: ordinary blocks must still be discovered"
 
+
+
+@pytest.mark.parametrize("spelling", ["data-ls-contentblock", "data-langsys-contentblock"])
+def test_MARK2_an_identified_block_host_is_excised_on_the_page_path_in_either_spelling(spelling):
+    """The page walker's identity check, once per spelling. The JS-stamped test above carries
+    only `data-ls-`, and the declaration test only a truthy flag, so a page walker that read one
+    spelling as an identity and the other as nothing at all passed both."""
+    page = (
+        f'<html><body><div {spelling}="deadbeefdeadbeefdeadbeefdeadbeef">'
+        "<p>Hello <b>x</b></p><p>Second</p></div><p>Other <i>y</i></p></body></html>"
+    )
+    client, patched = _client_with_catalog({})
+    with patched:
+        out = client.translate_page(page, category="CAT")
+    queued = [p["phrase"] for p in client.pending_phrases]
+    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
+    assert "Hello" not in queued + block_phrases, (queued, block_phrases)
+    assert f'{spelling}="deadbeefdeadbeefdeadbeefdeadbeef"' in out, "the foreign identity was rewritten"
+    assert "Other" in block_phrases, "control: ordinary content must still be discovered"
 
 @pytest.mark.parametrize("flag", ["1", "true", "yes", "on", "TRUE"])
 def test_MARK2_a_declaration_flag_is_still_an_authoring_request(flag):

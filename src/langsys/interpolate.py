@@ -55,6 +55,22 @@ _SIMPLE_SLOT = re.compile(r"\{([^{},]+)\}")
 #: common shape in real copy than the escape itself.
 _PERCENT_SLOT = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")
 
+
+def percent_placeholders_to_braces(text: str) -> str:
+    """TOK-5 - rewrite every identifier-shaped `%name%` to `{name}`, for CAPTURE.
+
+    Distinct from the interpolator's rewrite, which is gated on the name being a supplied
+    argument. At capture there are no arguments, only markup being turned into a phrase, and
+    8.0.1 requires `%name%` seen in captured markup to normalise to `{name}` BEFORE the token
+    is derived - so markup authored with the escape and markup authored with braces register
+    one phrase under one id. Same identifier guard, from the same pattern, so `100% of 50%`
+    stays prose on both sides.
+    """
+    if "%" not in text:
+        return text
+    return _PERCENT_SLOT.sub(lambda match: "{" + match.group(1) + "}", text)
+
+
 _DATE_STYLES = {"short", "medium", "long", "full"}
 
 

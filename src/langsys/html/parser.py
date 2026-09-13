@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Sequence, cast
 
+from ..interpolate import percent_placeholders_to_braces
 from .attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES, classify_block_attribute
 
 try:
@@ -35,9 +36,30 @@ __all__ = [
     "inner_html",
     "text_content",
     "normalize_whitespace",
+    "normalize_phrase",
 ]
 
-_WS = re.compile(r"\s+")
+#: TOK-2 (8.0.1) - the collapse set is JavaScript's whitespace class, ENUMERATED by
+#: codepoint. "Whitespace" is not a portable word: CPython's own class collapses U+0085 and
+#: misses U+FEFF, which is two of the divergences this list corrects.
+#:
+#: Written as integers deliberately. Escapes for these characters have been decoded into
+#: invisible literals in transit more than once in this repository's history, and a set
+#: nobody can read is a set nobody can review.
+_JS_WHITESPACE = (
+    0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x00A0, 0x1680,
+    *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
+)
+
+#: HELD (strip ruling) - NOT a statement of the rule. CPython's class also collapses the C0
+#: separators U+001C-U+001F and JavaScript's does not, but a ruling on stripping C0 controls
+#: is pending, so today's behaviour is kept exactly. Adopting JavaScript's set wholesale
+#: would silently decide that ruling. Remove this tuple only when the ruling lands.
+_HELD_C0_SEPARATORS = (0x001C, 0x001D, 0x001E, 0x001F)
+
+_COLLAPSE = frozenset(_JS_WHITESPACE + _HELD_C0_SEPARATORS)
+_COLLAPSE_CHARS = "".join(chr(codepoint) for codepoint in sorted(_COLLAPSE))
+_WS = re.compile("[" + re.escape(_COLLAPSE_CHARS) + "]+")
 
 #: The first start tag in a fragment, with its self-closing slash captured separately so
 #: an attribute can be inserted before it without disturbing the rest of the string.
@@ -69,10 +91,14 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 #: it off `HTMLTemplateElement.content`. lxml is NOT one of those: it parses template
 #: children into the ordinary tree, so here it is a live vector rather than a free pass.
 #:
-#: Deliberately NOT `svg` or `math`: the revision in force names neither, and the
-#: announced 8.0.1 makes SVG text explicitly translatable. The page walker still skips
-#: both; that split is measured and reported rather than silently reconciled.
-SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
+#: `math` is excluded as of 8.0.1: MathML is notation, and translating a variable name or an
+#: operator corrupts it rather than localising it.
+#:
+#: `svg` is deliberately NOT excluded. Its `<text>` renders words a reader sees, so 8.0.1
+#: makes its text translatable on every path. The rule is behavioural, not structural - see
+#: `page.py`, where svg gets its own handling instead of being treated as a block element,
+#: which is the retracted mechanism that dropped a parent block's own text.
+SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})
 
 #: MARK-2 — a host already carrying one of these has an identity, and walking into it
 #: registers its text a second time under a new id. Both spellings, because a page
@@ -86,7 +112,23 @@ BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
 
 
 def normalize_whitespace(text: Optional[str]) -> str:
-    return _WS.sub(" ", text).strip() if text else ""
+    """TOK-2 - collapse runs of the enumerated set to one space, and trim the SAME set.
+
+    Trimming is a second site, not a detail of the first. `str.strip()` uses Python's own idea
+    of whitespace, which removes U+0085 and keeps U+FEFF, so a fix to the collapse alone passes
+    the internal case and still disagrees at the edges.
+    """
+    return _WS.sub(" ", text).strip(_COLLAPSE_CHARS) if text else ""
+
+
+def normalize_phrase(text: Optional[str]) -> str:
+    """The canonical phrase key: whitespace per TOK-2, then `%name%` to `{name}` per TOK-5.
+
+    Used on BOTH sides of every register/lookup pair (CONF-1). A normalisation applied when a
+    phrase is captured and not when it is looked up registers one string and looks up another,
+    which misses forever and re-registers every render.
+    """
+    return percent_placeholders_to_braces(normalize_whitespace(text))
 
 
 def _parse_fragment(html: str) -> _Element:
@@ -119,13 +161,13 @@ def _tag(el: _Element) -> str:
 def _button_value(el: _Element) -> Optional[str]:
     tag = _tag(el)
     if tag == "button" and el.get("value"):
-        return normalize_whitespace(el.get("value"))
+        return normalize_phrase(el.get("value"))
     if (
         tag == "input"
         and el.get("value")
         and (el.get("type") or "").lower() in ("submit", "button")
     ):
-        return normalize_whitespace(el.get("value"))
+        return normalize_phrase(el.get("value"))
     return None
 
 
@@ -147,14 +189,14 @@ def _walk_extract(el: _Element, attrs: Sequence[str], out: list[str]) -> None:
     for attr in attrs:
         value = el.get(attr)
         if value:
-            normalized = normalize_whitespace(value)
+            normalized = normalize_phrase(value)
             if normalized:
                 out.append(normalized)
     button = _button_value(el)
     if button:
         out.append(button)
     if el.text:
-        text = normalize_whitespace(el.text)
+        text = normalize_phrase(el.text)
         if text:
             out.append(text)
     for child in el:
@@ -164,13 +206,13 @@ def _walk_extract(el: _Element, attrs: Sequence[str], out: list[str]) -> None:
         # shift the id of the block containing it.
         if isinstance(child.tag, str) and is_marked_host(child):
             if child.tail:
-                tail = normalize_whitespace(child.tail)
+                tail = normalize_phrase(child.tail)
                 if tail:
                     out.append(tail)
             continue
         _walk_extract(child, attrs, out)
         if child.tail:
-            tail = normalize_whitespace(child.tail)
+            tail = normalize_phrase(child.tail)
             if tail:
                 out.append(tail)
 
@@ -246,11 +288,20 @@ def _walk_apply(el: _Element, translations: dict[str, Optional[str]], attrs: Seq
         return
     for attr in attrs:
         value = el.get(attr)
-        if value and translations.get(value):
-            el.set(attr, translations[value] or value)
+        if value:
+            # CONF-1 - look the value up under the key it was REGISTERED under. Extraction
+            # goes through normalize_phrase, so a raw lookup misses for any value carrying a
+            # whitespace run, an NBSP or a %name% escape, and the attribute never translates.
+            key = normalize_phrase(value)
+            translated = translations.get(key)
+            if translated and translated != key:
+                el.set(attr, translated)
     button_attr = _button_value_raw(el)
-    if button_attr is not None and translations.get(button_attr):
-        el.set("value", translations[button_attr] or button_attr)
+    if button_attr is not None:
+        key = normalize_phrase(button_attr)
+        translated = translations.get(key)
+        if translated and translated != key:
+            el.set("value", translated)
     el.text = _translate_text(el.text, translations)
     for child in el:
         # MARK-2 — mirror the extraction excision. DECISION, recorded rather than left
@@ -283,14 +334,14 @@ def _button_value_raw(el: _Element) -> Optional[str]:
 def _translate_text(text: Optional[str], translations: dict[str, Optional[str]]) -> Optional[str]:
     if not text:
         return text
-    normalized = normalize_whitespace(text)
+    normalized = normalize_phrase(text)
     if not normalized or normalized not in translations:
         return text
     translated = translations[normalized]
     if not translated or translated == normalized:
         return text
-    lead = " " if re.match(r"^\s", text) else ""
-    trail = " " if re.search(r"\s$", text) else ""
+    lead = " " if ord(text[0]) in _COLLAPSE else ""
+    trail = " " if ord(text[-1]) in _COLLAPSE else ""
     return f"{lead}{translated}{trail}"
 
 
@@ -319,4 +370,4 @@ def inner_html(el: _Element) -> str:
 
 def text_content(el: _Element) -> str:
     """Normalized text content of an element (all descendant text, whitespace-collapsed)."""
-    return normalize_whitespace("".join(str(t) for t in el.itertext()))
+    return normalize_phrase("".join(str(t) for t in el.itertext()))

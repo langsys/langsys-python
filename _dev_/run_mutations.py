@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+"""Re-run the conformance mutations: break each behaviour, confirm its named test goes red.
+
+CONF-3 - where a rule can only be proven by running something, the evidence is that breaking
+the behaviour turns the test red, and the mutation performed is recorded, not just the test
+name. This file IS that record for every runtime row in CONFORMANCE.md: each entry names the
+rule, the file, the exact text replaced and its replacement, and the tests that must go red.
+Committed so the record can be re-applied by anyone rather than remembered by one session.
+
+Each mutation replaces exactly one anchor (it refuses if the anchor is missing or repeated),
+runs the unit suite, collects EVERY failing or erroring test from the full output, and restores
+the file byte-for-byte whatever happens. A mutation counts as caught only when the suite goes
+red AND every test it names is among the failures. Reddening "something" proves nothing about
+the rule: an unrelated test erroring would satisfy that, and has, in this repository's history.
+
+    python3 _dev_/run_mutations.py              # every mutation
+    python3 _dev_/run_mutations.py TOK-2 GATE-5 # some rules
+
+Rows with nothing to run are not here: n/a rows, and the meta-rules CONF-2 and CONF-3 that are
+discharged by CONFORMANCE.md and `_dev_/conformance_counts.py`.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+FAILED_LINE = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.M)
+
+CLIENT = "src/langsys/client.py"
+TRANSLATE = "src/langsys/translate.py"
+CATALOG = "src/langsys/catalog.py"
+HTTP = "src/langsys/http.py"
+CONFIG = "src/langsys/config.py"
+REGISTRATION = "src/langsys/registration.py"
+INTERPOLATE = "src/langsys/interpolate.py"
+PARSER = "src/langsys/html/parser.py"
+PAGE = "src/langsys/html/page.py"
+ATTRIBUTES = "src/langsys/html/attributes.py"
+
+
+@dataclass
+class Mutation:
+    rule: str
+    name: str
+    path: str
+    old: str
+    new: str
+    expect: tuple[str, ...]
+
+
+def m(rule: str, name: str, path: str, old: str, new: str, *expect: str) -> Mutation:
+    return Mutation(rule, name, path, old, new, expect)
+
+
+MUTATIONS = [
+    # -- GATE ---------------------------------------------------------------------------------
+    m("GATE-1", "branch on key_type instead of the server's write_enabled", CLIENT,
+      '        if isinstance(flag, bool):\n            self._observe_decision(flag)',
+      '        if False:\n            self._observe_decision(flag)',
+      "test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register",
+      "test_GATE1_an_ip_write_key_that_is_write_enabled_does_register"),
+    m("GATE-2", "collapse an unknown decision to False at the send site", CLIENT,
+      '        decision = self._resolve_write_enabled()\n        if decision is None:',
+      '        decision = self._resolve_write_enabled() is True\n        if decision is None:',
+      "test_GATE2_a_transient_authorize_failure_holds_the_queue"),
+    m("GATE-3", "make reset_write_decision() keep the observed answer", CLIENT,
+      '        self._observed_decision = None\n        self._warned_unusable = False',
+      '        self._warned_unusable = False',
+      "test_GATE3_reset_write_decision_clears_an_observed_answer"),
+    m("GATE-3", "hold the unstripped authorize payload in Project.raw", CLIENT,
+      '        self._project = Project.from_response(data)\n        return self._project\n\n    def _observe_decision',
+      '        self._project = Project.from_response(live)\n        return self._project\n\n    def _observe_decision',
+      "test_GATE3_the_decision_is_not_latched_in_memory_either"),
+    m("GATE-4", "cache the authorize payload without stripping write_enabled", CLIENT,
+      '    return {k: v for k, v in data.items() if k != "write_enabled"}',
+      '    return dict(data)',
+      "test_GATE4_write_enabled_is_stripped_before_anything_is_cached"),
+    m("GATE-5", "clear the queue when a registration send fails", CLIENT,
+      '            self._schedule_flush()\n            return {\n                "phrases": 0,\n                "content_blocks": 0,\n                "success": False,\n                "error": str(exc),',
+      '            self.clear_pending()\n            self._schedule_flush()\n            return {\n                "phrases": 0,\n                "content_blocks": 0,\n                "success": False,\n                "error": str(exc),',
+      "test_GATE5_a_failed_registration_keeps_the_queue"),
+    m("GATE-7", "the content-block path feeds no lane", CLIENT,
+      '            if fetch.ok:\n                self._queue_content_block(html, cat_name, custom_id, phrases)',
+      '            if fetch.ok:\n                pass',
+      "test_translate_content_block_queues_when_missing",
+      "test_CONTROL_content_block_queues_when_the_catalog_fetch_succeeds"),
+    m("GATE-7", "the phrase path feeds no lane", CLIENT,
+      '            self._queue_missing(phrase, category, fetch.catalog.get(category or UNCATEGORIZED))',
+      '            pass',
+      "test_CONTROL_translate_queues_a_miss_when_the_catalog_fetch_succeeds"),
+    m("GATE-7", "the page path's blocks feed no lane", PAGE,
+      '        client._queue_content_block(inner, item_cat, custom_id, phrases)',
+      '        pass',
+      "test_SRV5_a_depth_3_nested_block_is_registered_exactly_once"),
+    m("GATE-8", "infer a write decision for ip_write from an absent flag", CLIENT,
+      '        if key_type == "write":\n            logger.debug(',
+      '        if key_type in ("write", "ip_write"):\n            logger.debug(',
+      "test_GATE8_absent_flag_is_never_inferred_for_a_non_plain_write_key"),
+    m("GATE-8", "apply the key_type fallback to ip_write on a warm cache", CLIENT,
+      '            return self._decide(data, allow_fallback=False)',
+      '            return self._decide(data, allow_fallback=True) or data.get("key_type") == "ip_write"',
+      "test_GATE8_ip_write_on_a_warm_cache_is_false_when_the_server_omits_the_field"),
+    # -- CAT ----------------------------------------------------------------------------------
+    m("CAT-1", "decide a miss by truthiness instead of key presence", TRANSLATE,
+      '    if phrase in cat:\n        raw = cat[phrase]',
+      '    if cat.get(phrase):\n        raw = cat[phrase]',
+      "test_null_value_falls_back_to_base_and_not_missing"),
+    m("CAT-2", "display an empty translation instead of the source", TRANSLATE,
+      '        if isinstance(raw, str) and raw != "":',
+      '        if isinstance(raw, str):',
+      "test_empty_value_falls_back_to_base"),
+    m("CAT-3", "treat a registered block with null phrases as unknown", TRANSLATE,
+      '    block = cat.get(custom_id)\n    if isinstance(block, dict):\n        return block',
+      '    block = cat.get(custom_id)\n    if isinstance(block, dict) and any(block.values()):\n        return block',
+      "test_CAT3_a_registered_untranslated_block_is_known_not_missing"),
+    # -- REG ----------------------------------------------------------------------------------
+    m("REG-1", "send although the server said write_enabled is false", CLIENT,
+      '        if decision is False:\n            phrase_count, block_count',
+      '        if False:\n            phrase_count, block_count',
+      "test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register"),
+    m("REG-2", "never schedule the debounce", CLIENT,
+      '        if self._debounce is None:\n            return\n        with self._lock:',
+      '        if True:\n            return\n        with self._lock:',
+      "test_REG2_a_burst_of_misses_becomes_one_request",
+      "test_REG2_the_debounce_is_a_real_send_path_not_just_a_helper"),
+    m("REG-2", "do not re-arm the debounce after a flush that leaves work", CLIENT,
+      '            if self.has_pending:\n                self._schedule_flush()\n\n    def _flush_outer',
+      '            pass\n\n    def _flush_outer',
+      "test_REG2_a_declining_flush_leaves_a_timer_armed"),
+    m("REG-3", "do not register the end-of-context flush by default", CLIENT,
+      '        if auto_flush:\n            atexit.register(self._auto_flush)',
+      '        if False:\n            atexit.register(self._auto_flush)',
+      "test_REG3_the_end_of_context_flush_is_registered_by_default"),
+    m("REG-3", "let the shutdown flush respect the backoff", CLIENT,
+      '                self.flush_pending(force=True)\n        except Exception as exc:  # never raise',
+      '                self.flush_pending(force=False)\n        except Exception as exc:  # never raise',
+      "test_REG3_the_shutdown_flush_forces_past_an_active_backoff"),
+    m("REG-6", "clear the live queue after the send instead of the snapshot", CLIENT,
+      '            for key in phrase_keys:\n                self._pending.pop(key, None)\n            for block_id in block_ids:\n                self._pending_blocks.pop(block_id, None)',
+      '            self._pending.clear()\n            self._pending_blocks.clear()',
+      "test_REG6_a_miss_recorded_during_a_send_is_not_dropped"),
+    m("REG-7", "allow two sends in flight", CLIENT,
+      '        self._sending = threading.Lock()',
+      '        self._sending = threading.Semaphore(2)',
+      "test_REG7_only_one_send_is_in_flight_at_a_time",
+      "test_REG7_declining_keeps_the_queue_for_the_next_flush"),
+    m("REG-8", "retry while backing off", CLIENT,
+      '        if remaining > 0 and not force:\n            return {',
+      '        if False:\n            return {',
+      "test_REG8_while_backing_off_nothing_is_sent"),
+    m("REG-8", "decay the backoff on success instead of resetting it", CLIENT,
+      '            self._backoff_seconds = 0.0\n            self._backoff_until = 0.0',
+      '            self._backoff_seconds = self._backoff_seconds / 2\n            self._backoff_until = 0.0',
+      "test_REG8_backoff_resets_on_the_first_success"),
+    m("REG-8", "remove the backoff ceiling", CLIENT,
+      '            self._backoff_seconds = min(nxt, BACKOFF_MAX_SECONDS)',
+      '            self._backoff_seconds = nxt',
+      "test_REG8_the_backoff_doubles_and_stops_at_the_ceiling"),
+    m("REG-9", "hardcode the batch size instead of the server's limit", REGISTRATION,
+      '        self.batch_limit = batch_limit if batch_limit > 0 else 200',
+      '        self.batch_limit = 200',
+      "test_REG9_the_batch_limit_comes_from_the_server",
+      "test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item"),
+    m("REG-9", "one POST per content block", CLIENT,
+      '                self._reg.register_content_blocks(blocks)',
+      '                for block in blocks:\n                    self._reg.register_content_blocks([block])',
+      "test_REG9_content_blocks_are_batched_into_one_post"),
+    m("REG-10", "report a skipped write as success", CLIENT,
+      '                "success": False,\n                "skipped": True,\n                "reason": "not-write-enabled",',
+      '                "success": True,\n                "skipped": True,\n                "reason": "not-write-enabled",',
+      "test_REG10_a_skipped_write_is_not_reported_as_success"),
+    m("REG-10", "let a transport failure escape the flush", CLIENT,
+      '        except (NetworkError, ApiError) as exc:\n            # REG-8/GATE-5',
+      '        except ApiError as exc:\n            # REG-8/GATE-5',
+      "test_REG10_flush_does_not_throw_when_registration_fails"),
+    m("REG-11", "never suppress an ellipsis phrase", CLIENT,
+      '        return longer is not None\n\n    @property',
+      '        return False\n\n    @property',
+      "test_REG11_suppresses_only_when_a_longer_entry_shares_the_prefix"),
+    m("REG-11", "suppress every ellipsis phrase", CLIENT,
+      '        return longer is not None\n\n    @property',
+      '        return True\n\n    @property',
+      "test_REG11_warns_but_still_registers_without_a_second_signal"),
+    m("REG-12", "treat a nested map under the phrase as a missing phrase", TRANSLATE,
+      '    if phrase in cat:\n        raw = cat[phrase]',
+      '    if phrase in cat and not isinstance(cat[phrase], dict):\n        raw = cat[phrase]',
+      "test_REG12_a_nested_map_is_a_content_block_never_a_missing_phrase"),
+    m("REG-12", "decide block-ness by 32-hex string shape", TRANSLATE,
+      '    if content_block_id is not None:\n        block = cat.get(content_block_id)',
+      '    if len(phrase) == 32 and all(ch in "0123456789abcdef" for ch in phrase):\n        return Resolution(phrase, missing=False)\n    if content_block_id is not None:\n        block = cat.get(content_block_id)',
+      "test_REG12_a_phrase_shaped_like_a_hash_is_still_a_phrase"),
+    # -- HINT ---------------------------------------------------------------------------------
+    m("HINT-2", "report a hint when the session cannot write", CLIENT,
+      '            # Discarding a queue we have just been told we may not write is correct;',
+      '            self._http.post("discovery/hint", json={"url": "https://site.test/page"})\n            # Discarding a queue we have just been told we may not write is correct;',
+      "test_HINT2_a_server_sdk_never_reports_across_a_whole_render[False]"),
+    # -- ICU ----------------------------------------------------------------------------------
+    m("ICU-1", "no other-branch recovery for a missing argument", INTERPOLATE,
+      '    branch = options.get("other")\n    if branch is None:',
+      '    branch = None\n    if branch is None:',
+      "test_ICU1_missing_select_argument_renders_the_other_branch",
+      "test_ICU1_missing_plural_argument_renders_the_other_branch"),
+    # The select-shaped ICU-2 tests cannot see this: a select given an unmatched value falls to
+    # `other` anyway, so null-as-missing and null-as-supplied render the same. Only a plural
+    # (which cannot count a null) and a plain slot (which would print "None") tell them apart.
+    m("ICU-2", "treat a present-but-null argument as supplied", INTERPOLATE,
+      '    if arg.name not in params or params[arg.name] is None:',
+      '    if arg.name not in params:',
+      "test_ICU5_the_ICU3_marker_survives_a_present_but_null_count",
+      "test_ICU5_a_plain_argument_that_is_null_stays_visible"),
+    m("ICU-3", "leave # unreplaced in a recovered plural", INTERPOLATE,
+      '        hash_literal="{" + arg.name + "}" if arg.kind != "select" else None,',
+      '        hash_literal=None,',
+      "test_ICU3_hash_in_a_recovered_plural_prints_the_argument_name"),
+    m("ICU-4", "recover silently", INTERPOLATE,
+      '        if recovered:\n            _notice_recovery(template, locale, recovered)\n        return out',
+      '        return out',
+      "test_ICU4_emits_a_notice_naming_the_argument_and_the_locale"),
+    m("ICU-4", "notice on every render instead of once per template and locale", INTERPOLATE,
+      '    if key in _NOTICED:\n        return\n    _NOTICED.add(key)',
+      '    _NOTICED.add(key)',
+      "test_ICU4_deduplicates_per_template_and_locale"),
+    m("ICU-5", "route a recovered template through the simplified renderer", INTERPOLATE,
+      '        if recovered:\n            _notice_recovery(template, locale, recovered)\n        return out',
+      '        if recovered:\n            _notice_recovery(template, locale, recovered)\n            return _simple(template, params, locale)\n        return out',
+      "test_ICU5_missing_select_does_not_degrade_the_supplied_plural"),
+    # -- CID ----------------------------------------------------------------------------------
+    m("CID-1", "serialise with Python's default separators", REGISTRATION,
+      '        [_hash_category(category), list(phrases)], ensure_ascii=False, separators=(",", ":")',
+      '        [_hash_category(category), list(phrases)], ensure_ascii=False',
+      "test_CID1_serialized_bytes_match_the_fixture", "test_CID1_custom_id_matches_the_fixture"),
+    m("CID-1", "escape non-ASCII in the canonical JSON", REGISTRATION,
+      '        [_hash_category(category), list(phrases)], ensure_ascii=False, separators=(",", ":")',
+      '        [_hash_category(category), list(phrases)], ensure_ascii=True, separators=(",", ":")',
+      "test_CID1_the_line_terminator_row_is_present_and_raw"),
+    m("CID-2", "hash the uncategorised sentinel as a category", REGISTRATION,
+      '    if category is None or category == _UNCATEGORIZED:\n        return ""',
+      '    if category is None:\n        return ""',
+      "test_CID2_none_and_the_sentinel_and_empty_all_hash_as_empty"),
+    m("CID-3", "offer only one uncategorised spelling", REGISTRATION,
+      '        slots = ["", _UNCATEGORIZED]',
+      '        slots = [""]',
+      "test_CID3_uncategorised_offers_both_historical_spellings",
+      "test_both_uncategorised_spellings_are_offered_on_lookup"),
+    m("CID-3", "offer a byte hash where the JS code-unit hash belongs", REGISTRATION,
+      '        ids.append(_md5_utf16_code_units(js_form))',
+      '        ids.append(hashlib.md5(js_form.encode("utf-8")).hexdigest())  # noqa: S324',
+      "test_CID3_the_js_code_unit_form_is_offered_for_ascii_and_non_ascii"),
+    m("CID-3", "emit a historical id when registering", REGISTRATION,
+      '            "custom_id": custom_id or generate_custom_id(category, phrases),',
+      '            "custom_id": custom_id or legacy_custom_ids(category, phrases)[-1],',
+      "test_CID3_the_current_form_is_the_only_one_ever_emitted"),
+    m("CID-4", "attach to a legacy id without verifying its content", TRANSLATE,
+      '        if not _block_matches(candidate, phrases):',
+      '        if False:',
+      "test_CID4_a_legacy_id_whose_content_differs_is_declined"),
+    # -- CACHE / OBS --------------------------------------------------------------------------
+    m("CACHE-1", "drop the project id from the catalog cache key", CATALOG,
+      '        return f"translations_{self._project_id}_{normalize_locale(locale)}"',
+      '        return f"translations_{normalize_locale(locale)}"',
+      "test_CACHE1_every_key_is_namespaced_by_project"),
+    m("CACHE-1", "drop the locale from the catalog cache key", CATALOG,
+      '        return f"translations_{self._project_id}_{normalize_locale(locale)}"',
+      '        return f"translations_{self._project_id}"',
+      "test_CACHE1_the_catalog_key_carries_the_locale"),
+    m("OBS-1", "demote the unusable-capability diagnostic below warning", CLIENT,
+      '        self._warned_unusable = True\n        logger.warning(',
+      '        self._warned_unusable = True\n        logger.debug(',
+      "test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss"),
+    m("OBS-1", "emit the diagnostic on every resolution", CLIENT,
+      '        if self._warned_unusable:\n            return\n        self._warned_unusable = True',
+      '        self._warned_unusable = True',
+      "test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss"),
+    # -- WIRE ---------------------------------------------------------------------------------
+    m("WIRE-1", "authenticate with Authorization instead of X-Authorization", HTTP,
+      '                "X-Authorization": api_key,',
+      '                "Authorization": api_key,',
+      "test_WIRE1_every_request_authenticates_with_the_x_authorization_header"),
+    m("WIRE-2", "parse every body unconditionally", HTTP,
+      '        except ValueError:\n            body = {}',
+      '        except ValueError:\n            raise',
+      "test_WIRE2_an_empty_204_is_a_success_not_a_parse_error"),
+    # Two sites: the wire value and the cache key normalise independently, so breaking the wire
+    # alone leaves the cache test green - correctly, since one entry is still one entry.
+    m("WIRE-3", "send the locale as given", CATALOG,
+      '        wire_locale = normalize_locale(locale)\n        if use_cache:',
+      '        wire_locale = locale\n        if use_cache:',
+      "test_WIRE3_the_locale_goes_on_the_wire_lowercase"),
+    m("WIRE-3", "key the memory and persistent caches by the locale as given", CATALOG,
+      '    def _key(self, locale: str) -> str:\n        return f"translations_{self._project_id}_{normalize_locale(locale)}"\n\n    def get(self, locale: str, *, use_cache: bool = True) -> CatalogFetch:\n        wire_locale = normalize_locale(locale)',
+      '    def _key(self, locale: str) -> str:\n        return f"translations_{self._project_id}_{locale}"\n\n    def get(self, locale: str, *, use_cache: bool = True) -> CatalogFetch:\n        wire_locale = locale',
+      "test_WIRE3_casing_variants_are_one_cache_entry_not_two"),
+    m("WIRE-4", "queue misses off a failed catalog fetch", CLIENT,
+      '        if result.missing and content_block_id is None and fetch.ok:',
+      '        if result.missing and content_block_id is None:',
+      "test_WIRE4_a_failed_fetch_queues_nothing"),
+    m("WIRE-4", "let a transport failure escape the catalog fetch", CATALOG,
+      '        except (NetworkError, ApiError) as exc:\n            # WIRE-4',
+      '        except ApiError as exc:\n            # WIRE-4',
+      "test_WIRE4_translate_degrades_to_the_source_phrase"),
+    m("WIRE-4", "cache a failed fetch as an empty catalog", CATALOG,
+      '        fetched = self._fetch(wire_locale)\n        if not fetched.ok:\n            return fetched',
+      '        fetched = self._fetch(wire_locale)',
+      "test_WIRE4_a_failed_fetch_is_not_cached_as_an_empty_catalog"),
+    m("WIRE-5", "ignore LANGSYS_API_URL", CONFIG,
+      '        resolved_url = (api_url or _env("LANGSYS_API_URL", DEFAULT_API_URL)) or DEFAULT_API_URL',
+      '        resolved_url = api_url or DEFAULT_API_URL',
+      "test_WIRE5_the_environment_redirects_the_base_and_a_request_arrives_there"),
+    # -- TOK ----------------------------------------------------------------------------------
+    m("TOK-1", "stop excluding script, style and noscript", PARSER,
+      'SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})',
+      'SKIP_TAGS = frozenset({"template", "math"})',
+      "test_TOK1_one_document_carrying_all_three_yields_exactly_one_phrase",
+      "test_tokens_match_the_fixture[noscript-subtree]"),
+    m("TOK-1", "stop excluding template (load-bearing on lxml)", PARSER,
+      'SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})',
+      'SKIP_TAGS = frozenset({"script", "style", "noscript", "math"})',
+      "test_TOK1_template_content_produces_no_token"),
+    m("TOK-1", "stop excluding math", PARSER,
+      'SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})',
+      'SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})',
+      "test_TOK1_the_spec_document_yields_exactly_the_ordinary_phrase",
+      "test_TOK1_math_is_excluded_and_the_surrounding_text_survives", "math-subtree"),
+    m("TOK-1", "stop handling a standalone svg on the page path", PAGE,
+      '        if tag == "svg":',
+      "        if False:",
+      "test_TOK1_a_standalone_svg_is_tokenized_on_the_page_path",
+      "test_TOK1_a_standalone_svg_translates_in_place_with_its_path_intact"),
+    m("TOK-1", "treat svg as a block element (the retracted mechanism)", PAGE,
+      '        "details", "summary", "dialog",',
+      '        "details", "summary", "dialog", "svg",',
+      "test_TOK1_inline_svg_on_the_page_path_yields_the_same_tokens"),
+    m("TOK-2", "drop U+FEFF from the collapse set", PARSER,
+      "0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,",
+      "0x2028, 0x2029, 0x202F, 0x205F, 0x3000,",
+      "test_TOK2_feff_is_a_member_and_collapses",
+      "test_TOK2_feff_is_trimmed_leading_and_trailing", "feff-in-text"),
+    m("TOK-2", "add U+0085 to the collapse set", PARSER,
+      "0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x00A0, 0x1680,",
+      "0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,",
+      "test_TOK2_non_members_survive_the_collapse[U+0085]", "nel-in-text"),
+    # Only a character Python's str.isspace() and the spec's set disagree on can tell the two
+    # trims apart. U+FEFF cannot: the collapse has already turned an edge run of members into
+    # one space, which either trim removes. U+0085 can - Python trims it, the spec keeps it.
+    m("TOK-2", "trim with Python's own whitespace instead of the enumerated set", PARSER,
+      'return _WS.sub(" ", text).strip(_COLLAPSE_CHARS) if text else ""',
+      'return _WS.sub(" ", text).strip() if text else ""',
+      "test_TOK2_non_members_survive_trimming[U+0085]"),
+    m("TOK-2", "adopt JavaScript's set wholesale, deciding the held C0 ruling", PARSER,
+      "_COLLAPSE = frozenset(_JS_WHITESPACE + _HELD_C0_SEPARATORS)",
+      "_COLLAPSE = frozenset(_JS_WHITESPACE)",
+      "test_TOK2_HELD_strip_ruling_characters_are_pinned_at_todays_behaviour[U+001C]"),
+    m("TOK-3", "swap the first two attributes", ATTRIBUTES,
+      '    "placeholder",\n    "alt",',
+      '    "alt",\n    "placeholder",',
+      "test_TOK3_the_attribute_list_is_the_twenty_seven_in_order"),
+    m("TOK-3", "drop data-bs-title from the list", ATTRIBUTES,
+      '    "data-bs-title",\n    "data-bs-content",',
+      '    "data-bs-content",',
+      "test_tokens_match_the_fixture[attr-new-data-bs-title]"),
+    m("TOK-4", "trim attribute values without collapsing their interior", PARSER,
+      '            normalized = normalize_phrase(value)\n            if normalized:',
+      '            normalized = value.strip()\n            if normalized:',
+      "test_TOK4_attribute_values_collapse_internal_whitespace_like_text_nodes",
+      "test_tokens_match_the_fixture[attr-multiline]"),
+    m("TOK-5", "stop rewriting %name% at capture", INTERPOLATE,
+      '    return _PERCENT_SLOT.sub(lambda match: "{" + match.group(1) + "}", text)',
+      "    return text",
+      "test_TOK5_percent_form_in_markup_is_captured_as_the_brace_form", "percent-name-in-markup"),
+    m("TOK-5", "stop accepting %name% at interpolation", INTERPOLATE,
+      '    if "%" not in template:\n        return template\n\n    def repl',
+      '    return template\n\n    def repl',
+      "test_TOK5_both_placeholder_forms_interpolate_the_same_argument"),
+    # -- MARK ---------------------------------------------------------------------------------
+    m("MARK-1", "return an unstamped block on a miss", CLIENT,
+      '            return stamp_content_block(html, custom_id)\n        translated = apply_block_translations',
+      '            return html\n        translated = apply_block_translations',
+      "test_MARK1_an_untranslated_block_is_still_stamped"),
+    m("MARK-1", "stop stamping page-path blocks", PAGE,
+      '    el.set("data-ls-contentblock", custom_id)',
+      '    pass',
+      "test_MARK1_page_rendered_blocks_are_stamped_too"),
+    m("MARK-2", "read only the data-ls- phrase spelling on the block path", PARSER,
+      'PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")',
+      'PHRASE_HOST_ATTRS = ("data-ls-phrase",)',
+      "test_MARK2_the_mirror_case_both_spellings_on_the_block_path"),
+    m("MARK-2", "the tokenizer reads only the data-langsys- phrase spelling", PARSER,
+      'PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")',
+      'PHRASE_HOST_ATTRS = ("data-langsys-phrase",)',
+      "test_MARK2_a_js_rendered_phrase_host_is_not_re_split_on_the_page_path"),
+    # The page walker's own reader sees only hosts it reaches directly; a host inside a leaf goes
+    # to the tokenizer's reader. Only a block-level host reaches it - one vector per spelling.
+    m("MARK-2", "the page walker reads only the data-langsys- phrase spelling", PAGE,
+      'PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")',
+      'PHRASE_HOST_ATTRS = ("data-langsys-phrase",)',
+      "test_MARK2_a_block_level_phrase_host_is_excised_by_the_page_walker[block-level-host]"),
+    m("MARK-2", "the page walker reads only the data-ls- phrase spelling", PAGE,
+      'PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")',
+      'PHRASE_HOST_ATTRS = ("data-ls-phrase",)',
+      "test_MARK2_a_block_level_phrase_host_is_excised_by_the_page_walker[host-is-the-block]"),
+    m("MARK-2", "the tokenizer reads only the data-ls- block identity spelling", PARSER,
+      'BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")',
+      'BLOCK_HOST_ATTRS = ("data-ls-contentblock",)',
+      "test_MARK2_a_nested_content_block_host_is_left_alone_on_the_block_path[data-langsys-contentblock]"),
+    m("MARK-2", "the tokenizer reads only the data-langsys- block identity spelling", PARSER,
+      'BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")',
+      'BLOCK_HOST_ATTRS = ("data-langsys-contentblock",)',
+      "test_MARK2_a_nested_content_block_host_is_left_alone_on_the_block_path[data-ls-contentblock]"),
+    m("MARK-2", "the page walker reads only the data-ls- block identity spelling", PAGE,
+      'CONTENT_BLOCK_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")',
+      'CONTENT_BLOCK_ATTRS = ("data-ls-contentblock",)',
+      "test_MARK2_an_identified_block_host_is_excised_on_the_page_path_in_either_spelling[data-langsys-contentblock]"),
+    m("MARK-2", "the page walker reads only the data-langsys- block identity spelling", PAGE,
+      'CONTENT_BLOCK_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")',
+      'CONTENT_BLOCK_ATTRS = ("data-langsys-contentblock",)',
+      "test_MARK2_an_identified_block_host_is_excised_on_the_page_path_in_either_spelling[data-ls-contentblock]"),
+    m("MARK-2", "read opt-out values as another SDK's identity", ATTRIBUTES,
+      'BLOCK_OPT_OUT_VALUES = frozenset({"0", "false", "off", "no"})',
+      'BLOCK_OPT_OUT_VALUES = frozenset()',
+      "test_MARK2_the_block_attribute_is_classified_three_ways_on_the_page_path"),
+    # -- SRV ----------------------------------------------------------------------------------
+    m("SRV-1", "serve the base language whatever the catalog holds", CLIENT,
+      '        result = resolve(fetch.catalog, phrase, category, content_block_id)',
+      '        result = resolve({}, phrase, category, content_block_id)',
+      "test_SRV1_the_served_output_carries_the_request_locale_translation"),
+    m("SRV-2", "hold the fetched catalog in shared state across the lookup", CLIENT,
+      '        loc = self._effective_locale(locale)\n        fetch = self._catalog.get(loc)\n        self._observe_decision(fetch.write_enabled)\n        result = resolve(',
+      '        loc = self._effective_locale(locale)\n        self._shared_fetch = self._catalog.get(loc)\n        time.sleep(0.05)\n        fetch = self._shared_fetch\n        self._observe_decision(fetch.write_enabled)\n        result = resolve(',
+      "test_SRV2_concurrent_locales_do_not_observe_each_others_catalog"),
+    m("SRV-3", "collect on the render call", CLIENT,
+      '        with self._lock:\n            self._pending[key] = None\n        self._schedule_flush()',
+      '        with self._lock:\n            self._pending[key] = None\n        self.flush_pending()',
+      "test_SRV3_collection_does_not_happen_on_the_render_call",
+      "test_SRV3_the_send_happens_off_the_render_call"),
+    m("SRV-3", "push from a read-only key", CLIENT,
+      '        if decision is False:\n            phrase_count, block_count',
+      '        if False:\n            phrase_count, block_count',
+      "test_SRV3_a_read_only_key_pushes_nothing"),
+    m("SRV-5", "register every leaf twice", PAGE,
+      '            _translate_leaf(client, child, attrs, locale, default_category, effective)\n        else:',
+      '            _translate_leaf(client, child, attrs, locale, default_category, effective)\n            _translate_leaf(client, child, attrs, locale, default_category, effective)\n        else:',
+      "test_SRV5_a_depth_3_nested_phrase_is_registered_exactly_once",
+      "test_SRV5_a_depth_3_nested_block_is_registered_exactly_once"),
+    # -- CONF-1: every register/lookup pair ---------------------------------------------------
+    m("CONF-1", "look attributes up raw", PARSER,
+      "            key = normalize_phrase(value)",
+      "            key = value",
+      "test_CONF1_an_attribute_is_looked_up_the_way_it_was_registered",
+      "test_CONF1_an_nbsp_attribute_is_looked_up_the_way_it_was_registered"),
+    m("CONF-1", "look attributes up with trim() (the TS lane's revert shape)", PARSER,
+      "            key = normalize_phrase(value)",
+      "            key = value.strip()",
+      "test_CONF1_attribute_lookup_on_the_block_path",
+      "test_CONF1_attribute_lookup_on_the_page_path"),
+    m("CONF-1", "look button values up raw", PARSER,
+      "        key = normalize_phrase(button_attr)",
+      "        key = button_attr",
+      "test_CONF1_a_button_value_is_looked_up_the_way_it_was_registered"),
+    m("CONF-1", "look text nodes up with trim()", PARSER,
+      "    normalized = normalize_phrase(text)",
+      "    normalized = text.strip()",
+      "test_CONF1_option_text_lookup_on_the_block_path",
+      "test_CONF1_option_text_lookup_on_the_page_path"),
+    m("CONF-1", "look text nodes up without the %name% rewrite", PARSER,
+      "    normalized = normalize_phrase(text)",
+      "    normalized = normalize_whitespace(text)",
+      "test_TOK5_capture_and_lookup_agree_so_the_translation_is_found"),
+    m("CONF-1", "derive the page leaf's phrase key with trim()", PARSER,
+      '    return normalize_phrase("".join(str(t) for t in el.itertext()))',
+      '    return "".join(str(t) for t in el.itertext()).strip()',
+      "test_CONF1_option_text_lookup_on_the_page_path"),
+    m("CONF-1", "register the title raw", PAGE,
+      "        key = normalize_phrase(title.text)",
+      "        key = title.text.strip()",
+      "test_CONF1_the_title_route_registers_the_collapsed_phrase"),
+    m("CONF-1", "register meta content raw", PAGE,
+      "    key = normalize_phrase(content)",
+      "    key = content",
+      "test_CONF1_the_meta_route_registers_the_collapsed_phrase"),
+    m("CONF-1", "overwrite an untranslated title with its normalised key", PAGE,
+      "            if translated != key:\n                title.text = translated",
+      "            title.text = translated",
+      "test_CONF1_a_head_miss_keeps_the_markup_as_authored"),
+]
+
+
+def run_suite() -> tuple[int, list[str]]:
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-m", "not integration", "-q", "-p", "no:cacheprovider"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode, FAILED_LINE.findall(proc.stdout)
+
+
+def apply(mutation: Mutation) -> list[str]:
+    target = ROOT / mutation.path
+    original = target.read_bytes()
+    text = original.decode("utf-8")
+    found = text.count(mutation.old)
+    if found != 1:
+        raise SystemExit(
+            f"{mutation.rule} / {mutation.name}: anchor matched {found}x in {mutation.path}"
+        )
+    try:
+        target.write_text(text.replace(mutation.old, mutation.new), encoding="utf-8")
+        _, failures = run_suite()
+    finally:
+        target.write_bytes(original)
+    if target.read_bytes() != original:
+        raise SystemExit(f"{mutation.path} was not restored byte-for-byte")
+    return failures
+
+
+def main(argv: list[str]) -> int:
+    wanted = set(argv[1:])
+    selected = [m for m in MUTATIONS if not wanted or m.rule in wanted]
+    for mutation in selected:  # every anchor resolves before anything runs
+        count = (ROOT / mutation.path).read_text(encoding="utf-8").count(mutation.old)
+        if count != 1:
+            raise SystemExit(f"{mutation.rule} / {mutation.name}: anchor matched {count}x")
+    code, failures = run_suite()
+    if code != 0 or failures:
+        raise SystemExit(f"unmutated suite is not green ({len(failures)} failing); fix that first")
+
+    uncaught = 0
+    for mutation in selected:
+        failures = apply(mutation)
+        missing = [e for e in mutation.expect if not any(e in f for f in failures)]
+        caught = bool(failures) and not missing
+        uncaught += 0 if caught else 1
+        verdict = "caught" if caught else "NOT CAUGHT"
+        print(f"\n[{mutation.rule}] {mutation.name}  ({mutation.path})")
+        print(f"  {verdict} - {len(failures)} failing test(s), counted from the full output")
+        for failure in failures:
+            print(f"    {failure}")
+        if missing:
+            print(f"  named but not failing: {missing}")
+    rules = sorted({m.rule for m in selected})
+    print(f"\n{len(selected) - uncaught}/{len(selected)} mutations caught by their named tests, "
+          f"across {len(rules)} rules: {', '.join(rules)}")
+    return 1 if uncaught else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

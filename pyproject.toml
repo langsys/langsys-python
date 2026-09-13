@@ -63,6 +63,8 @@ select = ["E", "F", "I", "B", "SIM", "C4"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+# Mutation anchors are verbatim source lines; wrapping them would stop them matching.
+"_dev_/run_mutations.py" = ["E501"]
 
 [tool.mypy]
 strict = true
