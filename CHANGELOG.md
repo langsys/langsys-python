@@ -41,6 +41,16 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Legacy-key migration (spec 8.2).**
+
+- **MIG-1..7 — `legacy_files=` lets a keyed app migrate without a codemod.** `translate()`
+  resolves its argument as a key in the app's source-language file first: a hit registers the
+  key's source text (never the key) under its namespace or `msgctxt`, and a miss is ordinary
+  source text. Reads gettext `.po` and plain JSON; placeholders convert to `{name}`, gettext
+  plurals to ICU, and anything that can't convert is kept verbatim with a warning. A `.mo` or an
+  unsupported format is refused at configuration. `langsys.migrate.convert_literal` converts a
+  framework call's literal under that framework's syntax, for integrations.
+
 **Failed catalogs and unrenderable phrases (spec 8.2).**
 
 - **CACHE-2 — a failed catalog fetch is remembered for a short window.** Lookups for that locale

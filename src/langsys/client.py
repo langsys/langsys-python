@@ -18,6 +18,7 @@ from .http import HttpClient, encode_segment
 from .interpolate import interpolate
 from .locale import canonicalize_locale, detect_preferred_locale
 from .messages import DEFAULT_MESSAGE_CATEGORY, Entry
+from .migrate import LegacyKeys
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
 from .request_locale import LocaleChoice, resolve_request_locale
@@ -81,6 +82,7 @@ class LangsysClient:
         debounce: Optional[float] = DEFAULT_DEBOUNCE_SECONDS,
         debug: bool = False,
         message_category: str = DEFAULT_MESSAGE_CATEGORY,
+        legacy_files: Optional[Sequence[Any]] = None,
     ) -> None:
         self._config = Config.resolve(
             api_key,
@@ -139,6 +141,10 @@ class LangsysClient:
         self._translatable_attributes: list[str] = list(DEFAULT_TRANSLATABLE_ATTRIBUTES)
         #: MSG-6 - the one category server-message templates are registered and rendered under.
         self.message_category = message_category
+        #: MIG-1 - legacy-key mode runs only when files are configured. Unset, no file is read
+        #: and no key lookup happens. Loaded here, so a file this SDK cannot read (a `.mo`, an
+        #: unsupported format) fails at configuration, naming the file.
+        self._legacy = LegacyKeys(legacy_files) if legacy_files else None
         #: MSG-11 - one warning per (template, marker) whose value is a catalogued phrase.
         self._warned_marker_values: set[tuple[str, str]] = set()
         self._utils = Utilities(self._http, self._config.project_id)
@@ -483,6 +489,10 @@ class LangsysClient:
     ) -> str:
         """Translate ``phrase`` (falling back to the phrase itself if untranslated),
         then interpolate ``params`` with locale-aware CLDR formatting."""
+        # MIG-2 - in legacy-key mode the argument is a key first: a hit becomes its source value
+        # (never the key) under its namespace, a miss stays literal source text.
+        if self._legacy is not None and content_block_id is None:
+            phrase, category, _ = self._legacy.resolve(phrase, category)
         # TOK-2 - a code-registered key is stripped of C0 controls on lookup and on register
         # alike, so a phrase carrying one resolves to the same entry as the markup that holds it.
         phrase = strip_c0(phrase)

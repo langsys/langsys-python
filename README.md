@@ -180,6 +180,27 @@ user's raw input.
   A provider is any callable returning templates, and framework integrations supply one built
   from your forms.
 
+### Migrating from translation keys
+
+An app built on keys (`_("checkout.submit")`, a `messages.json`, Django's `.po` files) can
+switch without a codemod: keep your source-language file and point the client at it.
+
+```python
+client = LangsysClient(..., legacy_files=["locale/en/LC_MESSAGES/django.po", "i18n/en.json"])
+client.translate("checkout.submit")   # a key in en.json: registers "Pay now" under "checkout"
+client.translate("Pay now")           # not a key: registers the text itself
+```
+
+A key that's in the file resolves to its source text, which is what gets registered and looked
+up, so the key itself never reaches Langsys. Its namespace (`checkout.` in `checkout.submit`),
+or its `msgctxt` in a `.po`, becomes the category unless you pass one. Anything that isn't a key
+is treated as ordinary source text. Placeholders are converted to `{name}`: `{{name}}`,
+`%(name)s`, `%{name}` and `:name`. A `.po` plural becomes
+`{count, plural, =1 {…} other {…}}`. The formats read are gettext `.po` and plain JSON, and a
+`.mo`, or any other format, is refused when the client is built. `python -m langsys.migrate
+FILE ...` lists keys defined twice and values kept verbatim because they can't be converted.
+Leave `legacy_files` unset once you've migrated; no file is read and no lookup runs.
+
 ### Caching
 
 The catalog is cached (in-memory + a persistent tier). Choose the persistent backend:
