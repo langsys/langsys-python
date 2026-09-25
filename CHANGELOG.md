@@ -41,6 +41,16 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Request locale and resolved pages (spec 8.2).**
+
+- **SRV-6 — `client.resolve_request_locale()` picks a request's locale** from the URL, then a
+  cookie or session value, then `Accept-Language`, then the project's base locale. Every
+  candidate is validated against the project's locales, and the result names the `Vary` headers
+  the response needs.
+- **GATE-10 — `translate_page()` marks a translated page's root `data-ls-resolved`**, so a
+  browser SDK on the page doesn't register already-translated text as source. Base-locale
+  renders are not marked.
+
 **Server messages (spec 8.2).**
 
 - **MSG-1..8, MSG-11 — validation errors and system messages are translatable.**

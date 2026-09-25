@@ -121,6 +121,30 @@ and a client built part-way through a request joins it. A scope that is never en
 its misses until the process-exit flush. `end_request_scope` takes the handle explicitly,
 so it can be called from a different task than the one that began the scope.
 
+### Choosing the request's locale
+
+```python
+choice = client.resolve_request_locale(
+    url=path_locale,                       # what your routes carry, or None
+    cookie=request.cookies.get("locale"),  # or a session value
+    accept_language=request.headers.get("Accept-Language"),
+)
+client.set_locale(choice.locale)
+for header in choice.vary:                 # e.g. ("Cookie", "Accept-Language")
+    response.headers.add("Vary", header)
+```
+
+The first usable candidate wins: the URL, then the cookie or session, then `Accept-Language`,
+then the project's base locale. Each one is checked against the locales the project serves, and
+an unsupported one is skipped, so a stale cookie never selects a locale with no catalog. The
+resolver never writes a cookie. `choice.vary` lists the headers the choice depended on; send
+them, or a CDN in front of your site will serve one visitor's language to the next. Pass
+`uses_cookie=False` if your app keeps no locale cookie or session.
+
+`translate_page()` marks the page's root `data-ls-resolved="<locale>"` when it renders into a
+locale other than the project's base, so a browser SDK on that page doesn't register its
+translated text as new source phrases. A base-locale render is not marked.
+
 ### Server messages (validation errors)
 
 A validation error only exists after someone submits bad input, so no visitor's page ever

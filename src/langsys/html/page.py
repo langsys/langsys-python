@@ -19,6 +19,7 @@ from lxml import html as lxml_html
 from lxml.cssselect import CSSSelector
 from lxml.etree import _Element
 
+from ..locale import normalize_locale
 from ..registration import generate_custom_id
 from ..translate import lookup_block
 from ..types import UNCATEGORIZED
@@ -76,12 +77,27 @@ def translate_page(
     selmap = _build_selector_map(doc, selector_categories or {})
 
     _process_head(client, doc, locale, default_category)
+    _mark_resolved(client, doc, locale)
 
     body = doc.find("body")
     root = body if body is not None else doc
     _walk(client, root, attrs, locale, default_category, inherited=None, selmap=selmap)
 
     return str(lxml_html.tostring(doc, encoding="unicode"))
+
+
+def _mark_resolved(client: "LangsysClient", doc: _Element, locale: str) -> None:
+    """GATE-10 (producing) - mark the root resolved only when this render is not in the base locale.
+
+    A page served translated is output, not source: a browser SDK on it must not register its
+    text as new phrases. A base-locale render IS source and stays discoverable, so it is never
+    marked. When the base locale cannot be known the page is left unmarked, because a wrong mark
+    hides exactly the text discovery exists to find.
+    """
+    base = client._project_base_locale()
+    rendered = normalize_locale(locale)
+    if base and rendered and rendered != normalize_locale(base):
+        doc.set("data-ls-resolved", rendered)
 
 
 # -- head ---------------------------------------------------------------------

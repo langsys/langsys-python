@@ -20,6 +20,7 @@ from .locale import canonicalize_locale, detect_preferred_locale
 from .messages import DEFAULT_MESSAGE_CATEGORY, Entry
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
+from .request_locale import LocaleChoice, resolve_request_locale
 from .scope import RequestScope, begin_request_scope, current_scope, end_request_scope
 from .translate import lookup_block, resolve
 from .types import (
@@ -604,6 +605,50 @@ class LangsysClient:
         phrases, blocks = self._sendable()
         if phrases or blocks:
             self._schedule_flush()
+
+    def _project_base_locale(self) -> str:
+        """The project's base locale: from project metadata already held, else the configured
+        base locale, else one authorize round-trip. "" when none of them can say."""
+        warm = self._warm_authorize_payload()
+        if warm is not None and warm.get("base_locale"):
+            return str(warm["base_locale"])
+        if self._config.base_locale:
+            return self._config.base_locale
+        try:
+            return self.authorize().base_locale or ""
+        except (NetworkError, ApiError, ConfigurationError):
+            return ""
+
+    # -- request locale (SRV-6) ------------------------------------------------
+
+    def resolve_request_locale(
+        self,
+        *,
+        url: Optional[str] = None,
+        cookie: Optional[str] = None,
+        accept_language: Optional[str] = None,
+        uses_cookie: bool = True,
+    ) -> LocaleChoice:
+        """The locale to serve this request in: URL, then cookie or session, then
+        `Accept-Language`, then the project's base locale, each validated against the locales
+        the project serves. The result names the `Vary` headers the response must carry. See
+        `langsys.request_locale`.
+
+        If the project's locales cannot be read (WIRE-4), no candidate can be validated, so the
+        request is served in the configured base locale rather than in an unchecked one.
+        """
+        try:
+            project = self.authorize()
+            supported = [project.base_locale, *project.target_locales]
+            base = project.base_locale
+        except (NetworkError, ApiError, ConfigurationError) as exc:
+            logger.warning("langsys: could not read the project's locales (%s).", exc)
+            base = self._config.base_locale or ""
+            supported = [base] if base else []
+        return resolve_request_locale(
+            supported, base, url=url, cookie=cookie,
+            accept_language=accept_language, uses_cookie=uses_cookie,
+        )
 
     # -- server messages (MSG) -------------------------------------------------
 

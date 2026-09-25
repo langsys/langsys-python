@@ -21,7 +21,8 @@ def _without_stamp(markup: str) -> str:
 
 def make(**kw):
     return LangsysClient(
-        "k", "proj-1", api_url=API, cache=MemoryCache(), debounce=0, auto_flush=False, **kw
+        "k", "proj-1", api_url=API, cache=MemoryCache(), base_locale="en-us",
+        debounce=0, auto_flush=False, **kw
     )
 
 
