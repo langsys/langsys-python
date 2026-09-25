@@ -36,11 +36,16 @@ from .locale import (
 )
 from .observable import LocaleSource, Signal
 from .registration import generate_custom_id
+from .scope import RequestScope, begin_request_scope, end_request_scope, request_scope
 from .types import Country, Currency, DialCode, LocaleFlat, LocaleInfo, Project
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "RequestScope",
+    "begin_request_scope",
+    "end_request_scope",
+    "request_scope",
     "LangsysClient",
     "Project",
     "Country",

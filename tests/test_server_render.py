@@ -6,6 +6,7 @@ half and are recorded `n/a` in CONFORMANCE with that reason.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import threading
@@ -14,6 +15,8 @@ import time
 import httpx
 import pytest
 
+import langsys
+import langsys.scope
 from langsys import LangsysClient
 from langsys.cache import MemoryCache
 from langsys.catalog import CatalogFetch
@@ -213,62 +216,15 @@ def test_SRV3_the_send_happens_off_the_render_call(httpx_mock, debounce):
 
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SRV-3: the debounce sends mid-render when a render outlasts it; the request-scope "
-    "seam that would fix it is awaiting the operator",
-)
-def test_SRV3_a_miss_is_not_sent_before_a_render_longer_than_the_debounce_has_responded(httpx_mock):
-    """The ORDER OF EVENTS, which the rule asserts and the test above does not. Measured by the
-    Django lane through its handler, reproduced here without one: a render that records a miss
-    and keeps rendering past the debounce window has that miss POSTed by the timer thread before
-    the response exists - `posted, rendered, response-returned`.
-
-    "The send lands off the render call" (above) is true and is not SRV-3: collection must follow
-    the response flush, and a timer only guarantees that when the render happens to finish inside
-    its window. Strict, so this reports XPASS and fails the day the seam lands, and the SRV-3 row
-    in CONFORMANCE.md has to move with it."""
-    events: list[str] = []
-
-    def translatable_items(request: httpx.Request) -> httpx.Response:
-        events.append("posted")
-        return httpx.Response(200, json={"status": True})
-
-    httpx_mock.add_response(url=AUTH, json=auth(), is_reusable=True)
-    httpx_mock.add_response(
-        url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}},
-        is_reusable=True,
-    )
-    httpx_mock.add_callback(translatable_items, url=ITEMS, is_reusable=True)
-    client = make(debounce=0.05)
-    try:
-        client.translate("Checkout", category="UI", locale="it-it")
-        time.sleep(0.4)  # the render goes on well past the debounce window
-        events.append("rendered")
-        events.append("response-returned")
-        client.flush_pending()  # the wrapper's post-response flush
-        assert "posted" in events, "control: the miss was never collected at all"
-    finally:
-        client._cancel_timer()
-    assert events.index("response-returned") < events.index("posted"), events
+# -- SRV-3: request scopes. The order of events is the contract ------------------------------
+#
+# Asserted as an ORDER, not as "a miss was eventually collected": that passes against an SDK that
+# collects inline and hands the visitor the latency. Two failures, both measured by the wrappers:
+# a render that outlasts the debounce had its misses POSTed by the timer before the response
+# existed, and with no timer at all one request's flush drained another in-flight request's.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SRV-3: one request's flush drains another in-flight request's misses; the "
-    "request-scope seam that would fix it is awaiting the operator",
-)
-def test_SRV3_one_requests_flush_does_not_send_another_in_flight_requests_misses(httpx_mock):
-    """No timer - the debounce is off. Measured by the FastAPI lane on its raw ASGI timeline (a
-    quick request's end-of-request flush POSTed [FAST, SLOW] while SLOW was still rendering) and
-    reproduced here. The queue is process-wide, so an explicit flush from one request drains every
-    other request's misses mid-render, and disarming the debounce inside a scope cannot fix it.
-
-    Ordered by events, not sleeps: the quick request waits until the held one has recorded its
-    miss, and the held one is released only after the quick one's flush. Strict, so the day the
-    seam lands this reports XPASS and fails, and the SRV-3 row has to move with it."""
-    events: list[object] = []
-
+def _recording(httpx_mock, events):
     def translatable_items(request: httpx.Request) -> httpx.Response:
         phrases = [item["phrase"] for item in json.loads(request.content)["translatable_items"]]
         events.append(("posted", *phrases))
@@ -280,20 +236,52 @@ def test_SRV3_one_requests_flush_does_not_send_another_in_flight_requests_misses
         is_reusable=True,
     )
     httpx_mock.add_callback(translatable_items, url=ITEMS, is_reusable=True)
-    client = make()  # debounce=0: no timer anywhere in this test
+
+
+def _posted(events, phrase):
+    return [i for i, e in enumerate(events) if isinstance(e, tuple) and phrase in e]
+
+
+def test_SRV3_a_miss_is_not_sent_before_a_render_longer_than_the_debounce_has_responded(httpx_mock):
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make(debounce=0.05)
+    try:
+        scope = langsys.begin_request_scope()
+        client.translate("Checkout", category="UI", locale="it-it")
+        time.sleep(0.4)  # the render goes on well past the debounce window
+        events.append("rendered")
+        events.append("response-returned")
+        langsys.end_request_scope(scope)
+        client.flush_pending()  # the wrapper's post-response flush
+    finally:
+        client._cancel_timer()
+    assert _posted(events, "Checkout"), f"control: the miss was never collected at all: {events}"
+    assert events.index("response-returned") < _posted(events, "Checkout")[0], events
+
+
+def test_SRV3_one_requests_flush_does_not_send_another_in_flight_requests_misses(httpx_mock):
+    """No timer: the debounce is off. Ordered by events, not sleeps - the quick request waits
+    until the held one has recorded its miss, and the held one is released only after the quick
+    one's flush."""
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make()
     held_recorded, quick_flushed = threading.Event(), threading.Event()
 
     def held_request() -> None:
-        client.translate("Held miss", category="UI", locale="it-it")
-        held_recorded.set()
-        quick_flushed.wait(5)  # still rendering
-        events.append("held-response")
+        with langsys.request_scope():
+            client.translate("Held miss", category="UI", locale="it-it")
+            held_recorded.set()
+            quick_flushed.wait(5)  # still rendering
+            events.append("held-response")
         client.flush_pending()
 
     def quick_request() -> None:
         held_recorded.wait(5)
-        client.translate("Quick miss", category="UI", locale="it-it")
-        events.append("quick-response")
+        with langsys.request_scope():
+            client.translate("Quick miss", category="UI", locale="it-it")
+            events.append("quick-response")
         client.flush_pending()
         quick_flushed.set()
 
@@ -303,11 +291,158 @@ def test_SRV3_one_requests_flush_does_not_send_another_in_flight_requests_misses
     for thread in threads:
         thread.join(10)
 
-    held_posted = [
-        i for i, event in enumerate(events) if isinstance(event, tuple) and "Held miss" in event
-    ]
-    assert held_posted, f"control: the held miss was never collected at all: {events}"
-    assert events.index("held-response") < held_posted[0], events
+    assert _posted(events, "Quick miss"), f"control: the quick request's miss never went: {events}"
+    assert events.index("quick-response") < _posted(events, "Quick miss")[0], events
+    held = _posted(events, "Held miss")
+    assert held, f"control: the held miss was never collected at all: {events}"
+    assert events.index("held-response") < held[0], events
+
+
+def test_SRV3_a_miss_outside_any_scope_keeps_the_debounce(httpx_mock):
+    """A worker, a management command, a script: nothing to wait for."""
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make(debounce=0.05)
+    try:
+        client.translate("Background miss", category="UI", locale="it-it")
+        deadline = time.monotonic() + 3
+        while not _posted(events, "Background miss") and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        client._cancel_timer()
+    assert _posted(events, "Background miss"), events
+
+
+def test_SRV3_an_explicit_flush_inside_the_scope_declines_and_keeps_the_miss(httpx_mock):
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make()
+    with langsys.request_scope():
+        client.translate("Checkout", category="UI", locale="it-it")
+        result = client.flush_pending()
+        assert result.get("reason") == "request-in-progress", result
+        assert client.has_pending
+    assert client.flush_pending()["success"] is True
+    assert _posted(events, "Checkout")
+
+
+def test_SRV3_an_unended_scope_holds_its_misses_until_the_shutdown_flush(httpx_mock):
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make()
+    token = langsys.scope._CURRENT.set(langsys.scope.RequestScope())
+    try:
+        client.translate("Checkout", category="UI", locale="it-it")
+        client.flush_pending()
+        assert events == [], "a flush sent a miss whose request never ended"
+        client._auto_flush()  # REG-3's last attempt releases everything
+    finally:
+        langsys.scope._CURRENT.reset(token)
+    assert _posted(events, "Checkout"), events
+
+
+def test_SRV3_a_client_built_during_the_request_joins_its_scope(httpx_mock):
+    """Bindings build the client lazily, so the first request of a worker records misses before
+    any client existed to open a scope on. The scope is ambient, not the client's."""
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    scope = langsys.begin_request_scope()
+    client = make()
+    client.translate("Checkout", category="UI", locale="it-it")
+    client.flush_pending()
+    assert events == []
+    langsys.end_request_scope(scope)
+    client.flush_pending()
+    assert _posted(events, "Checkout")
+
+
+def test_SRV3_either_request_that_recorded_a_miss_releases_it(httpx_mock):
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make()
+    first = langsys.begin_request_scope()
+    client.translate("Shared", category="UI", locale="it-it")
+    second = langsys.begin_request_scope()
+    client.translate("Shared", category="UI", locale="it-it")
+    langsys.end_request_scope(second)
+    client.flush_pending()
+    langsys.end_request_scope(first)
+    assert _posted(events, "Shared"), events
+
+
+def test_SRV3_scopes_are_per_asyncio_task(httpx_mock):
+    """Async servers serve many requests on one thread; the scope follows the task."""
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make()
+
+    async def request(name: str, release: asyncio.Event, answered: asyncio.Event) -> None:
+        scope = langsys.begin_request_scope()
+        client.translate(name, category="UI", locale="it-it")
+        await release.wait()
+        events.append(f"{name} response")
+        langsys.end_request_scope(scope)
+        answered.set()
+
+    async def main() -> None:
+        slow_release, fast_release = asyncio.Event(), asyncio.Event()
+        slow_answered, fast_answered = asyncio.Event(), asyncio.Event()
+        tasks = [
+            asyncio.ensure_future(request("Slow", slow_release, slow_answered)),
+            asyncio.ensure_future(request("Fast", fast_release, fast_answered)),
+        ]
+        await asyncio.sleep(0)
+        fast_release.set()
+        await fast_answered.wait()
+        client.flush_pending()  # the fast request's post-response flush
+        slow_release.set()
+        await asyncio.gather(*tasks)
+        client.flush_pending()
+
+    asyncio.run(main())
+    assert events.index("Fast response") < _posted(events, "Fast")[0], events
+    assert events.index("Slow response") < _posted(events, "Slow")[0], events
+
+
+def test_SRV3_a_miss_already_free_stays_free_when_a_request_records_it_again(httpx_mock):
+    """Recorded first by a background job, then during a request: the job's miss has nothing to
+    wait for, and a later request touching the same phrase must not hold it back."""
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make()
+    client.translate("Shared", category="UI", locale="it-it")
+    with langsys.request_scope():
+        client.translate("Shared", category="UI", locale="it-it")
+        client.flush_pending()
+        assert _posted(events, "Shared"), "a free miss was held behind a request"
+
+
+def test_SRV3_ending_the_scope_arms_the_debounce(httpx_mock):
+    """With the debounce on, the released miss goes by itself once the response is out."""
+    events: list[object] = []
+    _recording(httpx_mock, events)
+    client = make(debounce=0.05)
+    try:
+        with langsys.request_scope():
+            client.translate("Checkout", category="UI", locale="it-it")
+            time.sleep(0.2)
+            assert events == []
+        deadline = time.monotonic() + 3
+        while not _posted(events, "Checkout") and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        client._cancel_timer()
+    assert _posted(events, "Checkout"), events
+
+def test_SRV3_a_scope_can_be_ended_from_another_context():
+    """ASGI middleware can send the response from a different task than the one that began."""
+    import contextvars
+
+    scope = langsys.begin_request_scope()
+    contextvars.Context().run(langsys.end_request_scope, scope)
+    assert scope.ended
+    assert langsys.scope.current_scope() is None
+
 
 # -- HINT-2 -------------------------------------------------------------------
 

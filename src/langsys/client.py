@@ -19,6 +19,7 @@ from .interpolate import interpolate
 from .locale import canonicalize_locale, detect_preferred_locale
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
+from .scope import RequestScope, begin_request_scope, current_scope, end_request_scope
 from .translate import lookup_block, resolve
 from .types import (
     UNCATEGORIZED,
@@ -115,6 +116,11 @@ class LangsysClient:
         self._lock = threading.RLock()
         self._pending: dict[tuple[str, str], None] = {}
         self._pending_blocks: dict[str, dict[str, Any]] = {}
+        #: SRV-3 - which open request scopes recorded each queued item. An item absent from
+        #: these maps was recorded outside any scope and is sendable now; an item present is
+        #: held until one of its scopes has ended (see `langsys.scope`).
+        self._phrase_scopes: dict[tuple[str, str], set[RequestScope]] = {}
+        self._block_scopes: dict[str, set[RequestScope]] = {}
         self._debounce = debounce if debounce and debounce > 0 else None
         self._timer: Optional[threading.Timer] = None
         #: REG-7 — one send in flight. The debounce timer and a caller's explicit flush
@@ -535,11 +541,63 @@ class LangsysClient:
         self, html: str, category: str, custom_id: str, phrases: list[str]
     ) -> None:
         with self._lock:
+            existed = custom_id in self._pending_blocks
             self._pending_blocks.setdefault(
                 custom_id,
                 {"content": html, "category": category, "custom_id": custom_id, "phrases": phrases},
             )
+            self._tag(self._block_scopes, custom_id, existed)
         self._schedule_flush()
+
+    # -- request scopes (SRV-3) -------------------------------------------------
+
+    def begin_request_scope(self) -> RequestScope:
+        """Same as `langsys.begin_request_scope()`; scopes are not per client."""
+        return begin_request_scope()
+
+    def end_request_scope(self, scope: RequestScope) -> None:
+        """Same as `langsys.end_request_scope(scope)`."""
+        end_request_scope(scope)
+
+    def request_scope(self) -> Any:
+        """Same as `langsys.request_scope()`: `with client.request_scope(): ...`."""
+        from .scope import request_scope
+
+        return request_scope()
+
+    def _tag(self, scopes: dict[Any, set[RequestScope]], key: Any, existed: bool) -> None:
+        """Record which request scope, if any, this miss was recorded in. Caller holds the lock.
+
+        A miss recorded outside any scope is sendable at once, and stays so if a scope records it
+        again. One recorded inside a scope is held until a scope that recorded it has ended.
+        """
+        scope = current_scope()
+        if scope is None:
+            scopes.pop(key, None)
+            return
+        if existed and key not in scopes:
+            return
+        scopes.setdefault(key, set()).add(scope)
+        scope._joined_by(self)
+
+    @staticmethod
+    def _released(scopes: dict[Any, set[RequestScope]], key: Any) -> bool:
+        held = scopes.get(key)
+        return held is None or any(scope.ended for scope in held)
+
+    def _sendable(self) -> tuple[list[tuple[str, str]], list[str]]:
+        """The queued items whose request, if any, has already been answered."""
+        with self._lock:
+            return (
+                [k for k in self._pending if self._released(self._phrase_scopes, k)],
+                [b for b in self._pending_blocks if self._released(self._block_scopes, b)],
+            )
+
+    def _scope_released(self) -> None:
+        """A scope this client queued work under has ended: its misses may go now."""
+        phrases, blocks = self._sendable()
+        if phrases or blocks:
+            self._schedule_flush()
 
     # -- translatable-attribute configuration ---------------------------------
 
@@ -569,7 +627,9 @@ class LangsysClient:
         if self._ellipsis_suppresses(phrase, key, catalog_category):
             return
         with self._lock:
+            existed = key in self._pending
             self._pending[key] = None
+            self._tag(self._phrase_scopes, key, existed)
         self._schedule_flush()
 
     # -- REG-11: ellipsis-terminated text -------------------------------------
@@ -640,6 +700,8 @@ class LangsysClient:
         with self._lock:
             self._pending.clear()
             self._pending_blocks.clear()
+            self._phrase_scopes.clear()
+            self._block_scopes.clear()
 
     def flush_pending(self, *, force: bool = False) -> dict[str, Any]:
         """Register queued (discovered) phrases and content blocks.
@@ -661,13 +723,27 @@ class LangsysClient:
             # In the outermost `finally` on purpose: an earlier revision put it inside
             # the send-lock's try, which the decline path returns before ever reaching,
             # so the one case this was written for was the one it missed.
-            if self.has_pending:
+            phrases, blocks = self._sendable()
+            if phrases or blocks:
                 self._schedule_flush()
 
     def _flush_outer(self, *, force: bool) -> dict[str, Any]:
         self._cancel_timer()
         if not self.has_pending:
             return {"phrases": 0, "content_blocks": 0, "success": True}
+        # SRV-3 - work recorded under a request whose response is not out yet is not this
+        # flush's to send, whoever is flushing. Checked before anything costly. The shutdown
+        # flush (force) is the one path that releases it regardless.
+        if not force and self._sendable() == ([], []):
+            return {
+                "phrases": 0,
+                "content_blocks": 0,
+                "success": False,
+                "skipped": True,
+                "reason": "request-in-progress",
+                "queued_phrases": len(self._pending),
+                "queued_content_blocks": len(self._pending_blocks),
+            }
 
         # REG-7 — never two sends at once, checked before anything costly. Declining is
         # correct rather than queueing behind the in-flight send: whatever this call
@@ -762,8 +838,11 @@ class LangsysClient:
         # flush on the timer thread and a render on the caller's thread overlap here:
         # `clear_pending()` would drop every miss recorded during the send.
         with self._lock:
-            phrase_keys = list(self._pending.keys())
-            block_ids = list(self._pending_blocks.keys())
+            if force:
+                phrase_keys = list(self._pending.keys())
+                block_ids = list(self._pending_blocks.keys())
+            else:
+                phrase_keys, block_ids = self._sendable()
             items: list[PhraseInput] = [
                 {"phrase": phrase, "category": None if category == UNCATEGORIZED else category}
                 for (category, phrase) in phrase_keys
@@ -803,8 +882,10 @@ class LangsysClient:
         with self._lock:
             for key in phrase_keys:
                 self._pending.pop(key, None)
+                self._phrase_scopes.pop(key, None)
             for block_id in block_ids:
                 self._pending_blocks.pop(block_id, None)
+                self._block_scopes.pop(block_id, None)
         self._catalog.clear()  # new items exist server-side now; refetch next time
         return {"phrases": phrase_count, "content_blocks": block_count, "success": True}
 

@@ -100,6 +100,27 @@ they are. If you hold one for the life of a server process, call `flush_pending(
 your request boundary (and `reset_write_decision()` alongside it — write capability is
 per-session and must not leak between requests).
 
+**Request scopes (for framework integrations).** Registration is not the visitor's work, so
+a phrase discovered while serving a request is sent only after that request's response is
+out. Mark the request, and flush once the response has been sent:
+
+```python
+import langsys
+
+scope = langsys.begin_request_scope()   # request start
+...                                      # render: misses are tagged with this request
+langsys.end_request_scope(scope)         # response sent
+client.flush_pending()
+```
+
+or `with langsys.request_scope(): ...`. While a scope is open, no flush sends the misses it
+recorded — not the debounce, not an explicit `flush_pending()`, not another request's flush.
+Misses recorded outside any scope (a worker, a management command) keep the debounce. The
+open scope follows the current thread or asyncio task, so concurrent requests stay separate,
+and a client built part-way through a request joins it. A scope that is never ended holds
+its misses until the process-exit flush. `end_request_scope` takes the handle explicitly,
+so it can be called from a different task than the one that began the scope.
+
 ### Caching
 
 The catalog is cached (in-memory + a persistent tier). Choose the persistent backend:

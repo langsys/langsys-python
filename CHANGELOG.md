@@ -41,6 +41,15 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Request scopes (spec 8.2).**
+
+- **SRV-3 — misses discovered while serving a request are sent only after its response.**
+  `langsys.begin_request_scope()` / `end_request_scope(scope)` / `with request_scope():` mark a
+  request. A miss recorded inside is held from every flush — the debounce timer, an explicit
+  `flush_pending()`, or another request's flush — until a request that recorded it has
+  finished. Misses recorded outside any request keep the debounce, and the process-exit flush
+  sends everything. Scopes follow the current thread or asyncio task.
+
 **Canonicalization re-row (spec 8.0.1).**
 
 - **TOK-1 — `<math>` content is no longer registered, and `<svg>` text now is, on every
