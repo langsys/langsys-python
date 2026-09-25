@@ -41,6 +41,12 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Catalog snapshots (spec 8.2).**
+
+- **SNAP-1, SNAP-3 — `python -m langsys.snapshot` exports the catalog for chosen locales and
+  categories** into a checksummed file, in the PHP SDK's format. `Snapshot.load()` refuses a
+  snapshot edited after export; the refresh is a new export.
+
 **Legacy-key migration (spec 8.2).**
 
 - **MIG-1..7 — `legacy_files=` lets a keyed app migrate without a codemod.** `translate()`

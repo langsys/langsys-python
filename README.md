@@ -180,6 +180,20 @@ user's raw input.
   A provider is any callable returning templates, and framework integrations supply one built
   from your forms.
 
+### Catalog snapshots
+
+For a deploy that shouldn't call the API while rendering (an air-gapped build, a first paint),
+export the catalog to a file:
+
+```bash
+python -m langsys.snapshot --locale it-it --locale es-es --category UI --category Errors --out snapshot.json
+```
+
+A snapshot holds exactly what the API serves for those categories. It's a cache, never a source:
+it carries a checksum, and `Snapshot.load()` refuses one that was edited by hand. To change it,
+export again. The file format is shared with the PHP SDK, so either one reads the other's
+snapshots.
+
 ### Migrating from translation keys
 
 An app built on keys (`_("checkout.submit")`, a `messages.json`, Django's `.po` files) can
