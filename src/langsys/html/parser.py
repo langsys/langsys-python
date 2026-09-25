@@ -15,7 +15,8 @@ import re
 from typing import Optional, Sequence, cast
 
 from ..interpolate import percent_placeholders_to_braces
-from .attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES, classify_block_attribute
+from ..text import strip_c0
+from .attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES, classify_block_attribute, marker_is_on
 
 try:
     from lxml import html as lxml_html
@@ -34,7 +35,6 @@ __all__ = [
     "stamp_content_block",
     "apply_element",
     "inner_html",
-    "text_content",
     "normalize_whitespace",
     "normalize_phrase",
 ]
@@ -51,13 +51,7 @@ _JS_WHITESPACE = (
     *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
 )
 
-#: HELD (strip ruling) - NOT a statement of the rule. CPython's class also collapses the C0
-#: separators U+001C-U+001F and JavaScript's does not, but a ruling on stripping C0 controls
-#: is pending, so today's behaviour is kept exactly. Adopting JavaScript's set wholesale
-#: would silently decide that ruling. Remove this tuple only when the ruling lands.
-_HELD_C0_SEPARATORS = (0x001C, 0x001D, 0x001E, 0x001F)
-
-_COLLAPSE = frozenset(_JS_WHITESPACE + _HELD_C0_SEPARATORS)
+_COLLAPSE = frozenset(_JS_WHITESPACE)
 _COLLAPSE_CHARS = "".join(chr(codepoint) for codepoint in sorted(_COLLAPSE))
 _WS = re.compile("[" + re.escape(_COLLAPSE_CHARS) + "]+")
 
@@ -100,25 +94,23 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 #: which is the retracted mechanism that dropped a parent block's own text.
 SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})
 
-#: MARK-2 — a host already carrying one of these has an identity, and walking into it
-#: registers its text a second time under a new id. Both spellings, because a page
-#: mixing them is the ordinary case: a PHP-rendered page hosting a JS-rendered
-#: component is what a customer's site looks like.
-#: A phrase host is value-blind: this SDK has no "declare a phrase" affordance, so the
-#: attribute's presence is always an identity. A BLOCK host is not — see
-#: `classify_block_attribute`, which both walkers share so the two cannot drift.
+#: MARK-2 - both spellings are read, because a page mixing them is the ordinary case: a
+#: PHP-rendered page hosting a JS-rendered component is what a customer's site looks like.
+#: A phrase marker is on unless its value is `false` or `0`; a block marker's value is read by
+#: `classify_block_attribute` (MARK-3), which every walker shares so none can drift.
 PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
 BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
 
 
 def normalize_whitespace(text: Optional[str]) -> str:
-    """TOK-2 - collapse runs of the enumerated set to one space, and trim the SAME set.
+    """TOK-2 - strip the 28 C0 controls, collapse runs of the enumerated set to one space, and
+    trim the SAME set, in that order.
 
     Trimming is a second site, not a detail of the first. `str.strip()` uses Python's own idea
     of whitespace, which removes U+0085 and keeps U+FEFF, so a fix to the collapse alone passes
     the internal case and still disagrees at the edges.
     """
-    return _WS.sub(" ", text).strip(_COLLAPSE_CHARS) if text else ""
+    return _WS.sub(" ", strip_c0(text)).strip(_COLLAPSE_CHARS) if text else ""
 
 
 def normalize_phrase(text: Optional[str]) -> str:
@@ -135,17 +127,24 @@ def _parse_fragment(html: str) -> _Element:
     return cast("_Element", lxml_html.fragment_fromstring(html, create_parent="div"))
 
 
-def is_marked_host(el: _Element) -> bool:
-    """True when this element already carries a Langsys identity (MARK-2).
+def is_phrase_host(el: _Element) -> bool:
+    """A phrase marker that is on: this element's content is ONE phrase, kept whole."""
+    return any(marker_is_on(el.get(attr)) for attr in PHRASE_HOST_ATTRS)
 
-    A declaration flag or an opt-out is not an identity, so a subtree carrying one is
-    walked as ordinary content rather than excised.
-    """
-    if any(el.get(attr) is not None for attr in PHRASE_HOST_ATTRS):
-        return True
-    return any(
-        classify_block_attribute(el.get(attr)) == "identity" for attr in BLOCK_HOST_ATTRS
-    )
+
+def block_marker_kind(el: _Element) -> str:
+    """MARK-3's reading of this element's content-block marker, either spelling."""
+    for attr in BLOCK_HOST_ATTRS:
+        kind = classify_block_attribute(el.get(attr))
+        if kind != "absent":
+            return kind
+    return "absent"
+
+
+def is_marked_host(el: _Element) -> bool:
+    """MARK-4 - a unit of its own: a phrase host, or a content-block marker that is not an
+    opt-out (a declaration or a stamped identity). An enclosing walk excises it."""
+    return is_phrase_host(el) or block_marker_kind(el) in ("declaration", "identity")
 
 
 def _skip(el: _Element) -> bool:
@@ -181,7 +180,46 @@ def extract_phrases(html: str, attributes: Optional[Sequence[str]] = None) -> li
     return phrases
 
 
-def _walk_extract(el: _Element, attrs: Sequence[str], out: list[str]) -> None:
+def unit_tokens(el: _Element, attributes: Optional[Sequence[str]] = None) -> tuple[list[str], int]:
+    """TOK-6 - a unit's tokens and how many text nodes produced one.
+
+    Its own translatable attributes first (TOK-3 order, then a translatable value), then its
+    content in document order, split at every child-element boundary; a marked host inside it is
+    excised (MARK-4). A unit is a PHRASE only when it has one token and that token is its one text
+    node - see `is_phrase_unit`.
+    """
+    attrs = tuple(attributes) if attributes is not None else DEFAULT_TRANSLATABLE_ATTRIBUTES
+    tokens: list[str] = []
+    text_nodes = [0]
+    _walk_extract(el, attrs, tokens, text_nodes)
+    return tokens, text_nodes[0]
+
+
+def own_tokens(el: _Element, attributes: Optional[Sequence[str]] = None) -> list[str]:
+    """The tokens an element carries on itself - its translatable attributes and a translatable
+    value - without its content."""
+    attrs = tuple(attributes) if attributes is not None else DEFAULT_TRANSLATABLE_ATTRIBUTES
+    tokens = [t for t in (normalize_phrase(el.get(a)) for a in attrs if el.get(a)) if t]
+    button = _button_value(el)
+    return tokens + ([button] if button else [])
+
+
+def fragment_unit(html: str, attributes: Optional[Sequence[str]] = None) -> tuple[list[str], int]:
+    """TOK-6 - the unit an explicit block call wraps: the fragment's content."""
+    if not html:
+        return [], 0
+    return unit_tokens(_parse_fragment(html), attributes)
+
+
+def is_phrase_unit(tokens: Sequence[str], text_nodes: int) -> bool:
+    """One token, and it is the unit's one text node. A single attribute token has no text node
+    to render into, so `<img alt="Logo">` is a block."""
+    return len(tokens) == 1 and text_nodes == 1
+
+
+def _walk_extract(
+    el: _Element, attrs: Sequence[str], out: list[str], text_nodes: Optional[list[int]] = None
+) -> None:
     if not isinstance(el.tag, str):  # comments / processing instructions
         return
     if _skip(el):
@@ -199,22 +237,21 @@ def _walk_extract(el: _Element, attrs: Sequence[str], out: list[str]) -> None:
         text = normalize_phrase(el.text)
         if text:
             out.append(text)
+            if text_nodes is not None:
+                text_nodes[0] += 1
     for child in el:
         # MARK-2 — EXCISION, not merely "do not re-register". The host's text must not
         # reach the parent's phrase list at all: a content block's id derives from its
         # phrases in order, so harvesting an already-identified host's text would also
         # shift the id of the block containing it.
-        if isinstance(child.tag, str) and is_marked_host(child):
-            if child.tail:
-                tail = normalize_phrase(child.tail)
-                if tail:
-                    out.append(tail)
-            continue
-        _walk_extract(child, attrs, out)
+        if not (isinstance(child.tag, str) and is_marked_host(child)):
+            _walk_extract(child, attrs, out, text_nodes)
         if child.tail:
             tail = normalize_phrase(child.tail)
             if tail:
                 out.append(tail)
+                if text_nodes is not None:
+                    text_nodes[0] += 1
 
 
 def stamp_content_block(html: str, custom_id: str) -> str:
@@ -295,14 +332,17 @@ def _walk_apply(el: _Element, translations: dict[str, Optional[str]], attrs: Seq
             key = normalize_phrase(value)
             translated = translations.get(key)
             if translated and translated != key:
-                el.set(attr, translated)
+                el.set(attr, strip_c0(translated))
     button_attr = _button_value_raw(el)
     if button_attr is not None:
         key = normalize_phrase(button_attr)
         translated = translations.get(key)
         if translated and translated != key:
-            el.set("value", translated)
-    el.text = _translate_text(el.text, translations)
+            el.set("value", strip_c0(translated))
+    # Written back only when translated. lxml refuses to ASSIGN text holding a C0 control,
+    # though it parses such text fine, so rewriting every node unconditionally made a page
+    # carrying one raise instead of rendering.
+    _set_text(el, "text", _translate_text(el.text, translations))
     for child in el:
         # MARK-2 — mirror the extraction excision. DECISION, recorded rather than left
         # implicit: a host we refuse to tokenize must also be one we refuse to rewrite.
@@ -311,11 +351,14 @@ def _walk_apply(el: _Element, translations: dict[str, Optional[str]], attrs: Seq
         # that owns the host re-renders it anyway, so the write is both wrong and
         # temporary. Only bites when the texts coincide, which is precisely when it is
         # hardest to notice.
-        if isinstance(child.tag, str) and is_marked_host(child):
-            child.tail = _translate_text(child.tail, translations)
-            continue
-        _walk_apply(child, translations, attrs)
-        child.tail = _translate_text(child.tail, translations)
+        if not (isinstance(child.tag, str) and is_marked_host(child)):
+            _walk_apply(child, translations, attrs)
+        _set_text(child, "tail", _translate_text(child.tail, translations))
+
+
+def _set_text(el: _Element, slot: str, value: Optional[str]) -> None:
+    if value is not getattr(el, slot):
+        setattr(el, slot, strip_c0(value) if value else value)
 
 
 def _button_value_raw(el: _Element) -> Optional[str]:
@@ -366,8 +409,3 @@ def apply_element(
 def inner_html(el: _Element) -> str:
     """Serialize an element's inner HTML."""
     return _inner_html(el)
-
-
-def text_content(el: _Element) -> str:
-    """Normalized text content of an element (all descendant text, whitespace-collapsed)."""
-    return normalize_phrase("".join(str(t) for t in el.itertext()))

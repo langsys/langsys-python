@@ -22,6 +22,7 @@ from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
 from .request_locale import LocaleChoice, resolve_request_locale
 from .scope import RequestScope, begin_request_scope, current_scope, end_request_scope
+from .text import strip_c0
 from .translate import lookup_block, resolve
 from .types import (
     UNCATEGORIZED,
@@ -482,6 +483,9 @@ class LangsysClient:
     ) -> str:
         """Translate ``phrase`` (falling back to the phrase itself if untranslated),
         then interpolate ``params`` with locale-aware CLDR formatting."""
+        # TOK-2 - a code-registered key is stripped of C0 controls on lookup and on register
+        # alike, so a phrase carrying one resolves to the same entry as the markup that holds it.
+        phrase = strip_c0(phrase)
         loc = self._effective_locale(locale)
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
@@ -500,21 +504,22 @@ class LangsysClient:
     # -- content blocks (server-side HTML) ------------------------------------
 
     def translate_content_block(self, html: str, category: Optional[str] = None) -> str:
-        """Translate a block of HTML as one unit. Untranslated/unknown blocks return the
-        original HTML (and are queued for registration). Requires ``pip install langsys[html]``."""
-        from .html.parser import (
-            apply_block_translations,
-            extract_phrases,
-            stamp_content_block,
-        )
+        """Translate a fragment of HTML as one unit (TOK-6). A fragment whose one token is its one
+        text node is a phrase; anything else is a content block, returned stamped with its id
+        (MARK-1). Untranslated content returns as authored and is queued for registration.
+        Requires ``pip install langsys[html]``."""
+        from .html.page import translate_fragment
 
         if not html:
             return html
+        return translate_fragment(self, html, category)
+
+    def _render_block(self, html: str, category: Optional[str], phrases: list[str]) -> str:
+        """Look a content block up under its id, render it, and stamp it; queue it on a miss."""
+        from .html.parser import apply_block_translations, stamp_content_block
+
         loc = self._effective_locale(None)
         cat_name = category or UNCATEGORIZED
-        phrases = extract_phrases(html, self._translatable_attributes)
-        if not phrases:
-            return html
         # CID-2 — the hash takes the *raw* category, `''` when there is none.
         # `__uncategorized__` is a cache-lookup namespace and must never reach the id.
         custom_id = generate_custom_id(category, phrases)

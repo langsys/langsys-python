@@ -95,7 +95,7 @@ def test_translate_content_block_queues_when_missing(httpx_mock):
     httpx_mock.add_response(url=TRANS, json=catalog({"CAT_3": {}}))
     client = make()
     client.set_locale("es-ES")
-    html = "<div><p>Brand new block phrase</p></div>"
+    html = "<div><p>Brand new block phrase</p><p>And its second sentence</p></div>"
     assert _without_stamp(client.translate_content_block(html, category="CAT_3")) == html
     assert len(client.pending_content_blocks) == 1
 

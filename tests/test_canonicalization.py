@@ -38,14 +38,14 @@ from langsys.html.parser import extract_phrases  # noqa: E402
 FIXTURE = Path(__file__).parent / "fixtures" / "canonicalization-reference.json"
 
 #: THE CHECK — content-addressed.
-SOURCE_BLOB_SHA = "1ae7bc2900c073085ae3ebbf1f81cd37c81d553b"
+SOURCE_BLOB_SHA = "9027a603def2116e89456cd8979b422c4f050cd7"
 #: THE PROVENANCE — a live ref.
-SOURCE_REF = "langsys-js-typescript 4eac870 tests/fixtures/canonicalization-reference.json"
-#: The spec revision these rows are filed against.
-#: What the fixture was AUTHORED against (langsys 63df13c7) - an ancestor of the target.
-FIXTURE_SPEC_BASIS = "8e2527b9f30e4e8a38121eeb7c401d4db60dfa6c"
-#: What this SDK is FILED against (langsys 5cff03a, specVersion 8.0.1, unpublished).
-TARGET_SPEC_BLOB = "5c5c0723f88fb8e6b13f58876c7adca8b6b35691"
+SOURCE_REF = "langsys-js-typescript be6ccd7 tests/fixtures/canonicalization-reference.json"
+#: What the fixture was AUTHORED against (langsys2 c1b16560, specVersion 8.2.10).
+FIXTURE_SPEC_BASIS = "e22dad188f1c1e6a972961cdf9675a84d891f5ec"
+#: What this SDK is FILED against (langsys2 a1b7568c, specVersion 8.2.12). The TOK and MARK
+#: sections are byte-identical between the two, so every row binds the target unchanged.
+TARGET_SPEC_BLOB = "b0474afba2c9c1639baa8da219fa6a441b3e1c2f"
 
 _DOC = json.loads(FIXTURE.read_text(encoding="utf-8"))
 ROWS = _DOC["cases"]
@@ -70,14 +70,9 @@ def test_the_vendored_fixture_is_the_pinned_blob():
 
 
 def test_the_fixture_declares_the_spec_revision_it_was_authored_against():
-    """The fixture and this SDK are filed against DIFFERENT blobs, and that is recorded, not missed.
-
-    The fixture was authored at langsys `63df13c7` (blob `8e2527b9`). This SDK is filed against
-    the target `5cff03a` (blob `5c5c0723`), three commits later, and TOK-1/TOK-2/TOK-5 text
-    changed in between - including a commit that dropped two ids it could not derive. The rows
-    are behaviour-anchored and still hold, but a reader comparing this header to CONFORMANCE's
-    would otherwise see a mismatch without knowing it was known. Pinned so that the day the
-    fixture is re-authored against the target, this fails and says why."""
+    """The fixture declares the spec it was authored against, which is not the one this SDK is
+    filed against. Recorded rather than missed; fails the day the fixture is re-authored, so the
+    pin moves deliberately."""
     assert FIXTURE_SPEC_BASIS in _DOC["spec_blob"], _DOC["spec_blob"]
     assert TARGET_SPEC_BLOB not in _DOC["spec_blob"], "fixture now declares the target; update"
 
@@ -332,21 +327,6 @@ def test_MARK1_an_untranslated_block_is_still_stamped():
     )
 
 
-@pytest.mark.parametrize(
-    "spelling", ["data-ls-contentblock", "data-langsys-contentblock"]
-)
-def test_MARK2_both_block_host_spellings_are_recognised_on_read(spelling):
-    """A PHP-rendered page hosting a JS-rendered component is the ordinary case, not an
-    edge. A reader that knows one spelling walks straight into the other's host and
-    splits a block that already had an id."""
-    import lxml.html as LH
-
-    from langsys.html.page import _has_content_block_attr
-
-    el = LH.fragment_fromstring(f'<div {spelling}="1"><p>Hi</p></div>')
-    assert _has_content_block_attr(el) is True
-
-
 @pytest.mark.parametrize("spelling", ["data-ls-category", "data-langsys-category"])
 def test_MARK2_both_category_spellings_are_read(spelling):
     import lxml.html as LH
@@ -355,15 +335,6 @@ def test_MARK2_both_category_spellings_are_read(spelling):
 
     el = LH.fragment_fromstring(f'<div {spelling}="Blog"><p>Hi</p></div>')
     assert _effective_category(el, None, {}) == "Blog"
-
-
-def test_MARK2_control_an_unmarked_host_is_not_recognised():
-    """Without this, a reader that returns True for everything passes both spellings."""
-    import lxml.html as LH
-
-    from langsys.html.page import _has_content_block_attr
-
-    assert _has_content_block_attr(LH.fragment_fromstring("<div><p>Hi</p></div>")) is False
 
 
 # -- MARK-2, the spec's own test: on a PAGE and on a BLOCK --------------------
@@ -394,24 +365,6 @@ def _client_with_catalog(catalog):
     return client, patch.object(
         client._catalog, "get", return_value=CatalogFetch(catalog, ok=True)
     )
-
-
-def test_MARK2_a_js_rendered_phrase_host_is_not_re_split_on_the_page_path():
-    """The spec's test. A PHP-rendered page containing a JS-rendered `data-ls-phrase`
-    host is not re-split: the host is recognised and no new phrase is registered for
-    its text."""
-    client, patched = _client_with_catalog({})
-    with patched:
-        client.translate_page(PAGE_WITH_JS_HOST, category="CAT")
-    queued = [p["phrase"] for p in client.pending_phrases]
-    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
-    # Asserting on pending_phrases alone is vacuous: with the tokenizer guard disabled
-    # the host's text does not become a loose phrase, it lands inside the enclosing
-    # BLOCK's phrase list — where it still re-registers and still shifts that block's
-    # id. Both queues have to be checked or the test passes against the defect.
-    assert "Hello" not in queued, f"re-registered as a phrase: {queued}"
-    assert "Hello" not in block_phrases, f"re-registered inside a block: {block_phrases}"
-    assert "Outer" in queued, "control: ordinary content must still be discovered"
 
 
 @pytest.mark.parametrize("spelling", ["data-ls-phrase", "data-langsys-phrase"])
@@ -536,30 +489,6 @@ def test_TOK5_two_percent_prose_is_not_read_as_a_slot(prose):
 # the fix" are different claims and only the second is worth anything.
 
 
-@pytest.mark.parametrize(
-    "page",
-    [
-        '<html><body><p data-langsys-phrase="1">Solo</p><p>Other</p></body></html>',
-        '<html><body><div data-ls-phrase="a"><p>Hosted</p></div><p>Other</p></body></html>',
-    ],
-    ids=["host-is-the-block", "block-level-host"],
-)
-def test_MARK2_a_block_level_phrase_host_is_excised_by_the_page_walker(page):
-    """The page walker's own excision, as distinct from the tokenizer's.
-
-    An inline host inside a leaf block never reaches it: the leaf's inner HTML goes to
-    `extract_phrases`, which excises there. Only a host that IS a block — or contains
-    one — is a child the page walker would recurse into itself, so it is the only shape
-    that can tell the two guards apart. The first test written for this used the inline
-    vector and stayed green with the page-path guard disabled."""
-    client, patched = _client_with_catalog({})
-    with patched:
-        client.translate_page(page, category="CAT")
-    queued = [p["phrase"] for p in client.pending_phrases]
-    assert "Solo" not in queued and "Hosted" not in queued, queued
-    assert "Other" in queued, "control: ordinary content must still be discovered"
-
-
 def test_TOK5_a_non_identifier_name_is_not_a_slot_even_when_it_is_a_parameter():
     """The identifier guard's discriminating vector.
 
@@ -636,40 +565,6 @@ def test_MARK2_a_js_stamped_block_host_is_not_re_registered_on_the_page_path():
 
 
 
-@pytest.mark.parametrize("spelling", ["data-ls-contentblock", "data-langsys-contentblock"])
-def test_MARK2_an_identified_block_host_is_excised_on_the_page_path_in_either_spelling(spelling):
-    """The page walker's identity check, once per spelling. The JS-stamped test above carries
-    only `data-ls-`, and the declaration test only a truthy flag, so a page walker that read one
-    spelling as an identity and the other as nothing at all passed both."""
-    page = (
-        f'<html><body><div {spelling}="deadbeefdeadbeefdeadbeefdeadbeef">'
-        "<p>Hello <b>x</b></p><p>Second</p></div><p>Other <i>y</i></p></body></html>"
-    )
-    client, patched = _client_with_catalog({})
-    with patched:
-        out = client.translate_page(page, category="CAT")
-    queued = [p["phrase"] for p in client.pending_phrases]
-    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
-    assert "Hello" not in queued + block_phrases, (queued, block_phrases)
-    assert f'{spelling}="deadbeefdeadbeefdeadbeefdeadbeef"' in out, "the foreign identity was rewritten"
-    assert "Other" in block_phrases, "control: ordinary content must still be discovered"
-
-@pytest.mark.parametrize("flag", ["1", "true", "yes", "on", "TRUE"])
-def test_MARK2_a_declaration_flag_is_still_an_authoring_request(flag):
-    """Reconciling with the declared-block feature: a truthy flag is this SDK's
-    documented way of saying "treat this subtree as one block", and it is not an
-    identity. It keeps working, and gets the id derived from its content."""
-    client, patched = _client_with_catalog({})
-    with patched:
-        out = client.translate_page(
-            f'<html><body><div data-langsys-contentblock="{flag}"><p>A</p><p>B</p></div>'
-            "</body></html>",
-            category="CAT",
-        )
-    assert client.pending_content_blocks, f"declaration {flag!r} stopped declaring"
-    assert f'data-ls-contentblock="{client.pending_content_blocks[0]["custom_id"]}"' in out
-
-
 # -- MARK-1: the stamp must not corrupt the markup it is inserted into --------
 
 
@@ -728,99 +623,275 @@ def test_MARK2_a_marked_host_is_not_rewritten_either():
 # A resolved custom_id is never empty, `0` or `false`, so reading them as identities
 # gained nothing and cost the content its registration.
 
-BLOCK_ATTR_CASES = [
-    ("", "opt-out"),              # <div data-ls-contentblock> — the boolean form
-    ('=""', "opt-out"),
-    ('="0"', "opt-out"),
-    ('="false"', "opt-out"),
-    ('="FALSE"', "opt-out"),
-    ('="1"', "declaration"),
-    ('="true"', "declaration"),
-    ('="deadbeefdeadbeefdeadbeefdeadbeef"', "identity"),
-]
+
+# -- MARK-2: a phrase host is recognised, and registers whole ------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("suffix", "kind"), BLOCK_ATTR_CASES, ids=[c[0] or "bare" for c in BLOCK_ATTR_CASES]
-)
-def test_MARK2_the_block_attribute_is_classified_three_ways_on_the_page_path(suffix, kind):
-    """`opt-out` and the bare attribute must still be DISCOVERED as ordinary content.
-    Only a value that is actually another SDK's id is excised."""
-    attribute = "data-ls-contentblock" + suffix
+def test_MARK2_a_js_rendered_phrase_host_is_not_re_split_on_the_page_path():
+    """The spec's test: the host is recognised, and its text is never registered a second time
+    under a different split. A host that misses registers WHOLE, as the one string it defines."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(PAGE_WITH_JS_HOST, category="CAT")
+    queued = [p["phrase"] for p in client.pending_phrases]
+    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
+    assert queued.count("Hello") == 1, f"not registered once, whole: {queued}"
+    assert "Hello" not in block_phrases, f"re-split into the enclosing block: {block_phrases}"
+    assert ["Intro", "end"] in [b["phrases"] for b in client.pending_content_blocks]
+
+
+@pytest.mark.parametrize("spelling", ["data-ls-phrase", "data-langsys-phrase"])
+def test_MARK2_a_phrase_host_with_markup_registers_as_one_string(spelling):
+    """`<p data-langsys-phrase>Based on {n} <strong>reviews</strong></p>` is one catalog entry by
+    design, in the JS <Phrase> wire format, so the count and its noun stay in one phrase."""
     client, patched = _client_with_catalog({})
     with patched:
         client.translate_page(
-            f"<html><body><div {attribute}><p>Hello</p><p>Second</p></div></body></html>",
+            f"<html><body><p {spelling}>Based on {{n}} <strong>reviews</strong></p></body></html>",
             category="CAT",
         )
-    phrases = [p["phrase"] for p in client.pending_phrases]
-    blocks = [t for b in client.pending_content_blocks for t in b["phrases"]]
-
-    if kind == "opt-out":
-        assert phrases == ["Hello", "Second"], f"the subtree vanished from discovery: {phrases}"
-        assert blocks == []
-    elif kind == "declaration":
-        assert blocks == ["Hello", "Second"], f"the declaration stopped declaring: {blocks}"
-    else:
-        assert phrases == [] and blocks == [], "a foreign identity was re-registered"
+    assert client.pending_phrases == [
+        {"phrase": "Based on {n} {m0o}reviews{m0c}", "category": "CAT"}
+    ]
+    assert client.pending_content_blocks == []
 
 
-@pytest.mark.parametrize(
-    ("suffix", "kind"), BLOCK_ATTR_CASES, ids=[c[0] or "bare" for c in BLOCK_ATTR_CASES]
-)
-def test_MARK2_the_block_path_classifies_the_value_the_same_way(suffix, kind):
-    """The same attribute and the same three *classifications* on the tokenizer — but
-    not the same OUTCOME for a declaration, and the difference is deliberate.
-
-    An `identity` is excised on both paths. An `opt-out` is walked on both. A
-    `declaration` nested inside a fragment is **folded into the enclosing block** here,
-    where the page walker would make it a block of its own: `<div><div
-    data-ls-contentblock="1"><p>Hello</p><p>Second</p></div><p>Bye</p></div>` tokenizes
-    to `['Hello','Second','Bye']` — one block — while the page walker yields a block of
-    `['Hello','Second']` plus the phrase `Bye`.
-
-    That is the contract, not an oversight: `translate_content_block` is handed a
-    fragment and asked to translate it as **one** block. Honouring a nested declaration
-    would make a single call produce several registrations under ids the caller never
-    sees and cannot address. The page walker has a document to walk and somewhere for
-    sub-blocks to live; a fragment does not. Recorded in CONFORMANCE's MARK-2 row.
-
-    What it is NOT is the pre-classifier behaviour, which *excised* the subtree and lost
-    its content entirely."""
-    attribute = "data-ls-contentblock" + suffix
-    tokens = extract_phrases(f"<div><div {attribute}><p>Hello</p></div><p>Bye</p></div>")
-    if kind == "identity":
-        assert tokens == ["Bye"], f"a foreign identity was harvested: {tokens}"
-    else:
-        # Folded, not excised — the content is present, in the enclosing block.
-        assert tokens == ["Hello", "Bye"], f"non-identity subtree was excised: {tokens}"
+def test_MARK2_a_phrase_host_translation_keeps_its_markup_where_the_tokens_now_sit():
+    catalog = {"CAT": {"Based on {n} {m0o}reviews{m0c}": "{m0o}Recensioni{m0c}: {n}"}}
+    client, patched = _client_with_catalog(catalog)
+    with patched:
+        out = client.translate_page(
+            '<html><body><p data-ls-phrase>Based on {n} <strong class="c">reviews</strong></p>'
+            "</body></html>",
+            category="CAT",
+        )
+    assert '<strong class="c">Recensioni</strong>: {n}' in out, out
 
 
-def test_MARK2_a_nested_declaration_is_folded_into_the_fragment_not_split_out():
-    """The folding stated as its own assertion rather than inferred from the row above,
-    with the page walker's differing outcome measured beside it so the divergence is
-    pinned rather than described."""
-    fragment = (
-        '<div><div data-ls-contentblock="1"><p>Hello</p><p>Second</p></div>'
-        "<p>Bye</p></div>"
-    )
-    assert extract_phrases(fragment) == ["Hello", "Second", "Bye"]
-
+def test_MARK2_a_phrase_host_marked_false_is_ordinary_markup():
     client, patched = _client_with_catalog({})
     with patched:
-        client.translate_page(f"<html><body>{fragment}</body></html>", category="CAT")
-    assert [b["phrases"] for b in client.pending_content_blocks] == [["Hello", "Second"]]
-    assert [p["phrase"] for p in client.pending_phrases] == ["Bye"]
+        client.translate_page(
+            '<html><body><p data-ls-phrase="false">One <b>two</b></p></body></html>', category="CAT"
+        )
+    assert [b["phrases"] for b in client.pending_content_blocks] == [["One", "two"]]
 
 
-def test_MARK2_one_classifier_answers_for_both_walkers():
-    """Pinned directly, because the defect was two helpers disagreeing rather than
-    either one being wrong in isolation."""
+# -- MARK-3: bare or truthy declares, false/0 opts out, anything else is an identity -------------
+
+DECLARATIONS = ["", '=""', '="true"', '="1"', '="YES"']
+OPT_OUTS = ['="0"', '="false"', '="FALSE"']
+DECL_IDS = ["bare", "empty", "true", "1", "YES"]
+BLOCK_SPELLINGS = ["data-ls-contentblock", "data-langsys-contentblock"]
+DECLARED_BODY = "<p>Hello there</p>"
+
+
+@pytest.mark.parametrize("spelling", BLOCK_SPELLINGS)
+@pytest.mark.parametrize("suffix", DECLARATIONS, ids=DECL_IDS)
+def test_MARK3_a_declaration_registers_one_block_with_the_same_id_on_the_page_path(suffix, spelling):
+    """The one attribute an author writes to ask for a block. A single-phrase body stays a block:
+    a declaration outranks the TOK-6 shape."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(
+            f"<html><body><div {spelling}{suffix}>{DECLARED_BODY}</div></body></html>", category="CAT"
+        )
+    assert client.pending_phrases == []
+    assert [b["custom_id"] for b in client.pending_content_blocks] == [
+        generate_custom_id("CAT", ["Hello there"])
+    ]
+
+
+@pytest.mark.parametrize("spelling", BLOCK_SPELLINGS)
+@pytest.mark.parametrize("suffix", DECLARATIONS, ids=DECL_IDS)
+def test_MARK3_a_declaration_registers_one_block_on_the_block_path(suffix, spelling):
+    client, patched = _client_with_catalog({})
+    with patched:
+        out = client.translate_content_block(f"<div {spelling}{suffix}>{DECLARED_BODY}</div>", "CAT")
+    expected = generate_custom_id("CAT", ["Hello there"])
+    assert [b["custom_id"] for b in client.pending_content_blocks] == [expected]
+    assert f'data-ls-contentblock="{expected}"' in out
+
+
+@pytest.mark.parametrize("spelling", BLOCK_SPELLINGS)
+@pytest.mark.parametrize("suffix", OPT_OUTS, ids=["0", "false", "FALSE"])
+def test_MARK3_an_opt_out_registers_the_content_as_its_units_would(suffix, spelling):
+    """Without the attribute this markup is a container of two phrase units."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(
+            f"<html><body><div {spelling}{suffix}><p>Hello</p><p>Second</p></div></body></html>",
+            category="CAT",
+        )
+    assert [p["phrase"] for p in client.pending_phrases] == ["Hello", "Second"]
+    assert client.pending_content_blocks == []
+
+
+@pytest.mark.parametrize("spelling", BLOCK_SPELLINGS)
+@pytest.mark.parametrize("value", ["abc123", "no", "off"])
+def test_MARK3_any_other_value_is_an_identity_that_renders_and_registers_nothing(value, spelling):
+    """`no` and `off` are identities now, not opt-outs: only `false` and `0` opt out."""
+    catalog = {"CAT": {value: {"Hello": "Ciao"}}}
+    client, patched = _client_with_catalog(catalog)
+    with patched:
+        out = client.translate_page(
+            f'<html><body><div {spelling}="{value}"><p>Hello</p></div></body></html>', category="CAT"
+        )
+    assert client.pending_phrases == [] and client.pending_content_blocks == []
+    assert "<p>Ciao</p>" in out, "the host did not render the catalog entry under its id"
+
+
+def test_MARK3_an_identity_with_no_catalog_entry_keeps_its_source():
+    client, patched = _client_with_catalog({"CAT": {}})
+    with patched:
+        out = client.translate_page(
+            '<html><body><div data-ls-contentblock="abc123"><p>Hello</p></div></body></html>',
+            category="CAT",
+        )
+    assert "<p>Hello</p>" in out
+    assert client.pending_phrases == [] and client.pending_content_blocks == []
+
+
+def test_MARK3_an_identity_on_the_block_path_renders_under_its_id():
+    client, patched = _client_with_catalog({"CAT": {"abc123": {"Hello": "Ciao"}}})
+    with patched:
+        out = client.translate_content_block('<div data-ls-contentblock="abc123"><p>Hello</p></div>', "CAT")
+    assert "<p>Ciao</p>" in out and client.pending_content_blocks == []
+
+
+def test_MARK3_the_classifier_table():
     from langsys.html.attributes import classify_block_attribute
 
-    assert classify_block_attribute(None) == "absent"
-    assert classify_block_attribute("") == "opt-out"
-    assert classify_block_attribute("  FALSE  ") == "opt-out"
-    assert classify_block_attribute("1") == "declaration"
-    assert classify_block_attribute("On") == "declaration"
-    assert classify_block_attribute("deadbeef") == "identity"
+    table = {None: "absent", "": "declaration", "  TRUE ": "declaration", "1": "declaration",
+             "Yes": "declaration", "0": "opt-out", " false ": "opt-out", "no": "identity",
+             "off": "identity", "on": "identity", "deadbeef": "identity"}
+    assert {k: classify_block_attribute(k) for k in table} == table
+
+
+# -- MARK-4: a marked host inside a walked unit is excised ---------------------------------------
+
+NESTED = (
+    '<div><p>Outer text</p><div data-ls-contentblock><p>Inner one</p><p>Inner two</p></div>'
+    '<span data-ls-phrase>Phrase host</span><p>Closing</p></div>'
+)
+
+
+@pytest.mark.parametrize("path", ["block", "page"])
+def test_MARK4_nested_hosts_are_excised_and_each_registers_once_on_its_own(path):
+    client, patched = _client_with_catalog({})
+    with patched:
+        if path == "block":
+            client.translate_content_block(NESTED, "CAT")
+        else:
+            client.translate_page(f"<html><body><section>{NESTED}</section></body></html>", category="CAT")
+    blocks = [b["phrases"] for b in client.pending_content_blocks]
+    phrases = [p["phrase"] for p in client.pending_phrases]
+    assert blocks.count(["Inner one", "Inner two"]) == 1, blocks
+    assert phrases.count("Phrase host") == 1, phrases
+    outer = [tokens for tokens in blocks if "Outer text" in tokens]
+    for tokens in outer:
+        assert "Inner one" not in tokens and "Phrase host" not in tokens, tokens
+
+
+def test_MARK4_control_an_opted_out_nested_block_folds_into_the_outer_tokens():
+    """Without it, a walker that drops every nested element passes the test above."""
+    folded = NESTED.replace("data-ls-contentblock>", 'data-ls-contentblock="false">')
+    folded = folded.replace("<span data-ls-phrase>Phrase host</span>", "")
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_content_block(folded, "CAT")
+    assert [b["phrases"] for b in client.pending_content_blocks] == [
+        ["Outer text", "Inner one", "Inner two", "Closing"]
+    ]
+
+
+def test_MARK4_excision_moves_the_outer_id():
+    outer = extract_phrases(NESTED)
+    assert outer == ["Outer text", "Closing"], outer
+
+
+# -- TOK-6: the registration shape, on every path -------------------------------------------------
+
+SHAPES = [
+    ("<p>Hello</p>", "phrase", ["Hello"]),
+    ('<p title="Tooltip">Hello</p>', "block", ["Tooltip", "Hello"]),
+    ('<img alt="Logo">', "block", ["Logo"]),
+    ('<button data-confirm="Are you sure?">Go</button>', "block", ["Are you sure?", "Go"]),
+    ("<p><svg><text>Label</text><path/></svg></p>", "phrase", ["Label"]),
+    ("<p>Hello <b>bold</b></p>", "block", ["Hello", "bold"]),  # control
+]
+SHAPE_IDS = ["one-text-node", "own-attribute", "top-level-void", "top-level-inline", "svg", "control"]
+
+
+def _registered(client):
+    return (
+        [("phrase", [p["phrase"]]) for p in client.pending_phrases]
+        + [("block", b["phrases"]) for b in client.pending_content_blocks]
+    )
+
+
+@pytest.mark.parametrize(("markup", "shape", "tokens"), SHAPES, ids=SHAPE_IDS)
+def test_TOK6_the_page_path_registers_each_unit_in_its_shape(markup, shape, tokens):
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(f"<html><body>{markup}</body></html>", category="CAT")
+    assert _registered(client) == [(shape, tokens)]
+
+
+@pytest.mark.parametrize(("markup", "shape", "tokens"), SHAPES, ids=SHAPE_IDS)
+def test_TOK6_the_block_path_registers_the_fragment_in_its_shape(markup, shape, tokens):
+    """An explicit block call is a unit too: its fragment is a phrase when its one token is its
+    one text node."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_content_block(markup, "CAT")
+    assert _registered(client) == [(shape, tokens)]
+
+
+@pytest.mark.parametrize("row", ROWS, ids=lambda r: r["id"])
+def test_TOK6_every_fixture_row_tokenizes_identically_on_the_page_path(row):
+    """The block path runs every row above; this is the same 32 rows through translate_page,
+    reading what it actually registers."""
+    client, patched = _client_with_catalog({})
+    with patched:
+        client.translate_page(f"<html><body>{row['html']}</body></html>", category=row["category"] or None)
+    registered = [t for _, tokens in _registered(client) for t in tokens]
+    assert registered == row["expected_tokens"], (
+        f"\n  expected cps: {[cps(t) for t in row['expected_tokens']]}"
+        f"\n  page cps:     {[cps(t) for t in registered]}"
+    )
+
+
+def test_TOK6_a_phrase_unit_translates_in_place_and_keeps_its_markup():
+    client, patched = _client_with_catalog({"CAT": {"Label": "Etichetta"}})
+    with patched:
+        out = client.translate_page(
+            '<html><body><p class="k"><svg><text>Label</text><path d="M0 0"/></svg></p></body></html>',
+            category="CAT",
+        )
+    assert '<text>Etichetta</text><path d="M0 0"></path>' in out, out
+    assert 'class="k"' in out
+
+
+def test_TOK6_a_top_level_void_block_renders_its_attribute():
+    tokens = ["Logo"]
+    catalog = {"CAT": {generate_custom_id("CAT", tokens): {"Logo": "Marchio"}}}
+    client, patched = _client_with_catalog(catalog)
+    with patched:
+        out = client.translate_page('<html><body><img alt="Logo"></body></html>', category="CAT")
+    assert 'alt="Marchio"' in out and client.pending_content_blocks == []
+
+
+@pytest.mark.parametrize("markup", [
+    "<p>A\x1clong description</p><p>Other</p>",
+    '<p title="A\x1clong">Hello</p>',
+    "<div><p>One\x0b</p><p>Two</p></div>",
+], ids=["text", "attribute", "block"])
+def test_TOK2_markup_carrying_a_c0_control_renders_instead_of_raising(markup):
+    """lxml parses these characters but refuses to ASSIGN them, so an apply that rewrote every
+    node raised on any page carrying one - a render path that throws (WIRE-4's harm)."""
+    client, patched = _client_with_catalog({"CAT": {"Other": "Altro"}})
+    with patched:
+        page = client.translate_page(f"<html><body>{markup}</body></html>", category="CAT")
+        block = client.translate_content_block(markup, "CAT")
+    assert "<body>" in page and block

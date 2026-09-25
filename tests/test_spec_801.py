@@ -14,9 +14,8 @@ for the wrong reason where the parser dropped the character before the tokenizer
 Collapse-set MEMBERSHIP is therefore asserted on `normalize_whitespace` directly, a string in and
 a string out, and the DOM rows are secondary.
 
-HELD (strip ruling): U+001C-U+001F, VT and FF are pinned at today's behaviour and nothing is built
-for them. A ruling on stripping C0 controls is pending; the FEFF/NEL fix must not resolve it by
-accident, which switching to JavaScript's enumerated class wholesale would do.
+The 28 C0 controls are removed before anything collapses (TOK-2 as ruled): VT and FF included, TAB,
+LF and CR excluded, NUL, U+007F and the C1 range kept.
 """
 
 from __future__ import annotations
@@ -104,14 +103,8 @@ NON_MEMBERS = [
     ("U+200B", "\u200b"),
     ("U+2060", "\u2060"),
 ]
-HELD = [
-    ("U+001C", "\x1c"),
-    ("U+001D", "\x1d"),
-    ("U+001E", "\x1e"),
-    ("U+001F", "\x1f"),
-    ("U+000B-VT", "\x0b"),
-    ("U+000C-FF", "\x0c"),
-]
+#: TOK-2's strip set, from integers: U+0001-U+0008, U+000B, U+000C, U+000E-U+001F.
+STRIPPED = [*range(0x01, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20)]
 
 
 def test_TOK2_feff_is_a_member_and_collapses():
@@ -141,14 +134,39 @@ def test_TOK2_control_real_members_still_collapse():
     assert normalize_whitespace("a \t\n\u00a0\u3000b") == "a b"
 
 
-@pytest.mark.parametrize(("name", "ch"), HELD, ids=[n for n, _ in HELD])
-def test_TOK2_HELD_strip_ruling_characters_are_pinned_at_todays_behaviour(name, ch):
-    """NOT a statement of the rule — `held (strip ruling)`.
+@pytest.mark.parametrize("cp", STRIPPED, ids=lambda cp: f"U+{cp:04X}")
+def test_TOK2_the_28_c0_controls_are_removed_not_mapped_to_a_space(cp):
+    assert len(STRIPPED) == 28
+    assert normalize_whitespace("a" + chr(cp) + "b") == "ab"
 
-    Pins current behaviour so the FEFF/NEL fix cannot silently resolve a ruling the operator has
-    not made. Replacing Python's \\s with JavaScript's enumerated class wholesale would stop these
-    collapsing, which is a decision, not a fix. Rewrite this test when the ruling lands."""
-    assert normalize_whitespace("a" + ch + "b") == "a b"
+
+@pytest.mark.parametrize("cp", [0x09, 0x0A, 0x0D], ids=["TAB", "LF", "CR"])
+def test_TOK2_tab_lf_and_cr_are_not_stripped_they_collapse(cp):
+    assert normalize_whitespace("a" + chr(cp) + "b") == "a b"
+
+
+@pytest.mark.parametrize("cp", [0x00, 0x7F, 0x85], ids=["NUL", "DEL", "NEL"])
+def test_TOK2_nul_del_and_the_c1_range_are_kept(cp):
+    assert normalize_whitespace("a" + chr(cp) + "b") == "a" + chr(cp) + "b"
+
+
+def test_TOK2_the_order_is_strip_then_collapse_then_trim():
+    """A control between two spaces leaves a run the collapse still has to see, and a control at
+    the edge leaves whitespace the trim still has to see."""
+    fs = chr(0x1C)
+    assert normalize_whitespace(fs + " a " + fs + " b " + fs) == "a b"
+
+
+def test_TOK2_a_code_registered_key_is_stripped_on_lookup_and_on_register():
+    """`t()` keys are id inputs too: a key carrying a control resolves to the markup's entry, and a
+    miss registers the stripped key."""
+    fs = chr(0x1C)
+    client = _client()
+    catalog = {"UI": {"Along": "Lungo"}}
+    with patch.object(client._catalog, "get", return_value=CatalogFetch(catalog, ok=True)):
+        assert client.translate("A" + fs + "long", category="UI", locale="it-it") == "Lungo"
+        client.translate("New" + fs + "phrase", category="UI", locale="it-it")
+    assert client.pending_phrases == [{"phrase": "Newphrase", "category": "UI"}]
 
 
 def test_TOK2_count_case_a_feff_only_node_produces_no_token():

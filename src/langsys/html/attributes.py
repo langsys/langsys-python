@@ -39,48 +39,39 @@ DEFAULT_TRANSLATABLE_ATTRIBUTES: tuple[str, ...] = (
 )
 
 
-# -- the block-identity attribute --------------------------------------------
+# -- the block-identity attribute (MARK-3) ------------------------------------
 #
-# `data-ls-contentblock` (and its `data-langsys-` spelling) carries two different
-# meanings and they must be told apart in exactly ONE place. An earlier revision had a
-# reader in `page.py` and a reader eight lines below it disagreeing about what `""`,
-# `"0"` and `"false"` meant — one walked the subtree normally, the other read it as
-# another SDK's id and excised it from discovery entirely. That drift is what this
-# module exists to make impossible.
+# `data-ls-contentblock` (and its `data-langsys-contentblock` spelling) means one of three things
+# by its value, trimmed and compared case-insensitively. One classifier answers for every reader,
+# so the block path and the page path cannot drift apart about it.
 
-#: MARK-1 — the attribute is an **identity**. This SDK additionally lets an author
-#: *declare* a subtree to be one block with a truthy flag; these are those flags.
-BLOCK_DECLARATION_VALUES = frozenset({"1", "true", "yes", "on"})
+#: A declaration: register this element as one content block. Bare and empty are here because
+#: presence is intent - the convention every boolean marker in the fleet follows - and the truthy
+#: words because existing markup carries them. No md5 `custom_id` can be one of these.
+BLOCK_DECLARATION_VALUES = frozenset({"", "true", "1", "yes"})
 
-#: The negative forms of the same flag. These are **not** identities: a resolved `custom_id`
-#: is never `0` or `false`, so reading them as one gains nothing and costs the subtree its
-#: discovery.
-BLOCK_OPT_OUT_VALUES = frozenset({"0", "false", "off", "no"})
-
-#: CONTESTED, awaiting the operator's ruling: what the BARE attribute means.
-#: `<div data-ls-contentblock>` is the natural boolean-attribute spelling and parses as `""`.
-#: This SDK reads it as an opt-out and walks the subtree as ordinary content. PHP's marker
-#: helper, which the TS core says it mirrors, treats presence as intent and reads it as a
-#: declaration. The identity class is not contested: an id value is excised on every path.
-#:
-#: Kept as one constant so the ruling flips one line: `"declaration"` adopts PHP's reading.
-BARE_BLOCK_ATTRIBUTE = "opt-out"
+#: An opt-out: the attribute is ignored and the element is walked as ordinary markup. Only these
+#: two, as for every marker in the fleet; `no` and `off` are not opt-outs.
+MARKER_OPT_OUT_VALUES = frozenset({"false", "0"})
 
 
 def classify_block_attribute(value: Optional[str]) -> str:
     """``"absent"`` | ``"declaration"`` | ``"opt-out"`` | ``"identity"``.
 
-    ``opt-out`` and ``absent`` both mean *walk this subtree as ordinary content*; they
-    are distinct only so a caller can tell "the author said no" from "the author said
-    nothing". ``identity`` means another SDK already owns this block.
+    ``identity`` means the value is the host's `custom_id`, stamped by a renderer: the host
+    renders from the catalog entry under that id, registers nothing, and is excised from any
+    enclosing walk.
     """
     if value is None:
         return "absent"
     normalized = value.strip().lower()
-    if normalized == "":
-        return BARE_BLOCK_ATTRIBUTE
     if normalized in BLOCK_DECLARATION_VALUES:
         return "declaration"
-    if normalized in BLOCK_OPT_OUT_VALUES:
+    if normalized in MARKER_OPT_OUT_VALUES:
         return "opt-out"
     return "identity"
+
+
+def marker_is_on(value: Optional[str]) -> bool:
+    """A presence marker (the phrase marker, the resolved marker): present and not opted out."""
+    return value is not None and value.strip().lower() not in MARKER_OPT_OUT_VALUES

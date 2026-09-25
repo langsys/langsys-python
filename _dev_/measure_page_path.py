@@ -3,9 +3,8 @@
 
 Runs every fixture row through `translate_page`, reads what is actually queued for
 registration, and compares it to the row's expected tokens; then probes top-level shapes the
-fixture does not carry. The block path is covered by `tests/test_canonicalization.py`. This is
-a measurement for CONFORMANCE.md's *Page path, measured* section, not a test: the divergences
-it reports are held for a ruling, not asserted.
+fixture does not carry. Both paths are asserted row by row in `tests/test_canonicalization.py`;
+this prints them side by side for CONFORMANCE.md's *Page path, measured* section.
 
     python3 _dev_/measure_page_path.py
 """

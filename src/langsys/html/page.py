@@ -13,6 +13,7 @@ Requires lxml + cssselect (``pip install langsys[html]``).
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING, Optional, Union, cast
 
 from lxml import html as lxml_html
@@ -23,20 +24,24 @@ from ..locale import normalize_locale
 from ..registration import generate_custom_id
 from ..translate import lookup_block
 from ..types import UNCATEGORIZED
-from .attributes import classify_block_attribute
+from .markup import encode_phrase_host, render_phrase_host
 from .parser import (
+    BLOCK_HOST_ATTRS,
+    PHRASE_HOST_ATTRS,
+    apply_block_translations,
     apply_element,
-    extract_phrases,
+    block_marker_kind,
     inner_html,
+    is_marked_host,
+    is_phrase_host,
+    is_phrase_unit,
     normalize_phrase,
-    text_content,
+    own_tokens,
+    unit_tokens,
 )
-
-#: MARK-2 — a host carrying one of these is already identified. Both spellings.
-PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
-CONTENT_BLOCK_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
-
-
+from .parser import (
+    _parse_fragment as parse_fragment,
+)
 
 if TYPE_CHECKING:
     from ..client import LangsysClient
@@ -51,9 +56,8 @@ BLOCK_ELEMENTS = frozenset(
         "details", "summary", "dialog",
     }
 )
-#: TOK-1 (8.0.1) - `svg` is NOT here: its text is translated on every path, and the walker
-#: gives it its own handling below. Removing it from this set alone would make the walker
-#: recurse into it and never tokenize its `<text>`, which is the drop PHP hit.
+#: TOK-1 - `svg` is NOT here: its `<text>` is visible copy, translated on every path. An svg is
+#: an ordinary unit, or part of one; it changes nothing about a unit's shape (TOK-6).
 SKIP_ELEMENTS = frozenset({"script", "style", "noscript", "template", "math"})
 META_NAMES = ("description", "keywords", "author")
 OG_PROPERTIES = ("og:title", "og:description", "og:site_name")
@@ -163,6 +167,12 @@ def _og_locale(locale: str) -> str:
 
 
 # -- body ---------------------------------------------------------------------
+#
+# TOK-6 - the walk registers UNITS. A container of blocks is walked; any other element it
+# reaches - a leaf block, or a void or inline element directly under a container, such as an
+# `<img alt>` or `<a title>` under `<body>` - is a unit. A unit is a phrase when its one token is
+# its one text node, and a content block otherwise. A marked host (MARK-4) is a unit of its own,
+# excised from whatever encloses it, and handled here on its own terms.
 
 
 def _walk(
@@ -175,82 +185,115 @@ def _walk(
     selmap: _SelMap,
 ) -> None:
     for child in node:
-        if not isinstance(child.tag, str):
+        if not isinstance(child.tag, str) or _excluded(child):
             continue
-        tag = child.tag.lower()
-        if tag in SKIP_ELEMENTS:
-            continue
-        if child.get("translate") == "no" or child.get("data-notrans"):
-            continue
-        # MARK-2 — EXCISION. A `<Phrase>` host rendered by another SDK already has an
-        # id; descending into it registers its text a second time under a new one, and
-        # on a leaf block it would also shift the parent block's id. Skipping the
-        # subtree leaves both alone.
-        if any(child.get(attr) is not None for attr in PHRASE_HOST_ATTRS):
-            continue
-        # MARK-2 — the same for a block host carrying a foreign identity. Walking into
-        # it re-tokenizes content that already has an id, files it under *this* page's
-        # category, queues it as a new block, and overwrites the other SDK's stamp with
-        # ours — one block, two ids, and the Translation Manager showing it twice.
-        if _is_identified_block_host(child):
-            continue
-
         effective = _effective_category(child, inherited, selmap)
-
-        if _has_content_block_attr(child):
-            _handle_block(client, child, attrs, locale, _item_category(effective, default_category))
+        if is_marked_host(child):
+            _process_host(client, child, attrs, locale, default_category, effective, selmap)
             continue
-
-        # TOK-1 (8.0.1) - svg text is translated, and svg is handled as its own unit rather
-        # than as a block element. Adding svg to BLOCK_ELEMENTS is the retracted mechanism: a
-        # parent `<p>` holding an inline icon would then "contain a nested block", the walker
-        # would recurse into it, and the paragraph's own words would be dropped. Inline svg
-        # therefore stays inside its leaf block and is tokenized there; only an svg the walker
-        # reaches directly, with no leaf around it, arrives here.
-        if tag == "svg":
-            _translate_leaf(client, child, attrs, locale, default_category, effective)
-            continue
-
-        if tag in BLOCK_ELEMENTS:
-            if _contains_nested_blocks(child):
-                _walk(client, child, attrs, locale, default_category, effective, selmap)
-                continue
-            _translate_leaf(client, child, attrs, locale, default_category, effective)
-        else:
+        if _contains_nested_blocks(child):
             _walk(client, child, attrs, locale, default_category, effective, selmap)
+            continue
+        _process_nested_hosts(client, child, attrs, locale, default_category, effective, selmap)
+        _process_unit(client, child, attrs, locale, _item_category(effective, default_category))
 
 
-def _translate_leaf(
+def _excluded(el: _Element) -> bool:
+    return (
+        el.tag.lower() in SKIP_ELEMENTS
+        or el.get("translate") == "no"
+        or bool(el.get("data-notrans"))
+    )
+
+
+def _process_unit(
+    client: "LangsysClient",
+    el: _Element,
+    attrs: list[str],
+    locale: str,
+    item_cat: str,
+    *,
+    declared: bool = False,
+) -> None:
+    """One unit (TOK-6): a phrase written back into its one text node, or a content block."""
+    tokens, text_nodes = unit_tokens(el, attrs)
+    if not tokens:
+        return
+    if not declared and is_phrase_unit(tokens, text_nodes):
+        category = None if item_cat == UNCATEGORIZED else item_cat
+        translated = client.translate(tokens[0], category=category, locale=locale)
+        apply_element(el, {tokens[0]: translated}, attrs)
+        return
+    _apply_or_queue_block(client, el, attrs, item_cat, tokens, _registered_content(el, attrs))
+
+
+def _registered_content(el: _Element, attrs: list[str]) -> str:
+    """The markup a block registers with. A unit whose own attributes carry tokens registers with
+    its tag, so the content re-tokenizes to the block's tokens; the markers are not content."""
+    if not own_tokens(el, attrs):
+        return inner_html(el)
+    shell = copy.deepcopy(el)
+    shell.tail = None
+    for marker in (*PHRASE_HOST_ATTRS, *BLOCK_HOST_ATTRS):
+        if marker in shell.attrib:
+            del shell.attrib[marker]
+    return str(lxml_html.tostring(shell, encoding="unicode"))
+
+
+def _process_host(
     client: "LangsysClient",
     el: _Element,
     attrs: list[str],
     locale: str,
     default_category: Optional[str],
     effective: Optional[str],
+    selmap: _SelMap,
 ) -> None:
-    """One leaf: a single phrase when its whole text is one token, otherwise a content block."""
-    inner = inner_html(el)
-    phrases = extract_phrases(inner, attrs)
-    if not phrases:
-        return
+    """A marked host, on its own terms (MARK-2, MARK-3, MARK-4). Hosts nested inside it go first,
+    so what this one renders around them is already theirs."""
+    _process_nested_hosts(client, el, attrs, locale, default_category, effective, selmap)
     item_cat = _item_category(effective, default_category)
-    text = text_content(el)
-    if len(phrases) == 1 and phrases[0] == text:
-        category = None if item_cat == UNCATEGORIZED else item_cat
-        translated = client.translate(text, category=category, locale=locale)
-        apply_element(el, {text: translated}, attrs)
-    else:
-        _apply_or_queue_block(client, el, attrs, item_cat, phrases, inner)
-
-
-def _handle_block(
-    client: "LangsysClient", el: _Element, attrs: list[str], locale: str, item_cat: str
-) -> None:
-    inner = inner_html(el)
-    phrases = extract_phrases(inner, attrs)
-    if not phrases:
+    if is_phrase_host(el):
+        # MARK-2 - the host's content is ONE phrase, kept whole: registered on a miss as the one
+        # string the host defines, never re-split.
+        text, slots = encode_phrase_host(el)
+        if text:
+            category = None if item_cat == UNCATEGORIZED else item_cat
+            translated = client.translate(text, category=category, locale=locale)
+            if translated != text:
+                render_phrase_host(el, translated, slots)
         return
-    _apply_or_queue_block(client, el, attrs, item_cat, phrases, inner)
+    if block_marker_kind(el) == "identity":
+        # MARK-3 - a stamped id is this host's custom_id. Render the catalog entry under it, or
+        # leave the source; register nothing.
+        custom_id = next((v for v in (el.get(a) for a in BLOCK_HOST_ATTRS) if v is not None), "")
+        fetch = client._catalog.get(client._effective_locale(None))
+        block = fetch.catalog.get(item_cat, {}) if fetch.ok else {}
+        entry = block.get(custom_id.strip()) if isinstance(block, dict) else None
+        if isinstance(entry, dict):
+            apply_element(el, entry, attrs)
+        return
+    _process_unit(client, el, attrs, locale, item_cat, declared=True)
+
+
+def _process_nested_hosts(
+    client: "LangsysClient",
+    el: _Element,
+    attrs: list[str],
+    locale: str,
+    default_category: Optional[str],
+    inherited: Optional[str],
+    selmap: _SelMap,
+) -> None:
+    """Every outermost marked host below `el`, each as a unit of its own (MARK-4)."""
+    for child in el:
+        if not isinstance(child.tag, str) or _excluded(child):
+            continue
+        effective = _effective_category(child, inherited, selmap)
+        if is_marked_host(child):
+            _process_host(client, child, attrs, locale, default_category, effective, selmap)
+        else:
+            _process_nested_hosts(client, child, attrs, locale, default_category, effective, selmap)
 
 
 def _apply_or_queue_block(
@@ -273,9 +316,10 @@ def _apply_or_queue_block(
         # WIRE-4 — never queue off a catalog we could not read.
         client._queue_content_block(inner, item_cat, custom_id, phrases)
     # MARK-1 — stamp whichever way it went. The id is what the block IS, not what the
-    # catalog held, and an unstamped miss is the case most needing inspection. Set on
-    # the element in place: this path is already re-serialising the whole document, so
-    # there is no original string to preserve as there is on the block path.
+    # catalog held, and an unstamped miss is the case most needing inspection.
+    for marker in BLOCK_HOST_ATTRS:
+        if marker in el.attrib:
+            del el.attrib[marker]
     el.set("data-ls-contentblock", custom_id)
 
 
@@ -321,26 +365,6 @@ def _effective_category(el: _Element, inherited: Optional[str], selmap: _SelMap)
     return None
 
 
-def _block_attribute_kind(el: _Element) -> str:
-    """How this element's block attribute reads. One classifier, one answer."""
-    for attr in CONTENT_BLOCK_ATTRS:
-        kind = classify_block_attribute(el.get(attr))
-        if kind != "absent":
-            return kind
-    return "absent"
-
-
-def _is_identified_block_host(el: _Element) -> bool:
-    """True when a block attribute carries another SDK's id rather than a declaration."""
-    return _block_attribute_kind(el) == "identity"
-
-
-def _has_content_block_attr(el: _Element) -> bool:
-    """True only for an authoring *declaration*. An opt-out, a bare attribute, or
-    another SDK's identity are all handled elsewhere — see `classify_block_attribute`."""
-    return _block_attribute_kind(el) == "declaration"
-
-
 def _contains_nested_blocks(el: _Element) -> bool:
     for child in el.iter():
         if child is el or not isinstance(child.tag, str):
@@ -368,3 +392,46 @@ def _build_selector_map(doc: _Element, selector_categories: dict[str, SelectorSp
         for element in matched:
             result[element] = (category, override)
     return result
+
+
+# -- explicit block calls -------------------------------------------------------
+
+
+def translate_fragment(client: "LangsysClient", html: str, category: Optional[str]) -> str:
+    """`translate_content_block` - one fragment as one unit (TOK-6), marked hosts on their own.
+
+    A fragment whose one element is a marked host is that host (MARK-3). Otherwise the fragment's
+    content is the unit: a phrase when its one token is its one text node, a content block
+    otherwise, and any marked host inside it is excised and handled as a unit of its own (MARK-4).
+    A fragment with no marked host is translated on the caller's own string, so it comes back
+    byte for byte apart from the translation and the stamp.
+    """
+    attrs = client._translatable_attributes
+    locale = client._effective_locale(None)
+    root = parse_fragment(html)
+    elements = [c for c in root if isinstance(c.tag, str)]
+    has_hosts = any(
+        is_marked_host(e) for top in elements for e in top.iter() if isinstance(e.tag, str)
+    )
+    lone_host = (
+        len(elements) == 1
+        and is_marked_host(elements[0])
+        and not (root.text or "").strip()
+        and not (elements[0].tail or "").strip()
+    )
+    if lone_host:
+        _process_host(client, elements[0], attrs, locale, None, category, {})
+        return inner_html(root)
+    if has_hosts:
+        _process_nested_hosts(client, root, attrs, locale, None, category, {})
+
+    tokens, text_nodes = unit_tokens(root, attrs)
+    if not tokens:
+        return inner_html(root) if has_hosts else html
+    if is_phrase_unit(tokens, text_nodes):
+        translated = client.translate(tokens[0], category=category, locale=locale)
+        if not has_hosts:
+            return apply_block_translations(html, {tokens[0]: translated}, attrs)
+        apply_element(root, {tokens[0]: translated}, attrs)
+        return inner_html(root)
+    return client._render_block(inner_html(root) if has_hosts else html, category, tokens)

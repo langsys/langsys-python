@@ -41,6 +41,30 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Registration shape and markers (spec 8.2).** Content registered from HTML now takes the
+same shape in every Langsys SDK, so some phrases and content blocks derive ids they did not
+before.
+
+- **TOK-6 — full-page translation registers what it used to drop.** A leaf block's own
+  attributes are part of it (`<p title="Tip">Hello</p>` is one block, `[Tip, Hello]`, where
+  `Tip` was lost), and inline and void elements directly under a container — an `<img alt>`, a
+  link, a `<select>` or `<textarea>` — are translated instead of skipped. A unit registers as a
+  phrase only when its one token is its one text node, on the page path and in
+  `translate_content_block` alike, so a single-sentence fragment is now a phrase.
+- **MARK-3 — a bare `data-ls-contentblock` now declares a block**, as `true`, `1` and `yes` do;
+  only `false` and `0` opt out, so `no` and `off` now read as ids. An element carrying another
+  SDK's id renders that block's translation from the catalog.
+- **MARK-4 — a marked element inside another block is its own unit**, excised from the outer
+  block instead of folded into it, which changes the outer block's id.
+- **MARK-2 — a `data-ls-phrase` element registers whole**, inline markup encoded as
+  `{m0o}…{m0c}` tokens in the JS SDK's format, and its translation is rebuilt around the
+  original elements.
+- **TOK-2 — control characters U+0001–U+0008, U+000B, U+000C and U+000E–U+001F are removed**
+  before whitespace collapses, from markup and from `translate()` keys, so an id no longer
+  depends on the HTML parser's version for them.
+- **Full-page translation no longer raises on a page containing a control character.** It
+  rewrote every text node on the way out, and lxml refuses to write those characters back.
+
 **Request locale and resolved pages (spec 8.2).**
 
 - **SRV-6 — `client.resolve_request_locale()` picks a request's locale** from the URL, then a

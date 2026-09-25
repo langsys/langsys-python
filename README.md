@@ -209,6 +209,28 @@ Translatable attributes (`placeholder`, `alt`, `title`, `aria-label`, …) are h
 automatically; customize the list with `client.set_translatable_attributes(...)` /
 `add_translatable_attributes(...)` / `reset_translatable_attributes()`.
 
+**What registers as what.** Each element the page walk reaches (a leaf block, or an inline or
+void element such as an `<img alt>` directly under a container) is one unit, and so is the
+fragment passed to `translate_content_block`. A unit's tokens are its own translatable
+attributes, then its text, split at each child element. It registers as a **phrase** when that
+is exactly one token and that token is its one text node (`<p>Hello</p>`). Anything else is a
+**content block** (`<p title="Tip">Hello</p>`, `<img alt="Logo">`, `<p>Hello <b>you</b></p>`),
+returned stamped with `data-ls-contentblock="<id>"`. These are the same shapes every Langsys SDK
+registers, so markup served by one and read by another resolves to one entry.
+
+**Markers.**
+
+- `data-ls-contentblock` (or `data-langsys-contentblock`): bare, `""`, `true`, `1` or `yes`
+  makes the element one content block. `false` or `0` makes the marker ignored. Any other value
+  is the block's id, set by whichever SDK rendered it: the element renders from the catalog
+  entry under that id and registers nothing.
+- `data-ls-phrase` (or `data-langsys-phrase`) keeps an element's content as one phrase, inline
+  markup included. `<p data-ls-phrase>Based on {n} <strong>reviews</strong></p>` registers
+  `Based on {n} {m0o}reviews{m0c}`, so a count and the noun it governs are translated together.
+- A marked element inside another unit is left out of that unit and handled as its own.
+- Text carrying control characters (U+0001–U+001F except tab, newline and carriage return) has
+  them removed before it becomes a phrase, in markup and in `translate()` keys alike.
+
 ### Errors
 
 Every failure raises a typed exception (subclass of `LangsysError`); HTTP status codes are
