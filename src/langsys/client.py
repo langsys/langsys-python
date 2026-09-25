@@ -16,7 +16,7 @@ from .exceptions import ApiError, AuthorizationError, ConfigurationError, Networ
 from .html.attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES
 from .http import HttpClient, encode_segment
 from .interpolate import interpolate
-from .locale import canonicalize_locale, detect_preferred_locale
+from .locale import canonicalize_locale, detect_preferred_locale, normalize_locale
 from .messages import DEFAULT_MESSAGE_CATEGORY, Entry
 from .migrate import LegacyKeys
 from .observable import LocaleSource, Signal
@@ -145,6 +145,12 @@ class LangsysClient:
         #: and no key lookup happens. Loaded here, so a file this SDK cannot read (a `.mo`, an
         #: unsupported format) fails at configuration, naming the file.
         self._legacy = LegacyKeys(legacy_files) if legacy_files else None
+        #: SNAP-2 - a loaded snapshot's catalogs, per wire locale. Consulted before the fetch;
+        #: whatever it does not hold falls through to the normal catalog path.
+        self._preloaded: dict[str, Catalog] = {}
+        #: SRV-6 - the served locales a loaded snapshot vouches for, used only while
+        #: authorization is unavailable: (base_locale, [base, *locales]).
+        self._snapshot_locales: Optional[tuple[str, list[str]]] = None
         #: MSG-11 - one warning per (template, marker) whose value is a catalogued phrase.
         self._warned_marker_values: set[tuple[str, str]] = set()
         self._utils = Utilities(self._http, self._config.project_id)
@@ -493,10 +499,63 @@ class LangsysClient:
         # (never the key) under its namespace, a miss stays literal source text.
         if self._legacy is not None and content_block_id is None:
             phrase, category, _ = self._legacy.resolve(phrase, category)
+        return self._render_phrase(phrase, category, params, locale, content_block_id)
+
+    #: Short alias mirroring ``t()`` across the other SDKs.
+    t = translate
+
+    def translate_legacy(
+        self,
+        text: str,
+        *,
+        entry_point: str = "gettext",
+        plural: Optional[str] = None,
+        category: Optional[str] = None,
+        params: Optional[dict[str, Any]] = None,
+        locale: Optional[str] = None,
+    ) -> str:
+        """A framework translation function's call, through the same resolver as `t()` (MIG-8).
+
+        For a binding's `gettext`/`_()`/`pgettext` (`entry_point="gettext"`, a `pgettext` context
+        passed as `category`), `ngettext`/`npgettext` (`entry_point="ngettext"`, with `plural`),
+        and `{% blocktranslate %}` (`entry_point="blocktranslate"`). With legacy files configured
+        the text is a key first, exactly as `t()` resolves it, so both entry points register one
+        phrase under one category for one key. A miss is literal source text in that framework's
+        syntax, converted only where the call passes a value (MIG-2).
+        """
+        from .migrate import convert_literal, gettext_plural
+
+        values = params or {}
+        hit = False
+        if self._legacy is not None:
+            phrase, resolved, hit = self._legacy.resolve(text, category)
+        if hit:
+            category = resolved
+        elif entry_point == "ngettext":
+            if plural is None:
+                raise ValueError("an ngettext call needs its plural form")
+            phrase = gettext_plural(text, plural, literal=True, passed=values)
+        else:
+            phrase = convert_literal(text, entry_point, values)
+        return self._render_phrase(phrase, category, params, locale, None)
+
+    def _render_phrase(
+        self,
+        phrase: str,
+        category: Optional[str],
+        params: Optional[dict[str, Any]],
+        locale: Optional[str],
+        content_block_id: Optional[str],
+    ) -> str:
         # TOK-2 - a code-registered key is stripped of C0 controls on lookup and on register
         # alike, so a phrase carrying one resolves to the same entry as the markup that holds it.
         phrase = strip_c0(phrase)
         loc = self._effective_locale(locale)
+        if content_block_id is None and self._preloaded:
+            held, value = self._preloaded_entry(loc, category or UNCATEGORIZED, phrase)
+            if held:
+                text = value if isinstance(value, str) and value else phrase
+                return interpolate(text, params, loc) if params else text
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
         result = resolve(fetch.catalog, phrase, category, content_block_id)
@@ -507,9 +566,6 @@ class LangsysClient:
         if params:
             return interpolate(result.text, params, loc)
         return result.text
-
-    #: Short alias mirroring ``t()`` across the other SDKs.
-    t = translate
 
     # -- content blocks (server-side HTML) ------------------------------------
 
@@ -533,6 +589,10 @@ class LangsysClient:
         # CID-2 — the hash takes the *raw* category, `''` when there is none.
         # `__uncategorized__` is a cache-lookup namespace and must never reach the id.
         custom_id = generate_custom_id(category, phrases)
+        held, preloaded = self._preloaded_entry(loc, cat_name, custom_id)
+        if held and isinstance(preloaded, dict):
+            translated = apply_block_translations(html, preloaded, self._translatable_attributes)
+            return stamp_content_block(translated, custom_id)
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
         cat = fetch.catalog.get(cat_name)
@@ -570,6 +630,42 @@ class LangsysClient:
             )
             self._tag(self._block_scopes, custom_id, existed)
         self._schedule_flush()
+
+    # -- preloaded catalog (SNAP-2) ------------------------------------------------
+
+    def load_snapshot(self, snapshot: Any) -> None:
+        """Seed this client from a catalog snapshot, synchronously, with no network call.
+
+        `snapshot` is a `Snapshot`, a path, or the snapshot's JSON. Lookups it answers need no
+        fetch; a phrase or block it does not hold falls back to the normal catalog fetch, and to
+        source text when the API cannot be reached. The snapshot is a cache: `Snapshot.load`
+        refuses one edited after export, and one exported for another project is refused here.
+        """
+        from .snapshot import Snapshot, SnapshotError
+
+        loaded = snapshot if isinstance(snapshot, Snapshot) else Snapshot.load(snapshot)
+        if loaded.project_id != self._config.project_id:
+            raise SnapshotError(
+                f"This snapshot is for project {loaded.project_id!r}, not "
+                f"{self._config.project_id!r}; export one for this project."
+            )
+        for locale in loaded.locales:
+            held = loaded.catalog(locale)
+            if held is not None:
+                self._preloaded[normalize_locale(locale)] = held
+        self._snapshot_locales = (loaded.base_locale, [loaded.base_locale, *loaded.locales])
+
+    def _preloaded_entry(self, locale: str, category: str, key: str) -> tuple[bool, Any]:
+        """(held, value) for one entry of a loaded snapshot - only until the live catalog for the
+        locale is held. The live catalog outranks the snapshot once fetched, and whether a phrase
+        is registered is decided against it alone: a snapshot hit decides nothing (SNAP-2)."""
+        wire = normalize_locale(locale)
+        if wire not in self._preloaded or self._catalog._held(wire) is not None:
+            return False, None
+        entries = self._preloaded[wire].get(category)
+        if isinstance(entries, dict) and key in entries:
+            return True, entries[key]
+        return False, None
 
     # -- request scopes (SRV-3) -------------------------------------------------
 
@@ -632,7 +728,7 @@ class LangsysClient:
         try:
             return self.authorize().base_locale or ""
         except (NetworkError, ApiError, ConfigurationError):
-            return ""
+            return self._snapshot_locales[0] if self._snapshot_locales is not None else ""
 
     # -- request locale (SRV-6) ------------------------------------------------
 
@@ -658,8 +754,13 @@ class LangsysClient:
             base = project.base_locale
         except (NetworkError, ApiError, ConfigurationError) as exc:
             logger.warning("langsys: could not read the project's locales (%s).", exc)
-            base = self._config.base_locale or ""
-            supported = [base] if base else []
+            if self._snapshot_locales is not None:
+                # A loaded snapshot vouches for the locales it holds and the project's base,
+                # until authorization answers and replaces them.
+                base, supported = self._snapshot_locales[0], list(self._snapshot_locales[1])
+            else:
+                base = self._config.base_locale or ""
+                supported = [base] if base else []
         return resolve_request_locale(
             supported, base, url=url, cookie=cookie,
             accept_language=accept_language, uses_cookie=uses_cookie,

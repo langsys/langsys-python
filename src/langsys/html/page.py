@@ -308,6 +308,11 @@ def _apply_or_queue_block(
     # id is built from the raw category while the catalog is still keyed by the token.
     raw_category = None if item_cat == UNCATEGORIZED else item_cat
     custom_id = generate_custom_id(raw_category, phrases)
+    held, preloaded = client._preloaded_entry(client._effective_locale(None), item_cat, custom_id)
+    if held and isinstance(preloaded, dict):
+        apply_element(el, preloaded, attrs)
+        _stamp(el, custom_id)
+        return
     fetch = client._catalog.get(client._effective_locale(None))
     block = lookup_block(fetch.catalog.get(item_cat), raw_category, custom_id, phrases)
     if isinstance(block, dict):
@@ -317,6 +322,10 @@ def _apply_or_queue_block(
         client._queue_content_block(inner, item_cat, custom_id, phrases)
     # MARK-1 — stamp whichever way it went. The id is what the block IS, not what the
     # catalog held, and an unstamped miss is the case most needing inspection.
+    _stamp(el, custom_id)
+
+
+def _stamp(el: _Element, custom_id: str) -> None:
     for marker in BLOCK_HOST_ATTRS:
         if marker in el.attrib:
             del el.attrib[marker]

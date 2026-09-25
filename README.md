@@ -194,6 +194,11 @@ it carries a checksum, and `Snapshot.load()` refuses one that was edited by hand
 export again. Every Langsys SDK writes and reads the same format, so a snapshot exported here
 loads in any of them, the browser SDK included.
 
+Seed a client from one at startup with `client.load_snapshot("snapshot.json")`. Lookups the
+snapshot answers need no network call. Anything it doesn't hold is fetched as usual, or renders
+as source text if the API can't be reached. A snapshot exported for a different project is
+refused.
+
 ### Migrating from translation keys
 
 An app built on keys (`_("checkout.submit")`, a `messages.json`, Django's `.po` files) can

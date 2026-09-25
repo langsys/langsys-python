@@ -4,142 +4,55 @@
 |---|---|
 | **SDK** | `langsys-python` (server core) |
 | **Profiles** | all, server |
-| **specVersion** | 8.0.1 (committed, unpublished) |
-| **Spec revision read** | langsys2 5cff03a17751e7dae9dcf1af52a9454d027c9006, docs/sdk-spec.mdx blob 5c5c0723f88fb8e6b13f58876c7adca8b6b35691 |
-| **Re-derive** | `git -C ~/Documents/dev/langsys2 rev-parse 5cff03a17751e7dae9dcf1af52a9454d027c9006:docs/sdk-spec.mdx` — by commit, never by branch. Re-derived at this write, not carried from the previous header (v8 blob `b657b490…`) |
-| **SDK revision** | `feature/838_write_key_gating`, on `c79fd57`; cut from `origin/main` `bc5ca62` |
-| **Runtime measured** | CPython 3.9.6 · lxml 6.1.2 · libxml2 2.14.6. The pyproject floor is `lxml>=4.9`, so an older wheel can bring a libxml2 below 2.14 — see *Parser model* |
+| **specVersion** | 8.2.16 (committed, unpublished) |
+| **Spec revision read** | langsys2 2dce7f411c38f642a5c41129a5d8a362adc023c1, docs/sdk-spec.mdx blob 99c86b55de39f7d45cf9c25d931d210953cff8be |
+| **Re-derive** | `git -C ~/Documents/dev/langsys2 rev-parse 2dce7f411c38f642a5c41129a5d8a362adc023c1:docs/sdk-spec.mdx` — by commit, never by branch; re-derived at this write |
+| **SDK revision** | `feature/838_write_key_gating`; cut from `origin/main` `bc5ca62` |
+| **Runtime measured** | CPython 3.9.6 · lxml 6.1.2 · libxml2 2.14.6 · Node 22.13.1 (contract double) |
 | **Published** | **Never.** PyPI and TestPyPI both 404 (positive control: `httpx` → 200) |
-| **Suite** | 578 tests in 21 files — 563 unit (561 pass, 2 strict xfail pinning SRV-3's measured order of events) + 15 live |
-| **Binding rules** | **53 of 79** (`all` + `server`) |
+| **Suite** | 1004 tests in 30 files — 989 unit (contract rows included) + 15 live |
+| **Binding rules** | **84 of 113** — every rule not `n/a (profile)` |
 | **Checked by** | `_dev_/conformance_counts.py` (accounting, vocabulary, header) · `_dev_/run_mutations.py` (CONF-3, in an isolated copy) |
 
-**Per-rule revision column omitted, deliberately — fleet norm.** The rendered-section
-hashes are served by `langsys://internal/docs/sdk-spec/revisions`, which no SDK lane can
-reach. The document-level pin above is this file's provable revision claim. Omitted
-rather than left pending, because a pending column invites someone to fill it with
-strings they have not read — CONF-1's failure one level up.
+**Per-rule revision column omitted** — optional since 8.2.1; the blob above is this file's
+revision claim.
 
-**What surfaced while writing this (the 8.0.1 re-row).** None of it was on anyone's list:
+**What surfaced while writing this (the 8.2 push).** None of it was on anyone's list:
 
-1. **Three register/lookup pairs disagreed, each invisible to a test that took one
-   route.** Attribute and button values were registered normalised and looked up raw; the
-   page `<title>` and metas were registered raw where the body registered normalised text.
-   A value with a whitespace run, a no-break space or `%name%` missed forever and
-   re-registered on every render. Fixed, and every lookup site is now pinned by a test
-   that goes red when the site reverts — including the `trim()` revert the TS lane found in
-   its own attribute and `<option>` lookups.
-2. **Trimming was a second TOK-2 site.** `str.strip()` removed U+0085 and kept U+FEFF after
-   the collapse was already correct. The mutation record then showed the FEFF trim test
-   could not tell the two trims apart — the collapse has already turned an edge run of
-   members into one space, which either trim removes — so the discriminating vector is a
-   U+0085 edge.
-3. **The page path is 19/26 on the shared canonicalization fixture.** Measured on request:
-   the seven attribute rows diverge, for two causes — a top-level void or inline element is
-   never tokenized, and a leaf host's own attributes are dropped — and top-level bare text,
-   links, `<textarea>` and `<select>` register nothing. Ruby and PHP fail the same seven.
-   Not changed: the registration shape is with the operator.
-4. **SRV-3's order of events does not hold, and this file said it did.** The previous row
-   read "with the debounce on the send lands later from another thread" — true, and not the
-   rule. The Django lane measured the 0.4s debounce POSTing a long render's misses before
-   the response existed; the FastAPI lane measured one request's end-of-request flush
-   draining another in-flight request's misses with no timer at all. Both are reproduced
-   here as strict xfails. The fix is a core seam, and whether to build it is the operator's
-   call.
-5. **REG-12's two checks disagree.** `translate()` treats text equal to a block id as known
-   (presence); `sync()` flattens the block into its children and treats the same text as
-   new, so it re-registered on every call. Found while writing REG-12's first named test,
-   pinned first by a strict xfail, then fixed on the operator's go-ahead.
-6. **Seven rows claimed `implemented` with no named test** although the behaviour was
-   present: CAT-3, REG-12, HINT-2, WIRE-1, WIRE-2, WIRE-5, and OBS-1's diagnostic (only the
-   flag behind it was asserted). A rule with no test is not implemented; each now has tests
-   and a mutation.
-7. **Mutating every runtime row caught five tests of mine that could not fail as named.**
-   The new CAT-3 vector was ASCII, where the legacy code-unit hash equals the current id, so
-   the legacy lookup rescued the mutated path. The ICU-2 select tests pass whether null
-   counts as missing or as an unmatched value — both land on `other`. The WIRE-3 cache test
-   relied on "a second fetch would raise", which does not hold on this pytest-httpx. And
-   MARK-2's identity host was tested in one spelling per path. Each vector was fixed, or the
-   expectation re-pointed at the test that does discriminate, and re-run.
-8. **The tier column graded the wrong thing.** Per the corrected fleet guidance, a tier
-   describes the evidence for the property the rule governs. GATE-4, GATE-8, the REG timing
-   rules, TOK, MARK, CACHE-1, OBS-1, SRV-1 and SRV-2 are in-process properties no stateful
-   double could prove better, and are `n/a (pure)`; WIRE-1 is `live`. Five rows remain
-   `provisional`, each because the shared contract fixture would actually change its
-   evidence.
-9. **My mutation battery rewrote core source in place, under consumers importing it.** The
-   Django and FastAPI wrappers install this core editable, so while a mutation was applied
-   their suites tested a mutated core: the Django lane measured a red SRV-2 with mixed
-   languages during one run, which passed once the files were restored. Restoring the file
-   protected this tree, not theirs, and any wrapper count taken during those runs is void.
-   The runner now mutates an isolated copy, refuses to start unless `langsys` imports from
-   that copy, and checks this tree's suite inputs are unchanged at the end.
-10. **A failing catalog is fetched again on every lookup.** Measured on request: *Failed
-    catalog fetches, measured*. No MUST is broken as the text stands.
+1. **`translate_page` and `translate_content_block` raised on any markup carrying a C0
+   control.** lxml parses those characters but refuses to assign them, and the apply step
+   wrote every text node back whether it changed or not. The shared fixture's `fs-in-attr`
+   row exposed it the moment the page path ran it. The apply step now writes only
+   translated values, stripped.
+2. **The formatter put raw ICU syntax, or an empty string, on the page.** An unsupported
+   argument type or unbalanced braces printed the construct verbatim; a plural or select
+   with no branch for its value rendered `""`. ICU-6's fallback now renders them. The shared
+   ICU-6 vector itself renders natively here.
+3. **The fallback masked broken recovery.** With ICU-1/2's recovery mutated away, the
+   lenient fallback still produced the right text, so no output test could see it. What
+   separates them is the warning: recovery is normal and silent, a formatter failure warns.
+   Pinned both ways.
+4. **Snapshot formats diverged across the fleet.** PHP and Ruby wrote different formats with
+   different checksums, so neither loaded the other's. Raised from this lane; SNAP-1 now pins
+   one format and one canonical checksum, and this SDK writes and reads it.
+5. **A mutation runner that reads test names up to the first space cannot see a
+   parametrized case whose id has one.** Every parametrized case a mutation names now carries
+   an explicit id.
+6. **Four of my new vectors could not fail as first written**: a `t()` conversion vector
+   already in Langsys syntax, two page-walker spelling mutations aimed at code the TOK-6
+   rewrite made dead, and a MARK-4 page case the walker reaches by recursion rather than
+   through the helper under test. Each was replaced or re-pointed and re-run.
 
-**Earlier waves (v7, v8).** Eight things that were on nobody's list. The two that mattered most were found by review, not by me, and both are recorded first:
-
-1. **A transient authorize failure destroyed the whole registration queue.** Found in
-   review, not by me. Asking *whether we may write* could fail, that failure collapsed to
-   "may not write", and the discard that is correct for a server **no** then ran for an
-   outage — permanently, since nothing resends. The control that proves the hole is
-   authorize-shaped: the identical outage on the registration POST retained the queue and
-   backed off correctly. It also punctured this file's own GATE-2 reasoning twice over,
-   and my REG-3 "never raises" test had been quietly enshrining the discard by asserting
-   only that nothing was thrown.
-
-2. **The miss that REG-6 saved was then stranded.** A debounce firing while a send held
-   the lock had its timer cancelled by the declining flush, and nothing re-armed it. My
-   first fix put the re-arm inside the send-lock's `try` — which the decline path returns
-   before ever reaching, so it missed the one case it was written for. It is now in the
-   outermost `finally`.
-
-
-3. **The canonical fixture exists in two versions, and the authoritative one is
-   unmerged.** php-sdk `origin/main` carries a 12-row `custom-id-reference.json` (blob
-   `ed7b512b6c0a`); the 13-row file every SDK validates against (blob `60dc9b33ecfd`)
-   lives only on `feature/838_write_key_gating_reland`. The extra row is exactly the
-   `U+2028`/`U+2029` case, and main's copy also lacks the `codepoints` and
-   `serialized_hex` columns the vendoring norm requires. The 12 shared rows agree
-   byte-for-byte, so main is not wrong — it is missing the edge the CID rules exist to
-   pin.
-4. **`translate()` threw on an unreachable API.** Measured against a closed port, not
-   inferred. On a server core that is a visitor-facing 500 on any page with a `t()`
-   call, which is why it outranked the `custom_id` breakage in the fix order.
-5. **GATE-3/GATE-4 was a landmine that would have armed itself with no change here.**
-   `authorize()` cached the entire response, and `Project.raw` held it for the life of
-   the client. Nothing leaked only because the server field did not yet exist in this
-   repo's view.
-6. **A live authorize answer was being dropped before it was recorded.** `authorize()`
-   stripped `write_enabled` for storage (GATE-4, correct) but did so *before* anything
-   observed it, so a stale catalog-envelope answer outranked a fresher authorize —
-   the same latch shape from the other end. Caught by writing the second shadow-direction
-   test, not by reading the code, and only because both directions were asserted.
-7. **`Project.from_response` collapsed every non-`write` key type to `read`**, so an
-   `ip_write` key reported as `read`. Found by a live test, not by reading: the gating
-   logic reads the raw payload and was unaffected, so the defect was invisible to the
-   mocked suite and to the code. `KeyType` now carries `ip_write` as its own arm.
-8. **One of my own guards was non-discriminating.** The first ICU-5 vector gave
-   `few`/`many`/`other` identical branch text and could not have failed whatever the
-   renderer did. Recorded rather than quietly fixed, because it is the trap the spec
-   names and it took writing the mutation to notice.
-
-**Evidence tiers** follow CONF-2 as corrected fleet-wide: a tier describes the evidence for
-the property the rule governs, not whether a double appears in the test. `live`, `contract`
-and `mock` apply only where that property depends on what the API answers — acceptance,
-refusal, or state across calls. `n/a (pure)` covers in-process behaviour, cross-implementation
-identity fixtures (never `contract`), the meta-rules CONF-2 and CONF-3, artifact inspection
-with a positive control, and isolation or scoping properties a stateful fixture could neither
-prove nor disprove. A `provisional` row names what the shared contract fixture would change.
-
-**On the `live` rows.** They run against a local nova (`langsys2.test`) with the seeded
-per-SDK fixture project, which survives `migrate:fresh --seed` because every id and raw key
-is a fixed constant — re-runnable on demand, which is the CONF-2 bar. They assert **HTTP
-acceptance only** for registration: the local stack runs with its queue workers down on
-purpose, so a POST is enqueued and never processed, and asserting catalog contents after a
-write would fail for a reason unrelated to this SDK.
-
-**No row claims `contract`.** The shared stateful contract fixture does not exist.
+**Evidence tiers** follow CONF-2: a tier describes the evidence for the property the rule
+governs. `contract` rows run against the shared contract double — `contract-fixture/` from
+langsys-js-typescript, vendored byte-exact (tree `542f57f5`), started once per test file —
+and assert on a status the SDK reports or on accepted state read back, never on what was
+sent. Where a row turns on holding back, the capability drifts after the SDK has learned it
+must not act, and a control acts in the drifted world. `live` rows run against a local nova
+(`langsys2.test`) with the seeded per-SDK project; they assert HTTP acceptance only for
+registration, because the local stack runs its queue workers down. `n/a (pure)` covers
+in-process behaviour, cross-implementation vector files, meta-rules, and isolation
+properties.
 
 ---
 
@@ -147,55 +60,53 @@ write would fail for a reason unrelated to this SDK.
 
 Counted by `_dev_/conformance_counts.py`, which exits non-zero on a rule id unaccounted for,
 unknown or claimed twice, a range where one id belongs, a word outside the vocabulary, a
-status/tier pairing the vocabulary forbids, or a header naming a different blob. Run it
-rather than trusting this table.
+status/tier pairing the vocabulary forbids, or a header naming a different blob.
 
-| Status | Tier | Count | Rules |
-|---|---|---|---|
-| implemented | live | 6 | GATE-1, REG-1, REG-10, WIRE-1, WIRE-3, WIRE-4 |
-| implemented | n/a (pure) | 35 | GATE-3, GATE-4, GATE-8, CAT-1–3, REG-2, REG-3, REG-6, REG-7, REG-11, REG-12, HINT-2, ICU-1–5, CID-1–4, SRV-1, SRV-2, SRV-5, CACHE-1, OBS-1, WIRE-2, WIRE-5, TOK-1, TOK-5, MARK-1, MARK-2, CONF-2, CONF-3 |
-| provisional | mock | 5 | GATE-2, GATE-5, REG-8, REG-9, CONF-1 |
-| partial | — | 4 | GATE-7, SRV-3, TOK-3, TOK-4 |
-| held (strip ruling) | — | 1 | TOK-2 |
-| n/a (architecture) | — | 2 | GATE-6, SRV-4 |
-| n/a (profile) | — | 26 | REG-4, REG-5, HINT-1, HINT-3–12, SSR-1–3, BIND-1–6, GRANT-1–4 |
-| **total** | | **79** | 53 bind (`all` + `server`) |
+| Status | Tier | Count |
+|---|---|---|
+| implemented | n/a (pure) | 57 |
+| implemented | contract | 15 |
+| implemented | live | 6 |
+| not implemented | — | 1 (MIG-9: waits on the 907 endpoint) |
+| n/a (architecture) | — | 5 (GATE-6, SRV-4, MSG-9, MSG-10, MSG-12) |
+| n/a (profile) | — | 29 |
+| **total** | | **113** |
 
-**Not green, and each blocker has an owner.** `provisional` ×5 waits on the CONF-2 shared
-contract fixture (fleet). `held` ×1 waits on the strip ruling (operator). Of the four
-`partial` rows, GATE-7, TOK-3 and TOK-4 wait on the registration-shape ruling (operator), and
-SRV-3 on the operator's ruling on a request-scope seam, which adds public calls to the core and
-is being decided for Ruby at the same time. `delegated` is a binding status and appears on no row of a core.
+**Not green by one row**, MIG-9, whose endpoint arrives with the 907 merge. No row is
+`provisional`, `partial` or held.
 
 ## Status
 
 | Rule | Status | Tier | Evidence |
 |---|---|---|---|
-| GATE-1 | implemented | live | `test_integration::test_GATE1_the_write_key_is_write_enabled`, `…_the_read_key_is_not_write_enabled`, `…_an_ip_write_key_is_write_enabled_from_an_allow_listed_address`, `…_write_enabled_is_on_both_endpoint_shapes`, against the local nova. Discriminating unit vector, `key_type` and `write_enabled` disagreeing: `test_gating::test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register` and `…_an_ip_write_key_that_is_write_enabled_does_register`; recency precedence in both directions (`test_gating::test_PRECEDENCE_*`). Mutation: `client.py::_decide`, the `isinstance(flag, bool)` branch disabled so `key_type` decides → both discriminating tests red |
-| GATE-2 | provisional | mock | `test_registration_lane` GATE-2 block: an authorize failure HOLDS the queue and arms backoff; a server *no* still discards; the held queue is accepted by the recovering flush (`…_the_queue_survives_to_the_recovering_flush`); `ip_write` protected. Asserts on queue state and acceptance, never on the call. **Waits on: CONF-2 shared contract fixture** — a double that fails authorize, recovers, and holds what it accepted would show the held phrase landing on a second read. Mutation: `client.py::_flush_locked`, `decision = self._resolve_write_enabled() is True` (unknown collapsed to False) → `test_GATE2_a_transient_authorize_failure_holds_the_queue` red |
-| GATE-3 | implemented | n/a (pure) | Scoping, which a stateful fixture could neither prove nor disprove: `test_gating::test_GATE3_the_decision_is_not_latched_in_memory_either`, `…_an_address_dependent_decision_is_never_inherited_from_a_warm_store`, `…_reset_write_decision_clears_an_observed_answer`, `…_reset_does_not_disturb_cached_project_metadata`. Mutations: `client.py::reset_write_decision` keeps `_observed_decision` → the reset test red; `client.py::authorize` builds `Project` from the unstripped payload → the not-latched test red. The request-boundary reset is a wrapper obligation, **not yet discharged** — see *Declared obligations* |
-| GATE-4 | implemented | n/a (pure) | Artifact inspection with a positive control: `test_gating::test_GATE4_write_enabled_is_stripped_before_anything_is_cached` asserts `key_type` survives in the cache and `write_enabled` does not. Live corroboration: `test_integration::test_GATE4_the_decision_never_reaches_the_cache`. Mutation: `client.py::_without_write_decision` returns the payload unchanged → named test red |
-| GATE-5 | provisional | mock | `test_gating::test_GATE5_a_failed_registration_keeps_the_queue` (a 500 leaves the queue), `…_the_queue_clears_only_after_the_server_accepts`, `…_no_persistent_registered_marker_is_written` — state after refusal and after acceptance; this SDK has no "already registered" store. **Waits on: CONF-2 shared contract fixture** — the second read the rule names, observing whether the first write landed. Mutation: `client.py::_flush_locked`, the failure branch calls `clear_pending()` → `…_keeps_the_queue` red |
-| GATE-6 | n/a (architecture: no report lane exists, per HINT-2; live if one is ever added) | - | The register half is REG-1's gate. The report half cannot fail because nothing here reports — HINT-2's test proves that against a double willing to accept a hint |
-| GATE-7 | partial | n/a (pure) | **Registration half, every entry point:** `translate()` (`test_wire4_degradation::test_CONTROL_translate_queues_a_miss_when_the_catalog_fetch_succeeds`), `translate_content_block` (`test_html::test_translate_content_block_queues_when_missing`, `test_wire4_degradation::test_CONTROL_content_block_queues_when_the_catalog_fetch_succeeds`), page-path blocks and phrases (`test_spec_801::test_SRV5_*`). No path can feed both lanes: there is no report lane (HINT-2). Mutations: each of the three queue calls (`client.py::translate`, `client.py::translate_content_block`, `page.py::_apply_or_queue_block`) replaced by `pass` → its named test red. **Partial: the page path leaves measured content feeding NEITHER lane** — a top-level void or inline element and its attributes, a leaf block host's own translatable attributes, and top-level bare text, links, `<textarea>` and `<select>` (see *Page path, measured*). Held with TOK-3 and TOK-4 on the registration-shape ruling |
-| GATE-8 | implemented | n/a (pure) | Interpreting an absent field is in-process. `test_gating` GATE-8 block: fallback only on true absence, never for `ip_write` or `read`, re-evaluated per response, a live `false` honoured on the first call, both warm-cache directions. Mutations: `client.py::_decide` infers for `ip_write` → `test_GATE8_absent_flag_is_never_inferred_for_a_non_plain_write_key` red; the warm-cache `ip_write` branch allowed the fallback → `test_GATE8_ip_write_on_a_warm_cache_is_false_when_the_server_omits_the_field` red |
-| CAT-1 | implemented | n/a (pure) | `test_translate::test_null_value_falls_back_to_base_and_not_missing` (present-with-null is not a miss), `…_absent_phrase_is_missing`; `test_client::test_translate_hit_and_fallbacks` (null not queued, absent queued). Mutation: `translate.py::resolve`, `if phrase in cat` → `if cat.get(phrase)` → the null test red |
-| CAT-2 | implemented | n/a (pure) | `test_translate::test_empty_value_falls_back_to_base` — present, not a miss, and displays the source rather than `""`. Mutation: `translate.py::resolve` drops `raw != ""` → named test red |
-| CAT-3 | implemented | n/a (pure) | `test_translate::test_CAT3_a_registered_untranslated_block_is_known_not_missing` — a block whose inner phrases are null is not queued again and displays the source; control: an absent block queues. Non-ASCII vector, because for ASCII the legacy code-unit hash equals the current id and masks the defect. Mutation: `translate.py::lookup_block` requires a non-null inner value → named test red |
-| REG-1 | implemented | live | `test_integration::test_REG10_a_read_key_flush_reports_failure_rather_than_success` — the real server answers `write_enabled: false` for the read key and the flush returns `skipped` without sending. Unit: `test_gating::test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register` (no POST reaches the double). Mutation: `client.py::_flush_locked`, `if decision is False` → `if False` → named unit test red |
-| REG-2 | implemented | n/a (pure) | In-process timing. `test_registration_lane::test_REG2_a_burst_of_misses_becomes_one_request`, `…_the_debounce_is_a_real_send_path_not_just_a_helper`, `…_a_declining_flush_leaves_a_timer_armed`; control: with the debounce off nothing sends by itself. Mutations: `client.py::_schedule_flush` returns early → both burst tests red; the re-arm in `flush_pending`'s outer `finally` removed → the re-arm test red. The debounce is also what sends mid-render on a long server render — recorded on SRV-3 |
-| REG-3 | implemented | n/a (pure) | The automatic flush is on by default and forced past backoff; the public `flush_pending()` stays because the automatic path is best-effort. `test_registration_lane::test_REG3_*`. Mutations: `client.py::__init__` stops registering `_auto_flush` → `…_the_end_of_context_flush_is_registered_by_default` red; `_auto_flush` passes `force=False` → `…_forces_past_an_active_backoff` red. The per-request flush is a wrapper obligation |
+| GATE-1 | implemented | live | `test_integration::test_GATE1_*` against the local nova, all three key types. Contract: `test_contract::test_GATE1_an_allow_listed_ip_write_session_registers` (key type says no, server computes yes) and `…_a_session_told_no_sends_nothing_even_once_the_world_would_accept` (drift: the allow-list widens after the SDK learned no; control acts in the drifted world). Mutations: `client.py::_decide` ignores the flag → both unit and contract presence tests red; `_flush_locked` sends despite a server no → the drift test red |
+| GATE-2 | implemented | contract | `test_contract::test_GATE2_an_unknown_answer_holds_the_queue_until_the_server_can_say_yes` — an authorize fault holds the queue; the recovering flush lands it in accepted state. Unit: `test_registration_lane::test_GATE2_*`. Mutation: `client.py::_flush_locked` collapses unknown to False → both red |
+| GATE-3 | implemented | n/a (pure) | Scoping a stateful fixture cannot observe: `test_gating::test_GATE3_*` (not latched in memory, not inherited from a warm store, `reset_write_decision()` clears it and keeps metadata). Mutations: the reset keeps the answer; `Project` built from the unstripped payload → named tests red. The request-boundary reset is the wrappers' (*Declared obligations*) |
+| GATE-4 | implemented | n/a (pure) | Artifact inspection with a control: `test_gating::test_GATE4_write_enabled_is_stripped_before_anything_is_cached`; live corroboration `test_integration::test_GATE4_the_decision_never_reaches_the_cache`. Mutation: `_without_write_decision` returns the payload → red |
+| GATE-5 | implemented | contract | `test_contract::test_GATE5_a_refused_send_is_not_recorded_as_done_and_lands_on_the_second_read` — a refused send leaves no state and keeps the queue; the retry lands. No "already registered" store exists (`test_gating::test_GATE5_no_persistent_registered_marker_is_written`). Mutation: the failure branch clears the queue → red |
+| GATE-6 | n/a (architecture: no report lane exists, per HINT-2; live if one is ever added) | - | The register half is REG-1's gate; the report half cannot fail because nothing here reports (HINT-2's test proves that against a double willing to accept a hint) |
+| GATE-7 | implemented | contract | `test_contract::test_GATE7_every_entry_point_lands_its_misses` — `translate`, `translate_content_block` and `translate_page` each land in accepted state. The page path's units cover top-level void and inline elements and a leaf's own attributes (TOK-6); nothing it detects feeds neither lane, and nothing can feed two (no report lane). Mutations: each of the four queue sites replaced by `pass` → named tests red |
+| GATE-8 | implemented | contract | `test_contract::test_GATE8_a_legacy_server_falls_back_to_key_type_for_the_plain_write_arm`, `…_absence_is_never_permission_for_ip_write` (the double would accept, so the empty state is evidence). Unit: `test_gating` GATE-8 block. Mutations: inference for `ip_write`, and the warm-cache fallback for it → red |
+| GATE-9 | n/a (profile: browser) | - | A locale gate on a browser session's misses. A server render is GATE-10's producer instead |
+| GATE-10 | implemented | n/a (pure) | **Producing half** (the server profile's): `test_request_locale::test_GATE10_a_render_off_the_base_locale_marks_its_root_resolved`; the base-locale render and an unknowable base stay unmarked. The reading half is browser/binding. Mutations: never mark; mark every render → named tests red |
+| CAT-1 | implemented | n/a (pure) | `test_translate::test_null_value_falls_back_to_base_and_not_missing`, `…_absent_phrase_is_missing`. Mutation: truthiness instead of presence → red |
+| CAT-2 | implemented | n/a (pure) | `test_translate::test_empty_value_falls_back_to_base`. Mutation: display `""` → red |
+| CAT-3 | implemented | n/a (pure) | `test_translate::test_CAT3_a_registered_untranslated_block_is_known_not_missing` (non-ASCII, where the legacy hash cannot rescue a broken lookup). Mutation: a null-valued block reads as unknown → red |
+| REG-1 | implemented | n/a (pure) | A never-attempt clause, proven at the transport seam: `test_gating::test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register`; live corroboration `test_integration::test_REG10_a_read_key_flush_reports_failure_rather_than_success`. Mutation: send despite `decision is False` → red |
+| REG-2 | implemented | n/a (pure) | `test_registration_lane::test_REG2_*` — a burst is one request; the debounce is a real send path; a declining flush re-arms it. Mutations: never schedule; no re-arm → red |
+| REG-3 | implemented | n/a (pure) | `test_registration_lane::test_REG3_*` — on by default, forced past backoff, releases request-scoped misses (`test_server_render::test_SRV3_an_unended_scope_holds_its_misses_until_the_shutdown_flush`). Mutations: not registered; not forced; held misses left behind → red |
 | REG-4 | n/a (profile: browser) | - | No page teardown exists |
 | REG-5 | n/a (profile: browser) | - | No page teardown exists |
-| REG-6 | implemented | n/a (pure) | `test_registration_lane::test_REG6_a_miss_recorded_during_a_send_is_not_dropped`. Mutation: `client.py::_flush_locked` clears the live queue instead of the sent keys → named test red |
-| REG-7 | implemented | n/a (pure) | `test_registration_lane::test_REG7_only_one_send_is_in_flight_at_a_time`, `…_declining_keeps_the_queue_for_the_next_flush`. Mutation: `client.py::__init__`, `_sending = threading.Semaphore(2)` → both red |
-| REG-8 | provisional | mock | A refused send keeps the queue and arms 3s → doubling → 300s; nothing sends while backing off; the first accepted send resets it. `test_registration_lane::test_REG8_*`. The timing is in-process; the property that matters — a refused batch eventually lands — depends on what the server answers. **Waits on: CONF-2 shared contract fixture** (refuse, accept, then a second read showing the retried batch). Mutations: backoff guard disabled → `…_while_backing_off_nothing_is_sent` red; reset decays by half → `…_backoff_resets_on_the_first_success` red; ceiling removed → `…_the_backoff_doubles_and_stops_at_the_ceiling` red |
-| REG-9 | provisional | mock | **Acceptance-shaped:** `test_gating::test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item` — a local double refuses any batch over the server's limit and keeps what it accepted; the assertion is on what it ends up holding. Also `…_the_batch_limit_comes_from_the_server` and `…_content_blocks_are_batched_into_one_post`. Every path: the phrase flush, `register_phrases`, and the block flush that page-path blocks share. **Waits on: CONF-2 shared contract fixture**, which enforces the real limit. Mutations: `registration.py::Registrar.__init__` hardcodes 200 → both limit tests red; `client.py::_flush_locked` posts blocks one at a time → the batching test red |
-| REG-10 | implemented | live | `test_integration::test_REG10_a_read_key_flush_reports_failure_rather_than_success`; unit `test_gating::test_REG10_*` (a skip is not success, an empty queue is an honest success, a transport failure does not throw). Mutations: the not-write-enabled result reports `success: True` → `…_a_skipped_write_is_not_reported_as_success` red; the send catches `ApiError` only → `…_flush_does_not_throw_when_registration_fails` red |
-| REG-11 | implemented | n/a (pure) | `test_registration_lane::test_REG11_*` — warns naming the phrase, still registers without a second signal, suppresses only when a longer catalog entry shares the prefix, deduplicated. Mutations: `client.py::_ellipsis_suppresses` returns `False` → the suppression test red; returns `True` → the still-registers test red |
-| REG-12 | implemented | n/a (pure) | **Both places that decide, agreeing.** Translate path, structural: `test_translate::test_REG12_a_nested_map_is_a_content_block_never_a_missing_phrase`, `…_a_phrase_shaped_like_a_hash_is_still_a_phrase`. Sync path, presence: `…_presence_and_structure_agree_on_the_sync_path` — text equal to a block id is known to `sync()` exactly as it is to `translate()`. That test landed first as a strict xfail pinning the measured divergence (`_existing_keys` recorded a block's children but never its own key, so `sync()` re-registered the text on every call), then the fix. Mutations: `translate.py::resolve` treats a nested map as missing → the first red; a 32-hex shape test added → the second red; `client.py::_existing_keys` records the key only for non-block values → the sync test red |
-| HINT-1 | n/a (profile: browser) | - | Reports begin at `window.location`; a server SDK never reports (HINT-2) |
-| HINT-2 | implemented | n/a (pure) | `test_server_render::test_HINT2_a_server_sdk_never_reports_across_a_whole_render[False]` and `[True]` — `translate`, `translate_content_block`, `translate_page` and a flush, against a double that **will** accept a hint: no request reaches a hint or discovery path, with positive controls that the render reached both the catalog and authorize. Mutation: `client.py::_flush_locked` posts `discovery/hint` when the session cannot write → `[False]` red |
+| REG-6 | implemented | n/a (pure) | `test_registration_lane::test_REG6_a_miss_recorded_during_a_send_is_not_dropped`. Mutation: clear the live queue → red |
+| REG-7 | implemented | n/a (pure) | `test_registration_lane::test_REG7_*`. Mutation: two sends in flight → red |
+| REG-8 | implemented | contract | `test_contract::test_REG8_nothing_is_sent_while_backing_off_though_the_server_would_accept` — the fault is consumed by the first send, so an in-backoff send would land; state stays empty, and the forced control lands. The clock lives on the client, which a server process holds across requests, one per project. Unit: `test_registration_lane::test_REG8_*` (3s doubling to 300s, reset on success). Mutations: no backoff; decaying reset; no ceiling → red |
+| REG-9 | implemented | contract | `test_contract::test_REG9_the_double_enforces_the_limit_and_holds_every_item` — the double refuses over-limit batches (422); every item lands. Mutations: hardcode 200; one POST per block → red |
+| REG-10 | implemented | live | `test_integration::test_REG10_a_read_key_flush_reports_failure_rather_than_success`; contract `test_contract::test_REG10_a_read_only_flush_is_reported_as_failure` with a write-key control. Mutations: a skip reported as success; a transport failure escapes → red |
+| REG-11 | implemented | n/a (pure) | `test_registration_lane::test_REG11_*`. Mutations: never / always suppress → opposite tests red |
+| REG-12 | implemented | n/a (pure) | `test_translate::test_REG12_*` — a nested map is a block on the translate path, a hash-shaped phrase is a phrase, and `sync()` agrees with `translate()` about text equal to a block id. Mutations: structure lost; 32-hex shape test; sync forgets the block's own key → red |
+| REG-13 | implemented | n/a (pure) | `test_cache2::test_REG13_a_miss_is_not_decided_before_the_first_catalog_read_settles` — the first read delayed past three debounce windows; the candidate set stays empty. Met by construction: the catalog is read before any miss is decided. Mutation: record the miss before the read → red |
+| HINT-1 | n/a (profile: browser) | - | |
+| HINT-2 | implemented | n/a (pure) | `test_server_render::test_HINT2_a_server_sdk_never_reports_across_a_whole_render[False]`/`[True]` — against a double that would accept a hint, no hint or discovery request is made, with controls that the render reached catalog and authorize. Mutation: post a hint when the session cannot write → red |
 | HINT-3 | n/a (profile: browser) | - | |
 | HINT-4 | n/a (profile: browser) | - | |
 | HINT-5 | n/a (profile: browser) | - | |
@@ -205,209 +116,166 @@ is being decided for Ruby at the same time. `delegated` is a binding status and 
 | HINT-9 | n/a (profile: browser) | - | |
 | HINT-10 | n/a (profile: browser) | - | |
 | HINT-11 | n/a (profile: browser) | - | |
-| HINT-12 | n/a (profile: browser) | - | Its server mirror is the langsys backend (`ContentDiscoveryHintService`), not a server SDK |
-| ICU-1 | implemented | n/a (pure) | `test_icu_recovery::test_ICU1_*` — a missing `select` or `plural` renders `other`; a node with no `other` is left to normal handling; a supplied value still wins. Mutation: `interpolate.py::_recover` finds no `other` branch → `…_missing_select_argument_renders_the_other_branch` and `…_missing_plural_argument_renders_the_other_branch` red |
-| ICU-2 | implemented | n/a (pure) | `test_icu_recovery::test_ICU5_the_ICU3_marker_survives_a_present_but_null_count` and `…_a_plain_argument_that_is_null_stays_visible` are the vectors that discriminate; `test_ICU2_*` are select-shaped and pass whether null counts as missing or as an unmatched value, since both land on `other`. Mutation: `interpolate.py::_render_arg` treats null as supplied → both discriminating tests red |
-| ICU-3 | implemented | n/a (pure) | `test_icu_recovery::test_ICU3_*` — `#` in a recovered plural prints `{n}`, never `0`; recursion into nested and supplied branches. Mutation: `interpolate.py::_recover` passes `hash_literal=None` → `test_ICU3_hash_in_a_recovered_plural_prints_the_argument_name` red |
-| ICU-4 | implemented | n/a (pure) | `test_icu_recovery::test_ICU4_*` — one debug notice naming every defaulted argument and the locale, deduplicated per `(template, locale)`, again per locale, silent when debug logging is off. Mutations: `interpolate.py::interpolate` skips `_notice_recovery` → `…_emits_a_notice_naming_the_argument_and_the_locale` red; `_notice_recovery` drops its dedup → `…_deduplicates_per_template_and_locale` red |
-| ICU-5 | implemented | n/a (pure) | `test_icu_recovery::test_ICU5_*` — Polish `one`/`few`/`many` survive a co-present missing argument on distinct branch text; the ICU-3 marker survives a present-but-null count. Mutation: `interpolate.py::interpolate` routes a recovered template through `_simple` → `test_ICU5_missing_select_does_not_degrade_the_supplied_plural` red |
-| CID-1 | implemented | n/a (pure) | Cross-implementation identity fixture `custom-id-reference.json` (blob `60dc9b33…`): 13/13 rows on codepoints, bytes (`serialized_hex`), canonical JSON and hash, through the function the implementation hashes. Mutations: `registration.py::canonical_content_block_json` with default separators → `test_custom_id::test_CID1_serialized_bytes_match_the_fixture` and `…_custom_id_matches_the_fixture` red; with `ensure_ascii=True` → `…_the_line_terminator_row_is_present_and_raw` red |
-| CID-2 | implemented | n/a (pure) | `test_custom_id::test_CID2_*`, enforced in the id function and at its callers. Mutation: `registration.py::_hash_category` hashes the sentinel → `test_CID2_none_and_the_sentinel_and_empty_all_hash_as_empty` red |
-| CID-3 | implemented | n/a (pure) | `test_custom_id::test_CID3_*`; `test_legacy_custom_id` — 20 vectors executed against the real JS implementation (`legacy-custom-id-reference.json`, blob `dc555646…`); `test_registration` resolves a live-observed pre-correction id. Mutations: `registration.py::legacy_custom_ids` offers one uncategorised slot → `…_uncategorised_offers_both_historical_spellings` and `test_legacy_custom_id::test_both_uncategorised_spellings_are_offered_on_lookup` red; a byte hash where the code-unit hash belongs → `…_the_js_code_unit_form_is_offered_for_ascii_and_non_ascii` red; `Registrar._content_block_item` emits a legacy id → `…_the_current_form_is_the_only_one_ever_emitted` red |
-| CID-4 | implemented | n/a (pure) | `test_custom_id::test_CID4_*` — a legacy hit with matching content attaches and does not re-register; with differing content it is declined and registers cleanly. Mutation: `translate.py::lookup_block` skips the content check → `…_a_legacy_id_whose_content_differs_is_declined` red |
-| SSR-1 | n/a (profile: browser) | - | The families table assigns SSR to the browser SDK's module instance under server rendering |
+| HINT-12 | n/a (profile: browser) | - | Its server mirror is the langsys backend, not a server SDK |
+| HINT-13 | n/a (profile: browser, binding) | - | |
+| ICU-1 | implemented | n/a (pure) | `test_icu_recovery::test_ICU1_*`, `test_ICU1_ICU2_recovery_is_normal_and_never_raises_the_formatter_failure_warning` (a node with no `other` recovers through ICU-6 to the visible `{name}`); shared vectors `test_interpolation_vectors` (blob `017bffdd`). Mutation: `_recover` finds no `other` → the silence test red |
+| ICU-2 | implemented | n/a (pure) | `test_icu_recovery::test_ICU1_ICU2_…[null-count]`, `test_ICU5_a_plain_argument_that_is_null_stays_visible`; the vectors' null rows. Mutation: null counts as supplied → red |
+| ICU-3 | implemented | n/a (pure) | `test_icu_recovery::test_ICU3_*`. Mutation: `#` left unreplaced → red |
+| ICU-4 | implemented | n/a (pure) | `test_icu_recovery::test_ICU4_*` — debug-only, deduplicated per `(template, locale)`. Mutations: silent; not deduplicated → red |
+| ICU-5 | implemented | n/a (pure) | `test_icu_recovery::test_ICU5_*`. Mutation: a recovered template through the simple renderer → red |
+| ICU-6 | implemented | n/a (pure) | The shared vector renders natively (`test_interpolation_vectors`, both rows; `test_icu_recovery::test_ICU6_control_the_shared_vector_renders_natively_and_warns_nothing`). **Forced failures** (`test_ICU6_a_phrase_the_formatter_cannot_render_goes_through_branch_selection[*]`): an unsupported type, unbalanced braces, no branch for the value, a nested missing value — branch selection, never `""` or raw syntax; one WARNING per `(template, locale)` with debug off, naming phrase, locale and error. Mutations: degrade to simple; no warning; debug level; no dedup; `""` for no branch; unsupported kinds left on the simple path → named tests red |
+| CID-1 | implemented | n/a (pure) | `custom-id-reference.json` (blob `60dc9b33`): 13/13 on codepoints, bytes, canonical JSON and hash. Mutations: default separators; `ensure_ascii=True` → red |
+| CID-2 | implemented | n/a (pure) | `test_custom_id::test_CID2_*`. Mutation: the sentinel hashed as a category → red |
+| CID-3 | implemented | n/a (pure) | `test_custom_id::test_CID3_*`; `legacy-custom-id-reference.json` (blob `dc555646`, 20 vectors executed against the JS core); a live-observed pre-correction id. Mutations: one uncategorised spelling; a byte hash for the code-unit one; emitting a legacy id → red |
+| CID-4 | implemented | n/a (pure) | `test_custom_id::test_CID4_*`. Mutation: attach without verifying content → red |
+| TOK-1 | implemented | n/a (pure) | Exclusions and svg on every path: fixture rows `style-`/`script-`/`noscript-`/`math-subtree`, `svg-inline-icon` on block AND page path; standalone and inline svg translated in place with `<path>` intact; `<template>` load-bearing on lxml (`test_spec_801::test_TOK1_template_exclusion_is_load_bearing_on_lxml`). Mutations: each exclusion removed; svg as a block element → red |
+| TOK-2 | implemented | n/a (pure) | The enumerated collapse set, trimmed with the same set, and **the 28 C0 controls removed before collapse** on markup and `translate()` keys: `test_spec_801::test_TOK2_*` on the function (all 28 removed not mapped; TAB/LF/CR collapse; NUL, DEL, NEL kept; strip→collapse→trim order; `t()` keys stripped on lookup and register); fixture rows `fs-in-text`, `vt-in-text`, `tab-in-text`, `del-in-text`, `fs-in-attr` (the discriminating DOM row) on both paths; `test_canonicalization::test_TOK2_markup_carrying_a_c0_control_renders_instead_of_raising`. Residuals bound to libxml2 in *Parser model*. Mutations: FEFF dropped; NEL added; Python's trim; C0 mapped to space; VT/FF left to collapse; no strip; `t()` keys unstripped; every node rewritten → named tests red |
+| TOK-3 | implemented | n/a (pure) | The twenty-seven in order (`test_canonicalization::test_TOK3_*`); all seven attribute fixture rows on block AND page path. Mutations: first two swapped; `data-bs-title` dropped → red |
+| TOK-4 | implemented | n/a (pure) | `test_canonicalization::test_TOK4_*`; `attr-multiline`/`attr-nbsp` on both paths; lookups pinned per shape on both paths (`test_spec_801::test_CONF1_attribute_lookup_on_the_*_path`). Mutation: trim without collapse → red |
+| TOK-5 | implemented | n/a (pure) | Both forms interpolate (`test_canonicalization::test_TOK5_*`); `%name%` normalises to `{name}` at capture on every path and in lookups (`test_spec_801::test_TOK5_*`); `percent-name-in-markup` = `brace-name-in-markup` on both paths. Mutations: capture unconverted; interpolation ignores `%name%` → red |
+| TOK-6 | implemented | n/a (pure) | `test_canonicalization::test_TOK6_the_page_path_registers_each_unit_in_its_shape[*]` and `…_the_block_path_registers_the_fragment_in_its_shape[*]` — `<p>Hello</p>` a phrase, `<p title>` a block `[Tooltip, Hello]`, top-level `<img alt>` and `<button data-confirm>` blocks, svg-only a phrase, `<p>Hello <b>bold</b></p>` a block (control); **all 32 fixture rows through `translate_page`** (`…_every_fixture_row_tokenizes_identically_on_the_page_path`); in-place rendering of a phrase unit and a void block. Mutations: all phrase; single attribute token a phrase; all block; inline elements descended; own attributes dropped → named tests red |
+| MARK-1 | implemented | n/a (pure) | `test_canonicalization::test_MARK1_*` — block and page paths, miss and hit, declared hosts, re-derived by the tokenizer; the stamp leaves the markup verbatim. Mutations: unstamped miss; page blocks unstamped → red |
+| MARK-2 | implemented | n/a (pure) | Both spellings on read, one reader for every path (`parser.py`). A phrase host registers **whole** (`test_MARK2_a_js_rendered_phrase_host_is_not_re_split_on_the_page_path`), inline markup as `{mNo}…{mNc}` in the `<Phrase>` wire format (`…_a_phrase_host_with_markup_registers_as_one_string[*]`), rebuilt around its elements (`…_translation_keeps_its_markup_where_the_tokens_now_sit`); `false`/`0` ignores the marker. Mutations: each spelling dropped (four); host excised instead of registered; markup not encoded; markup lost on render; `false` still marks → red |
+| MARK-3 | implemented | n/a (pure) | `test_canonicalization::test_MARK3_*`, both spellings, both paths — bare/`""`/`true`/`1`/`YES` one block with one id (a declaration outranks the phrase shape); `0`/`false` register the content as its units; `abc123`/`no`/`off` render the catalog entry under the id and register nothing; source kept with no entry. Mutations: bare opts out; `true` an identity; `no`/`off` opt out; `false` no longer opts out; identity not rendered; identity registered; declaration yields to the phrase shape → red |
+| MARK-4 | implemented | n/a (pure) | `test_canonicalization::test_MARK4_nested_hosts_are_excised_and_each_registers_once_on_its_own[block]`/`[page]`; control `…_an_opted_out_nested_block_folds_into_the_outer_tokens`; `…_excision_moves_the_outer_id`. Mutations: declared host folded; nested hosts never processed; opted-out marker excised → red |
+| SSR-1 | n/a (profile: browser) | - | The families table assigns SSR to the browser SDK's module instance |
 | SSR-2 | n/a (profile: browser) | - | As SSR-1 |
 | SSR-3 | n/a (profile: browser) | - | As SSR-1 |
-| SRV-1 | implemented | n/a (pure) | Serving a held catalog is in-process: `test_server_render::test_SRV1_the_served_output_carries_the_request_locale_translation`, and a phrase absent from the same render emits base and queues. Live corroboration: `test_integration::test_real_translation` serves the seeded `es-es` catalog. Mutation: `client.py::translate` resolves against `{}` → named test red |
-| SRV-2 | implemented | n/a (pure) | Isolation: `test_server_render::test_SRV2_concurrent_locales_do_not_observe_each_others_catalog` (two concurrent renders, widened interleave), `…_no_process_global_holds_per_request_translation_state`. Mutation: `client.py::translate` holds the fetched catalog on the instance across a 50ms window → the concurrent test red |
-| SRV-3 | partial | live | **Read-only half:** `test_integration::test_REG10_a_read_key_flush_reports_failure_rather_than_success` (the real server's `false`, nothing sent); unit `test_server_render::test_SRV3_a_read_only_key_pushes_nothing` with a write key on the same render as the positive control. **Render-call half:** `…_collection_does_not_happen_on_the_render_call` (the double can accept a registration, so an inline flush would show), `…_the_send_happens_off_the_render_call`. Mutations: `client.py::_queue_missing` flushes inline → both render-call tests red; `if decision is False` disabled → the read-only test red. **The order of events fails, measured twice:** a render that outlasts the 0.4s debounce has its misses POSTed before the response exists (Django lane; reproduced as strict xfail `…_a_miss_is_not_sent_before_a_render_longer_than_the_debounce_has_responded`, events `posted, rendered, response-returned`); and with no timer, one request's flush drains another in-flight request's misses (FastAPI lane; strict xfail `…_one_requests_flush_does_not_send_another_in_flight_requests_misses`, events `quick-response, posted [Held miss, Quick miss], held-response`). The core seam is the operator's call — *Held and awaiting a decision*. No wrapper row exists: `langsys-python-django` and `langsys-python-fastapi` carry no CONFORMANCE.md yet |
-| SRV-4 | n/a (architecture: terminal-HTML server SDK, no hydration hand-off; live if this SDK ever emits a client seed) | - | `translate_page()` returns a finished page and nothing hydrates against it; 8.0.1 scopes the rule to SDKs in a hydration hand-off |
-| SRV-5 | implemented | n/a (pure) | **Once-per-subtree half, measured:** `test_spec_801::test_SRV5_a_depth_3_nested_phrase_is_registered_exactly_once` and `…_block_…` count registration CALLS, because the queue is a dict and would hide duplicates. **Fail-loudly half:** n/a on mechanism — no component model, so no `lazy`/`Suspense` child exists to capture. Mutation: `page.py::_walk` calls `_translate_leaf` twice → both tests red |
+| SRV-1 | implemented | n/a (pure) | `test_server_render::test_SRV1_*`; live corroboration `test_integration::test_real_translation`. Mutation: resolve against `{}` → red |
+| SRV-2 | implemented | n/a (pure) | `test_server_render::test_SRV2_*` — concurrent `it`/`de` renders with a widened interleave. Mutation: the catalog held on the instance across the lookup → red |
+| SRV-3 | implemented | live | **Order of events**, with `langsys.begin_request_scope()`/`end_request_scope()`/`request_scope()`: `test_server_render::test_SRV3_a_miss_is_not_sent_before_a_render_longer_than_the_debounce_has_responded`, `…_one_requests_flush_does_not_send_another_in_flight_requests_misses` (event-ordered, no timer), `…_scopes_are_per_asyncio_task`, `…_a_client_built_during_the_request_joins_its_scope`, `…_either_request_that_recorded_a_miss_releases_it`, `…_a_miss_outside_any_scope_keeps_the_debounce`. **Read-only half**: `test_integration::test_REG10_…` against the real server; `test_SRV3_a_read_only_key_pushes_nothing` with a write-key control. Mutations: scope ignored at record; a flush takes held items; every scope must end; a free miss held; end does not wake the debounce; shutdown leaves held misses; collect on the render call; push from a read-only key → named tests red |
+| SRV-4 | n/a (architecture: terminal-HTML server SDK, no hydration hand-off; live if this SDK ever emits a client seed) | - | `translate_page()` returns a finished page; nothing hydrates against it |
+| SRV-5 | implemented | n/a (pure) | Once-per-subtree, counted in calls: `test_spec_801::test_SRV5_a_depth_3_nested_*_is_registered_exactly_once`. The fail-loudly half is n/a on mechanism: no component model, so no uncapturable child. Mutation: every unit processed twice → red |
+| SRV-6 | implemented | n/a (pure) | `test_request_locale::test_SRV6_*` — the spec's four requests (URL wins with no `Vary`; cookie wins with `Vary: Cookie`; header with `Vary: Accept-Language`; an unsupported cookie falls through and is not re-set), validation of every candidate, the project's own locales read from the contract double. When authorization is unavailable, a loaded snapshot's base and locales are the served set (`test_snapshot::test_SRV6_offline_*`), and with no snapshot only the configured base. Mutations: header before cookie; URL or cookie unvalidated; no `Vary`; an unreadable project serves what was asked; a snapshot's locales not served offline → red |
+| MSG-1 | implemented | n/a (pure) | `server-message-vectors.json` (blob `c8125549`): every `resolve` row (`test_messages::test_MSG1_entry_resolution_matches_the_vectors[*]`); a foreign envelope through a resolver equals the default envelope. Mutations: an entry without a template; params searched; the key ignored → red |
+| MSG-2 | implemented | n/a (pure) | The 21-code vocabulary; `size_code` by field type; the wording table for failures the reference's rules do not produce (`WORDINGS`, `with_label`) (`test_messages::test_MSG2_*`). Mutations: string size codes; the `lt` wording drifts → red |
+| MSG-3 | implemented | n/a (pure) | Every `markers` vector; one template per field is two phrases; a template with no marker is its message and carries no params. Mutations: a capitalised name as a marker; params on a marker-less template → red |
+| MSG-4 | implemented | n/a (pure) | Every `fill` vector; every canonical entry fills to its message; numbers stay JSON numbers; a param prints as the reference prints it (`3.0` → `3`, `True` → `true`). Mutations: null printed; whole float printed with its point → red |
+| MSG-5 | n/a (profile: browser, binding) | - | A server core that renders a received entry does so identically: every `render` vector passes (`test_MSG5_rendering_matches_the_vectors`) |
+| MSG-6 | implemented | contract | Templates register under `Errors` by default and read back there from the double (`test_messages::test_MSG7_…`); `message_category` is configurable (`test_MSG6_the_category_defaults_to_errors_and_is_configurable`); another category misses (`render` vector `other-category-misses`). Mutation: always `Errors` → red |
+| MSG-7 | implemented | contract | `test_messages::test_MSG7_the_listing_registers_every_template_and_a_second_run_nothing_new` against the double; `…_an_unlistable_message_fails_the_run_with_an_actionable_line`; the `python -m langsys.messages` entry point. Declarations come from a provider the binding supplies. Mutations: re-register what the catalog holds; problems do not fail → red |
+| MSG-8 | implemented | contract | `test_messages::test_MSG8_an_unlisted_template_is_registered_after_the_response_not_before` (request scope, double state); a listed template is not queued again; a non-writer registers nothing even once it could (drift, with control). Mutations: never queued; always queued → red |
+| MSG-9 | n/a (architecture: a core has no validator; entries from failed rules are the Django and FastAPI bindings') | - | The core supplies `server_message`, `size_code`, `WORDINGS` and `TemplateProblem` |
+| MSG-10 | n/a (architecture: a core has no label facility; `verbose_name` and `Field(title=…)` are the bindings') | - | The listing command reports what a provider names as unlabelled |
+| MSG-11 | implemented | n/a (pure) | Refused at add: label markers and leftover `:attribute`, `{{ }}`, `%(x)s`, `%s`, `{0}` (`test_messages::test_MSG11_a_label_marker_or_a_leftover_placeholder_is_refused_when_added[*]`), ordinary templates accepted (percent prose included); a catalogued marker value warns once, an unseen one stays silent. Mutations: label markers accepted; placeholders accepted; warning not deduplicated; no warning → red |
+| MSG-12 | n/a (architecture: a core has no redirect or session; the Django and FastAPI bindings carry entries across one) | - | |
+| MIG-1 | implemented | n/a (pure) | `test_migrate::test_MIG1_unset_reads_no_file_and_looks_up_no_key` (file reads and lookups forbidden outright), control `…_set_it_reads_the_file`. Mutation: lookup with nothing configured → red |
+| MIG-2 | implemented | n/a (pure) | `mig-vectors.json` `calls` rows for this core's entry points, `same_phrase_as` included (`test_mig_vectors::test_MIG2_entry_point_calls[*]`). A hit is the source value, a miss literal; `convert_literal` converts under the entry point's syntax (`t` nothing, `gettext` passed `%(name)s` only, `blocktranslate` passed `{{ name }}` only); `gettext_plural` for `ngettext`. Mutations: hit ignored; unpassed converted; `t()` converts → red |
+| MIG-3 | implemented | n/a (pure) | `test_migrate::test_MIG3_a_key_registers_the_same_phrase_and_id_as_its_source_text_and_never_itself`. Mutation: the key registered → red |
+| MIG-4 | implemented | n/a (pure) | `mig-vectors.json` `value_conversion` and `plural_forms` rows for `gettext` and `plain` (`test_mig_vectors::test_MIG4_*`); the other formats' rows are `n/a (format)`. `test_migrate::test_MIG4_*` — every placeholder form to `{name}`, `%%` to `%`; `%(name).2f`, `%<name>.2f`, positional `%s`, `:Name` verbatim with a warning; a `|` in a plain file verbatim with a warning; a gettext plural as `=1`/`other` with `#`. Mutations: `%(name)s` unconverted; `%%` kept; unexpressible converted; pipe silent; CLDR `one` for `=1` → red |
+| MIG-5 | implemented | n/a (pure) | A dotted key's namespace (a whitespace-free leading segment, so `Welcome back.` has none), a file's namespace, or `msgctxt` is the category; an explicit category wins (`mig-vectors` `resolution` rows). Mutations: no namespace; namespace over explicit; no context; a sentence takes a namespace → red |
+| MIG-6 | implemented | n/a (pure) | An absent key warns at debug and registers its argument; a changed value is a new phrase. Mutation: the absent key silent → red |
+| MIG-7 | implemented | n/a (pure) | `mig-vectors.json` `resolution` rows (files in another format refused naming the file) and `refusals` rows (`test_mig_vectors::test_MIG7_*`). Python's set, `gettext` (`.po`) and `plain` JSON, with a per-file namespace: nested keys by path, multi-line `.po` strings, first file wins and the duplicate is reported (`python -m langsys.migrate`); a `.mo` refused naming its `.po`; `.php`, `.yml`, declared `vue-i18n`/`laravel` refused at load naming format and file. Mutations: last file wins; `.mo` read; unsupported format loaded; per-file namespace ignored; an undeclared `.php` not named `laravel` → red |
+| MIG-8 | implemented | n/a (pure) | Per ecosystem, one core's two entry points over one resolver: `t()` and `translate_legacy(entry_point="gettext"/"ngettext"/"blocktranslate")`, which Django's gettext family delegates to, yield one phrase, one id and one category for the same key, with the file a `.po` whose entry has a context and a plural (`test_migrate::test_MIG8_t_and_the_framework_entry_point_register_one_phrase_id_and_category[*]`); the plural renders (`…_the_entry_point_renders_the_resolved_plural`); a literal miss converts only what the call passes. Across ecosystems: the `same_phrase_as` rows of `mig-vectors.json`. Mutations: the entry point skips the shared resolver; a literal miss unconverted → red |
+| MIG-9 | not implemented | - | Waits on the 907 merge, which brings the `translations` map on `POST /translatable-items` |
+| SNAP-1 | implemented | contract | `test_snapshot::test_SNAP1_the_snapshot_carries_exactly_what_the_api_serves_for_its_categories` against the double (the flat `GET /translations` catalog, filtered by category; locales and categories sorted); an unreadable catalog fails the export. The fleet format: `base_locale` present, the canonical serialisation byte for byte (`…_the_canonical_serialisation_is_the_specs` — code point key order with U+E000 before U+1F600 and `"10"` before `"404"`, `{}` for an empty map, a C0 control as `\u001c`, U+2028 raw), any JSON encoding loads (`…_the_file_is_any_json_encoding_of_the_document`), and the loader refuses a wrong format, version, missing member or checksum by name (`…_a_loader_refuses_by_name[*]`). **Every `snapshot-vectors.json` row**: canonical bytes and checksum (`test_snapshot_vectors::test_SNAP1_canonical_bytes_and_checksum[*]`), refusals by name, a re-encoded load. Mutations: every category kept; a failure exported as empty; insertion order; ASCII escaping; `base_locale` dropped; locales unsorted; a missing member not named → red |
+| SNAP-2 | implemented | contract | **The seam is the core's**: `client.load_snapshot()`, which the Django and FastAPI bindings call at boot; when to seed is theirs. Seeded, lookups read the snapshot with no fetch (phrases and blocks, on every path, offline included); a phrase it lacks falls back to the double's catalog, and to source text with no network; the live catalog outranks it once fetched, and registration is decided against the live catalog alone (`test_snapshot::test_SNAP2_*`); the SRV-6 resolver serves its locales while authorization is unavailable; another project's snapshot is refused. Mutations: never consulted for phrases, then for blocks; the snapshot outranks the live catalog; another project's snapshot loads → red |
+| SNAP-3 | implemented | n/a (pure) | `Snapshot.load()` refuses an edited, foreign or future-version file and names re-export as the refresh (`test_snapshot::test_SNAP3_*`); the SDK reads a snapshot only through that checked loader. Mutation: an edited file loads → red |
 | BIND-1 | n/a (profile: binding) | - | This is a core; the Django and FastAPI wrappers carry the BIND rows |
 | BIND-2 | n/a (profile: binding) | - | As BIND-1 |
 | BIND-3 | n/a (profile: binding) | - | As BIND-1 |
 | BIND-4 | n/a (profile: binding) | - | As BIND-1 |
 | BIND-5 | n/a (profile: binding) | - | As BIND-1 |
 | BIND-6 | n/a (profile: binding) | - | As BIND-1 |
-| GRANT-1 | n/a (profile: browser) | - | A server SDK holds a write key. Affirmative non-participation is tested: `test_gating::test_GRANT_no_write_grant_header_is_ever_sent`, `test_integration::test_no_write_grant_header_is_ever_sent` |
+| GRANT-1 | n/a (profile: browser) | - | A server SDK holds a write key; affirmative non-participation tested: `test_gating::test_GRANT_no_write_grant_header_is_ever_sent`, `test_integration::test_no_write_grant_header_is_ever_sent` |
 | GRANT-2 | n/a (profile: browser) | - | As GRANT-1 |
 | GRANT-3 | n/a (profile: browser) | - | As GRANT-1 |
 | GRANT-4 | n/a (profile: browser) | - | As GRANT-1; `X-Write-Grant` is never sent |
-| CACHE-1 | implemented | n/a (pure) | `test_gating::test_CACHE1_every_key_is_namespaced_by_project` (with a control that something was cached), `…_the_catalog_key_carries_the_locale`. No registered-items key exists. Mutations: `catalog.py::CatalogStore._key` drops the project id → the first red; drops the locale → the second red |
-| OBS-1 | implemented | n/a (pure) | `test_gating::test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss` asserts on the emitted WARNING record across three misses and flushes; control `…_a_write_enabled_session_is_not_reported_unusable`; `test_GATE3_reset_rearms_the_obs1_notice`. Mutations: `client.py::_notice_unusable_capability` logs at debug → named test red; its once-guard removed → named test red |
-| WIRE-1 | implemented | live | Every `test_integration` test authenticates against the real API with `X-Authorization` alone, `test_authorize` first. Unit: `test_wire::test_WIRE1_every_request_authenticates_with_the_x_authorization_header` — raw key, no scheme, no cookie, not in the URL, on authorize, catalog and registration. Mutation: `http.py::HttpClient.__init__` sends `Authorization` → named test red |
-| WIRE-2 | implemented | n/a (pure) | `test_wire::test_WIRE2_an_empty_204_is_a_success_not_a_parse_error` (a zero-length 204 on registration clears the queue); control `…_an_empty_error_body_is_still_a_failure`. Mutation: `http.py::HttpClient._send` re-raises the parse error → named test red |
-| WIRE-3 | implemented | live | `test_integration::test_locale_casing_resolves_to_the_same_entry` — the deprecated route resolves `es-ES` as `es-es` against the real catalog. Unit: lowercase on the wire, casing variants one fetch and one stored key, the sentinel never sent. Mutations: `catalog.py::CatalogStore.get` sends the locale as given → `test_gating::test_WIRE3_the_locale_goes_on_the_wire_lowercase` red; `_key` and `get` both key by the raw casing → `…_casing_variants_are_one_cache_entry_not_two` red |
-| WIRE-4 | implemented | live | `test_integration::test_WIRE4_an_unreachable_api_degrades_rather_than_throwing` (a closed port); `test_wire4_degradation` — 12 tests, each failure shape paired with a success control that does queue. Mutations: `client.py::translate` queues off a failed fetch → `…_a_failed_fetch_queues_nothing` red; `catalog.py::_fetch` catches `ApiError` only → `…_translate_degrades_to_the_source_phrase` red; `CatalogStore.get` caches a failed fetch → `…_a_failed_fetch_is_not_cached_as_an_empty_catalog` red. **Measured, not a MUST as written:** because a failure is never cached, every lookup fetches again — see *Failed catalog fetches, measured* |
-| WIRE-5 | implemented | n/a (pure) | `test_wire::test_WIRE5_*` — `LANGSYS_API_URL` redirects and a request **arrives** at the double; an explicit `api_url` wins; the base is read at construction, so a later environment change has no effect and there is no setter to call too late; the README documents both. Mutation: `config.py::Config.resolve` ignores the variable → `…_the_environment_redirects_the_base_and_a_request_arrives_there` red |
-| TOK-1 | implemented | n/a (pure) | **Every path:** block extraction (fixture rows `style-subtree`, `script-subtree`, `noscript-subtree`, `math-subtree`, `svg-inline-icon`); the page path, the same rows through `translate_page`, all matching; a standalone page-level svg (`test_spec_801::test_TOK1_a_standalone_svg_is_tokenized_on_the_page_path`); the simple-phrase route (`…_svg_only_text_on_the_simple_phrase_route_renders_in_place`); a declared block (`…_svg_inside_a_declared_block_is_tokenized`); apply, translating svg text in place with `<path>` intact (`…_inline_svg_translates_in_place_with_its_path_intact_on_a_real_render`, `…_a_standalone_svg_translates_in_place_with_its_path_intact`); the spec's own document (`…_the_spec_document_yields_exactly_the_ordinary_phrase`). **`<template>` is load-bearing on lxml:** on `<div><template><p>x</p></template><p>y</p></div>` the exclusion yields `['y']`, and removing it yields `['x', 'y']` (`…_template_exclusion_is_load_bearing_on_lxml`). Mutations: `parser.py::SKIP_TAGS` without script, style and noscript; without template; without math → each named test red; the `page.py::_walk` svg branch disabled → both standalone tests red; svg added to `BLOCK_ELEMENTS`, the retracted mechanism → `…_inline_svg_on_the_page_path_yields_the_same_tokens` red |
-| TOK-2 | held (strip ruling) | n/a (pure) | **Implemented for the enumerated set, on every path.** Membership asserted on `normalize_whitespace` directly: U+FEFF collapses and trims; U+0085, U+180E, U+200B and U+2060 survive the collapse and the trim; the real members still collapse (`test_spec_801::test_TOK2_*`). The trim is a second site and uses the same set. Fixture rows `nbsp-in-text`, `feff-in-text`, `nel-in-text`, `mvs-in-text` and `line-separators` match on the block AND page path, and register/lookup pairs normalise identically (CONF-1). **Held:** CPython's class also collapses U+001C–U+001F and JavaScript's does not; they are pinned at today's behaviour (`…_HELD_strip_ruling_characters_are_pinned_at_todays_behaviour`) and VT/FF are unchanged, pending the ruling on stripping C0 controls. The parser split is its own row, labelled libxml2 2.14.6 (*Parser model*). Mutations: U+FEFF dropped → the FEFF tests and `feff-in-text` red; U+0085 added → the non-member tests and `nel-in-text` red; `str.strip()` for the enumerated trim → `…_non_members_survive_trimming[U+0085]` red; JavaScript's set adopted wholesale → the HELD pins red |
-| TOK-3 | partial | n/a (pure) | **Block path:** the twenty-seven in order (`test_canonicalization::test_TOK3_*`), and all seven fixture attribute rows match. **Page path: the same seven rows diverge**, measured — a top-level void or inline element is never tokenized, and a leaf block host's own attributes are dropped (`<p title="Tooltip">Hello</p>` registers `Hello` only). Not changed: whether a host's attributes belong inside its token sequence or as separate attribute phrases is with the operator as a spec gap. Mutations (block path): the first two attributes swapped → the order test red; `data-bs-title` dropped → `test_tokens_match_the_fixture[attr-new-data-bs-title]` red |
-| TOK-4 | partial | n/a (pure) | **Block path:** attribute interiors collapse exactly as text nodes (`test_canonicalization::test_TOK4_*`; fixture `attr-multiline`, `attr-nbsp`). **Lookups agree on block and page apply:** `test_spec_801::test_CONF1_attribute_lookup_on_the_block_path` and `…_on_the_page_path`, each over `alt` and `placeholder` × line break, doubled space, NBSP. **The page path does not register** the `attr-multiline` and `attr-nbsp` rows — same cause, same held ruling as TOK-3. Mutation: `parser.py::_walk_extract` trims attribute values without collapsing → `test_TOK4_attribute_values_collapse_internal_whitespace_like_text_nodes` and `attr-multiline` red |
-| TOK-5 | implemented | n/a (pure) | Interpolation accepts both forms (`test_canonicalization::test_TOK5_*`, including the parameter-injection guard). **Capture normalises `%name%` to `{name}` before the id, on every path**, through one function, `normalize_phrase`: text, attributes (`test_spec_801::test_TOK5_percent_form_in_an_attribute_is_captured_as_the_brace_form`), the page leaf, title and meta; lookup uses the same key (`…_capture_and_lookup_agree_so_the_translation_is_found`); prose percents are untouched. Fixture rows `percent-name-in-markup` and `brace-name-in-markup` share one id on the block AND page path. Mutations: `interpolate.py::percent_placeholders_to_braces` returns its input → the capture tests and `percent-name-in-markup` red; `_rewrite_percent_slots` returns the template → `test_TOK5_both_placeholder_forms_interpolate_the_same_argument` red |
-| MARK-1 | implemented | n/a (pure) | Block path (miss and hit), page path, declared block; the expectation re-derived by running the tokenizer over the same subtree; stamping leaves the markup verbatim and honours quotes and comments (`test_canonicalization::test_MARK1_*`). Mutations: `client.py::translate_content_block` returns an unstamped miss → `…_an_untranslated_block_is_still_stamped` red; `page.py::_apply_or_queue_block` stops stamping → `…_page_rendered_blocks_are_stamped_too` red |
-| MARK-2 | implemented | n/a (pure) | Both spellings on read, for phrase hosts and block hosts, on every reader: the tokenizer (block path, extract and apply with the excision mirrored) and the page walker (block-level hosts and identified blocks), classified by one shared function. `test_canonicalization::test_MARK2_*`, each spelling on each reader. Mutations, one per reader × spelling (eight): e.g. the tokenizer reads only `data-ls-contentblock` → `…_a_nested_content_block_host_is_left_alone_on_the_block_path[data-langsys-contentblock]` red; the page walker reads only `data-ls-phrase` → `…_a_block_level_phrase_host_is_excised_by_the_page_walker[host-is-the-block]` red; opt-out values read as identities → `…_classified_three_ways_on_the_page_path` red. **A contested cell is recorded, and it is not a MARK-2 question:** what the bare attribute means (*Held and awaiting a decision*) |
-| CONF-1 | provisional | mock | **Assertion shape:** every row whose property depends on what the API answers has an acceptance- or state-shaped test — the live rows (GATE-1, REG-1, REG-10, WIRE-1, WIRE-3, WIRE-4) on the real server; GATE-2, GATE-5 and REG-8 on queue state after refusal and acceptance; REG-9 on what a refusing, stateful local double ends up holding. What is missing is only a shared double that can refuse. **Every path:** the TOK and MARK rows name each path proven on, and every register/lookup pair is pinned — attribute (raw and `trim()` reverts), button value, text node and `<option>`, the page leaf key, title, meta, and a head miss leaving authored text. Mutations: nine, one per pair site (`parser.py::_walk_apply`, `_translate_text`, `text_content`; `page.py::_process_head`, `_translate_meta`), each reddening its named test. **Waits on: CONF-2 shared contract fixture** |
-| CONF-2 | implemented | n/a (pure) | Every row carries a tier from the vocabulary, graded by the property the rule governs rather than by whether a double appears in the test. `_dev_/conformance_counts.py` checks the vocabulary, the status/tier pairing, one rule id per row and this file's header blob, and exits non-zero on any of them. No row claims `contract`: the shared fixture does not exist |
-| CONF-3 | implemented | n/a (pure) | Every row whose proof requires running something names its tests and a specific mutation — file, symbol, the exact text replaced and its replacement — in `_dev_/run_mutations.py`, the passing halves of `partial` rows included. Every mutation is applied in an isolated copy of the working tree, never in this tree, which the Django and FastAPI wrappers import editable; the runner refuses to start unless `langsys` imports from the copy. **Last run: 98/98 caught across 49 rules, each by its named tests**, counted from the full output. Nothing to run for the `n/a` rows, CONF-2 or this row |
+| CACHE-1 | implemented | n/a (pure) | `test_gating::test_CACHE1_*`. Mutations: project id, then locale, dropped from the key → red |
+| CACHE-2 | implemented | contract | **Degradation and window** against the double: `test_cache2::test_CACHE2_a_lookup_inside_the_window_renders_source_without_fetching_again` (the fault is consumed, so a re-fetch would render the translation), `…_after_the_window_the_translation_renders`, control `…_a_successful_first_fetch_renders_at_once`, per locale. **At the seam**: 3s doubling to 300s and reset on success; `status: false` a failure; five concurrent lookups share one request; never written to the cache backend. Measured: one GET per window in every failing scenario (*Failed catalog fetches, measured*). Mutations: no window; no growth; no reset; no sharing; `status: false` a catalog; failure written to the cache → red |
+| OBS-1 | implemented | contract | `test_contract::test_OBS1_an_unusable_capability_is_surfaced_once` — the double computes `write_enabled: false` for a non-allow-listed `ip_write` key; one WARNING across three misses; control an allow-listed session. Unit: `test_gating::test_OBS1_*`. Mutations: debug level; once-guard removed → red |
+| WIRE-1 | implemented | live | Every `test_integration` test authenticates with `X-Authorization` alone; `test_wire::test_WIRE1_*` checks every endpoint. Mutation: `Authorization` → red |
+| WIRE-2 | implemented | contract | `test_contract::test_WIRE2_an_empty_204_is_success`; `test_wire::test_WIRE2_*` with a failure control. Mutation: parse every body → red |
+| WIRE-3 | implemented | live | `test_integration::test_locale_casing_resolves_to_the_same_entry`; unit lowercase on the wire, one fetch and one key per casing, no sentinel sent, an uncategorised block registered and read back under `__uncategorized__` (`test_contract::test_WIRE3_an_uncategorised_block_reads_back_under_the_sentinel_and_is_found`). Mutations: the locale sent as given; the cache keyed by casing → red |
+| WIRE-4 | implemented | live | `test_integration::test_WIRE4_an_unreachable_api_degrades_rather_than_throwing`; contract `test_contract::test_WIRE4_a_failed_catalog_degrades_and_queues_nothing[*]` (dropped and 500, with a translating control); `test_wire4_degradation`. Mutations: queue off a failed fetch; a transport error escapes; a failure cached as a catalog → red |
+| WIRE-5 | implemented | n/a (pure) | `test_wire::test_WIRE5_*` — `LANGSYS_API_URL` redirects and a request arrives at the double; `api_url` wins; read at construction; documented. Every contract test uses the seam. Mutation: the variable ignored → red |
+| CONF-1 | implemented | contract | Every row whose property depends on what the API answers asserts on status or accepted state — against the contract double or the live nova — and every register/lookup pair is pinned on every path (`test_spec_801::test_CONF1_*`). Mutations: raw and `trim()` attribute lookups; raw button lookup; `trim()` text lookup; unconverted `%name%` lookup; raw title and meta; head miss overwritten → red |
+| CONF-2 | implemented | n/a (pure) | Every row carries a tier from the vocabulary, graded by the property the rule governs; `_dev_/conformance_counts.py` checks vocabulary, status/tier pairing, one id per row and this file's header blob |
+| CONF-3 | implemented | n/a (pure) | Every row whose proof requires running something names its test and a specific mutation — file, symbol, exact text replaced and its replacement — in `_dev_/run_mutations.py`, applied in an isolated copy of the tree (the Django and FastAPI wrappers import this one editable). **Last run: 197/197 caught across 76 rules, each by its named tests** |
 
 ---
 
 ## Page path, measured
 
-Every row of the shared canonicalization fixture run through `translate_page`, reading what
-is actually queued. Re-run with `python3 _dev_/measure_page_path.py`. **19 of 26 rows match;
-the seven attribute rows diverge.** The block path matches all 26 (`test_canonicalization`).
+Every row of the shared canonicalization fixture through `translate_page`, reading what it
+registers: **32 of 32 rows match** the fixture's tokens, as on the block path. Both are asserted
+row by row in `test_canonicalization`; `python3 _dev_/measure_page_path.py` prints them side by
+side, with the top-level shapes the fixture does not carry:
 
-| Fixture row | Expected tokens | Page path registers |
-|---|---|---|
-| `attr-multiline` | `['A long description']` | nothing |
-| `attr-nbsp` | `['A long description']` | nothing |
-| `attr-original-15` | `['Your name']` | nothing |
-| `attr-new-data-confirm` | `['Are you sure?', 'Go']` | nothing — the button's text is lost too |
-| `attr-new-data-bs-title` | `['Tip', 'x']` | nothing — the span's text is lost too |
-| `attr-order-two-on-one-element` | `['Alt', 'Tip']` | nothing |
-| `attr-all-new-twelve` | 13 tokens, twelve attributes then `x` | `['x']` — the host's attributes are dropped |
-
-The 19 that match: `nbsp-in-text`, `nbsp-vs-plain-space`, `text-multiline`, `style-subtree`,
-`script-subtree`, `noscript-subtree`, `math-subtree`, `svg-inline-icon`, `line-separators`,
-`non-bmp`, `slashes`, `category-empty`, `category-sentinel`, `multi-token`, `feff-in-text`,
-`nel-in-text`, `mvs-in-text`, `percent-name-in-markup`, `brace-name-in-markup`.
-
-**Two causes.** A top-level void or inline element is never tokenized, because the walker
-recurses into anything that is not a block element and reads neither its attributes nor its
-text; and a leaf block host's own translatable attributes are dropped, because the leaf hands
-only its inner HTML to the tokenizer. The same probe, for the shapes the fixture does not
-carry:
-
-| Markup directly under `<body>` | Page path registers | The same inside a leaf block |
-|---|---|---|
-| `<textarea>Write here</textarea>` | nothing | `Write here` |
-| `<select><option>First choice</option>…</select>` | nothing | `First choice` |
-| `<a href="/x">Read more</a>` | nothing | `Read more` |
-| `Loose body text` | nothing | — |
-| `<p title="Tooltip">Hello</p>` | `Hello` — the title is dropped | — |
-
-**Not changed.** Whether a host's attributes belong inside its element's token sequence or
-register as separate attribute phrases decides the ids, so it is with the operator as a spec
-gap. Ruby and PHP fail the same seven rows.
+| Markup directly under `<body>` | Registers |
+|---|---|
+| `<textarea>Write here</textarea>` | phrase `Write here` |
+| `<select><option>First choice</option><option>Second</option></select>` | block `[First choice, Second]` |
+| `<a href="/x">Read more</a>` | phrase `Read more` |
+| `<img alt="Alt text">` | block `[Alt text]` |
+| `<p title="Tooltip">Hello</p>` | block `[Tooltip, Hello]` |
+| `Loose body text` (a bare text node) | nothing — not an element, so not a unit |
 
 ## Block apply path, measured
 
-Asked because a fleet SDK substituted translations by POSITION in a second walk that skipped
-neither marked nor excluded subtrees. Every token translated to `[token]`, through
-`translate_content_block`, `apply_block_translations` and `translate_page`. Re-run with
-`python3 _dev_/measure_block_apply.py`. **All three paths render identically, and every
-translation lands on its own node**; the stamp is omitted below.
-
-| Vector | Rendered |
-|---|---|
-| `<p><img alt="Hi there"> Body text</p>` | `<p><img alt="[Hi there]"> [Body text]</p>` |
-| `<p>Before <button value="Go">Click</button> after</p>` | `<p>[Before] <button value="[Go]">[Click]</button> [after]</p>` |
-| `<p><input type="submit" value="Send"> Tail</p>` | `<p><input type="submit" value="[Send]"> [Tail]</p>` |
-| `<p><img alt="A" title="T"> Body</p>` | `<p><img alt="[A]" title="[T]"> [Body]</p>` |
-| `<p>Lead <img alt="Pic"> Trail</p>` | `<p>[Lead] <img alt="[Pic]"> [Trail]</p>` |
-| `<p>Intro <span data-ls-phrase>Marked phrase</span> outro</p>` | `<p>[Intro] <span data-ls-phrase>Marked phrase</span> [outro]</p>` |
-| `<p>Intro <span translate="no">Kept</span> outro</p>` | `<p>[Intro] <span translate="no">Kept</span> [outro]</p>` |
-| control `<p>One <b>Two</b> Three</p>` | `<p>[One] <b>[Two]</b> [Three]</p>` |
-
-Apply looks every node up by its own normalised text and walks with the same skip and
-excision rules as extraction, so no positional shift is possible. The trade-off is that two
-nodes with identical text always receive the same translation — which is what one phrase id
-means anyway.
+Every token translated to `[token]`, through `translate_content_block`,
+`apply_block_translations` and `translate_page` (`python3 _dev_/measure_block_apply.py`). All
+three render identically and each translation lands on its own node: attribute and `value`
+tokens apply, and `translate="no"` and marked-host subtrees are untouched. Apply looks each node
+up by its own normalised text under the same skip and excision rules as extraction, so no
+positional shift is possible. A phrase host inside a block registers whole, as its own phrase.
 
 ## Failed catalog fetches, measured
 
-Asked because the Ruby core fetches the catalog again on every lookup while the fetch fails.
-So does this one. Re-run with `python3 _dev_/measure_catalog_refetch.py` (set the `LANGSYS_*`
-variables for the live rows). Each lookup uses a distinct phrase; catalog GETs counted at the
-transport.
+`python3 _dev_/measure_catalog_refetch.py`; catalog GETs counted at the transport, each lookup a
+distinct phrase.
 
-| Catalog answer | `translate()` × 5 | `translate_page`, 11 tokens | A miss queued |
-|---|---|---|---|
-| 200 (control) | 1 GET | 1 GET | yes |
-| 404 | 5 GETs | 11 GETs | no |
-| 422 | 5 GETs | 11 GETs | no |
-| 500 | 5 GETs | 11 GETs | no |
-| connection refused | 5 GETs | 11 GETs | no |
-| hung upstream, timeout 0.5s | 5 GETs, 2.51s | 11 GETs, 5.52s | no |
-| live nova, supported locale `es-es` | 1 GET | 1 GET | yes |
-| live nova, unsupported locale `zz-zz` (answers 422) | 5 GETs | 11 GETs | no |
+| Catalog answer | `translate()` × 5 | `translate_page`, 11 tokens |
+|---|---|---|
+| 200 (control) | 1 GET | 1 GET |
+| 404, 422, 500, connection refused | 1 GET | 1 GET |
+| hung upstream, timeout 0.5s | 1 GET, 0.50s | 1 GET, 0.50s |
+| live nova, unsupported locale `zz-zz` (422) | 1 GET | 1 GET |
 
-**One GET per lookup while the catalog fails, and no read-side backoff.** WIRE-4's MUSTs
-hold — nothing throws, nothing is queued, and the failure is not cached as an empty catalog.
-The cost is latency: every lookup pays the full timeout against a hung upstream, so at the
-default 30s an 11-token page would spend about 330s before serving source text, and an
-unsupported locale — an ordinary, permanent condition — re-fetches forever. Not changed: it
-is being routed to Langsys as a possible read-side clause, and a negative cache would need
-to stay short enough not to become the outage-caching WIRE-4 forbids.
+One request per CACHE-2 window, whatever fails, and nothing is queued inside it.
 
 ## Parser model — libxml2 2.14.6
 
-Rows here pin **parser** behaviour, not this SDK's code, so no mutation applies; each is
-labelled with the libxml2 version and skips below 2.14 (`needs_214` in `test_spec_801`),
-because the behaviour moves when a runtime crosses 2.14.
+These rows pin **parser** behaviour, not this SDK's code, so no mutation applies; each is
+labelled with the libxml2 version and skips below 2.14 (`needs_214` in `test_spec_801`).
 
-- **Parse model — 7/7 agree with the JS family** on tokens and block ids (category `UI`),
-  vectors from the PHP fixture blob `741c8cfc7f49dc0eb3242afa30a307880771d9aa` (`langsys-php-sdk`):
-  `test_spec_801::test_PARSE_MODEL_agrees_with_the_js_family_on_libxml2_2_14`.
-- **C0 controls in DOM text.** libxml2 2.14.6 keeps U+0001–U+0008, U+000B, U+000C and
-  U+000E–U+001F, normalising CR to LF, and leaves them to the collapse set. Before 2.14 the
-  parser drops them, so this SDK's id for such content moves when its runtime libxml2 crosses
-  2.14 — on a dependency bump nobody edited. Collapse membership is therefore asserted on the
-  collapse function, never through the DOM. Held with the strip ruling.
-- **Residuals, measured and pinned:** raw NUL and `&#0;` become U+FFFD; a lone CR and CRLF
-  become LF; raw C0 and `&#x1C;` are kept in attribute values
-  (`test_RESIDUAL_parser_text_normalisation_on_libxml2_2_14`,
-  `test_RESIDUAL_c0_is_kept_in_attributes_on_libxml2_2_14`).
-- **Bytes input.** Markup handed over as `bytes` with no charset declared decodes as Latin-1:
-  the UTF-8 bytes of U+0085 arrive as U+00C2 U+0085
-  (`test_RESIDUAL_bytes_without_a_charset_decode_as_latin1`). Pass `str`.
-- **`<template>` is load-bearing.** lxml puts template children in the ordinary tree; see
-  TOK-1 for the vector.
+- **Parse model** — 7/7 agree with the JS family on tokens and block ids, vectors from the PHP
+  fixture blob `741c8cfc7f49dc0eb3242afa30a307880771d9aa`.
+- **C0 controls** — libxml2 2.14.6 keeps them in DOM text (CR normalised to LF). TOK-2's strip
+  removes the 28 before collapse on every path, so the id no longer depends on the parser for
+  them; collapse membership and the strip are asserted on the function.
+- **Residuals the strip does not close**, pinned: raw NUL and `&#0;` become U+FFFD; a C0
+  character reference in an attribute value is kept here (libxml2 before 2.14 truncates the
+  value at it).
+- **Bytes input** — markup handed over as `bytes` with no charset declared decodes as Latin-1.
+  Pass `str`.
+- **`<template>`** — lxml puts template children in the ordinary tree, so the exclusion is
+  load-bearing; see TOK-1.
 
-## Held and awaiting a decision
+## Waiting on others
 
-Nothing below is built. Each is either a ruling that is not this lane's to make, or new scope.
-
-| Decision | Rows | Whose call | In the code today |
+| What | Rows | Whose | In the code today |
 |---|---|---|---|
-| Stripping C0 controls: U+001C–U+001F, VT, FF, and the libxml2 split | TOK-2 | operator | U+001C–U+001F still collapse, one tuple (`parser.py::_HELD_C0_SEPARATORS`) |
-| Registration shape for a host's own attributes and for top-level void or inline elements | TOK-3, TOK-4, GATE-7 | operator (spec gap) | page path unchanged; 19/26 |
-| A request-scope send seam for SRV-3 | SRV-3 | operator — held for a ruling shared with Ruby, since it adds public request-scope calls to the core | debounce and queue are process-wide; two strict xfails |
-| What a bare `data-ls-contentblock` means | — (noted on MARK-2) | operator — deferred to a fleet-wide ruling | `attributes.py::BARE_BLOCK_ATTRIBUTE = "opt-out"`; PHP reads it as a declaration; one line flips it |
-| The shared stateful contract fixture | GATE-2, GATE-5, REG-8, REG-9, CONF-1 | fleet | none exists |
-
-**On the bare attribute.** The value classifier was built to walk an opt-out *and* a bare
-attribute as ordinary content, as prescribed in an earlier review. The fleet's boolean-marker
-convention treats presence as intent — PHP reads a bare content-block attribute as a
-declaration — so that one cell is contested and routed to the operator. It is isolated so the
-ruling flips one line. The identity class is not contested: an id value is excised on every
-path.
+| The `translations` map on `POST /translatable-items` | MIG-9 | the 907 merge | no import |
 
 ---
 
-## Design choice — a nested declaration inside a fragment is folded, not split
+## Vendored fixtures
 
-`translate_content_block` is handed a fragment and asked to translate it as **one**
-block, so a `data-ls-contentblock="1"` on a descendant is **folded into the enclosing
-block** rather than becoming a block of its own. The page walker, which has a document
-and somewhere for sub-blocks to live, does make it its own block. Measured:
+All are pinned by **git blob or tree SHA, not by path** — content-addressed, verified locally with
+no network, surviving deletion of the source branch. A live ref records provenance; one string
+never does both jobs.
 
-| path | `<div><div data-ls-contentblock="1"><p>Hello</p><p>Second</p></div><p>Bye</p></div>` |
-|---|---|
-| `translate_content_block` | one block, `['Hello','Second','Bye']` |
-| `translate_page` | block `['Hello','Second']` + phrase `Bye` |
-
-Honouring the declaration on the fragment path would make a single call produce several
-registrations under ids the caller never sees and cannot address. **Page parity is the
-coherent alternative** and would be new scope rather than a fix.
-
-*Corrected here:* an earlier revision of this row, and the commit that introduced the
-shared classifier, said the block path honours a nested declaration "the same way the
-page walker does". It does not — it classifies the value the same way and then folds.
-Both are strictly better than the behaviour before the classifier, which excised the
-subtree and lost its content; the overstatement was in the description, not the code.
+| Fixture | The check | Provenance |
+|---|---|---|
+| `tests/contract-fixture/` (the shared contract double) | tree `542f57f5ffcb9038db1b7411152b7e31b96cb269` | `langsys-js-typescript` `contract-fixture/` |
+| `tests/fixtures/canonicalization-reference.json` | blob `34034931872b93e761faea49fb040f3fd8a6b9f5` | `langsys-js-typescript` `a639ae8`, 32 rows, authored against 8.2.15 (the TOK and MARK text is byte-identical at 8.2.16) |
+| `tests/fixtures/mig-vectors.json` | blob `20f2bdd678cb33981e3064e42d43ca62783920ad` | `langsys-js-typescript` `a639ae8`, 70 rows; this core runs the 44 in its formats and entry points |
+| `tests/fixtures/snapshot-vectors.json` | blob `594bd77a0289abfdf608508ac93cc9f4c4f88459` | `langsys-js-typescript` `a639ae8`, 8 byte rows, 4 refusals, 1 re-encoded load |
+| `tests/fixtures/server-message-vectors.json` | blob `c8125549cfee0f5286f79a8cbc194cd30ccd446e` | `langsys-js-typescript`, 47 rows |
+| `tests/fixtures/interpolation-reference.json` | blob `017bffdd1d83a1b0a00a91f0d157a7fff726ee90` | `langsys-php-sdk` `c11a711`, 25 rows |
+| `tests/fixtures/custom-id-reference.json` | blob `60dc9b33ecfd5fa3256fca7d36063ceb8ef1a00a` | `langsys-php origin/feature/838_write_key_gating_reland @ 8862841+` |
+| `tests/fixtures/legacy-custom-id-reference.json` | blob `dc5556466dc54fe82e81ac9fdbf4549b2b76e7ce` | generated by executing `langsys-js-typescript` `md5Core` @ `6cdb388` |
 
 ## Historical id space
 
@@ -425,25 +293,6 @@ ship together in the first release by construction. The tolerating half is still
 required — this SDK must resolve blocks registered by the *published* JS and PHP SDKs.
 
 ---
-
-## Vendored fixtures
-
-All are pinned by **git blob SHA, not by path** — content-addressed, verified locally with no
-network, surviving deletion of the source branch. A live ref records provenance; one string
-never does both jobs.
-
-| Fixture | Blob (the check) | Provenance (a live ref) |
-|---|---|---|
-| `tests/fixtures/custom-id-reference.json` | `60dc9b33ecfd5fa3256fca7d36063ceb8ef1a00a` | `langsys-php origin/feature/838_write_key_gating_reland @ 8862841+` |
-| `tests/fixtures/canonicalization-reference.json` | `1ae7bc2900c073085ae3ebbf1f81cd37c81d553b` | `langsys-js-typescript` `4eac870` — derive with `git -C ~/Documents/dev/langsys-js-typescript rev-parse 4eac870:tests/fixtures/canonicalization-reference.json` |
-| `tests/fixtures/legacy-custom-id-reference.json` | `dc5556466dc54fe82e81ac9fdbf4549b2b76e7ce` | generated by executing `langsys-js-typescript` `md5Core` @ `6cdb388` |
-
-**The canonicalization fixture is authored in langsys-js-typescript** by the JS core as its
-owner, 26 rows. It declares the spec it was authored against as blob `8e2527b9…` at langsys2
-`63df13c7` — an ancestor of the revision this file is filed against (`5cff03a1`, blob
-`5c5c0723`), with TOK-1, TOK-2 and TOK-5 text changed in between. The basis is recorded rather
-than assumed equal: every row still agrees with the target text on this SDK's block path, and
-19 of 26 on its page path.
 
 ### CID fixture
 
@@ -519,10 +368,6 @@ its own scheme** — `["UI",["xxxA"]]` vs `["UI",["xxxŁ"]]` under the code-unit
 `UI|Buy now` + `[]` vs `UI` + `Buy now` under the pipe join. The two collide under
 different schemes and not under each other's, which is the concrete argument for CID-4.
 
-*A note on building it:* the first draft used category `home` for the `xxxA`/`xxxŁ` pair
-and documented **no** collisions, because the collision is a property of the final
-hashed string — changing the category moves every character into different lanes. The
-fixture asserted a property it did not contain until that was fixed.
 
 `test_legacy_custom_id.py` pins the distinguishing property directly: the code-unit hash
 must **agree** with a UTF-8 byte hash on ASCII and **diverge** above it. A port that
@@ -532,85 +377,40 @@ silently became a byte hash passes every ASCII row and fails there.
 
 ## Gaps, ranked by cost
 
-Ranked by what the gap costs, not by rule order.
-
-1. **SRV-3 — a server render can collect before its response, and one request drains
-   another's misses.** Registration POSTs land on the visitor's request path whenever a render
-   outlasts 0.4s or a concurrent request flushes, in every wrapper built on this core. Needs a
-   core seam; held for the operator's ruling, shared with Ruby.
-2. **A failing or hung catalog is fetched on every lookup.** Against a hung upstream each
-   lookup pays the full timeout — about 330s for an 11-token page at the default 30s — and an
-   unsupported locale re-fetches on every lookup indefinitely. No MUST is broken as written;
-   routed as a possible read-side clause.
-3. **The wrappers bypass GATE-2 and GATE-3 in the shape customers deploy.** Django and FastAPI
-   discard the queue whenever `can_write` is not true — an unknown answer included — and never
-   call `reset_write_decision()`. A transient authorize failure loses the request's
-   discoveries, and an allow-listed request's answer can outlive it. The fix lives in those
-   repositories.
-4. **Page-path coverage — GATE-7, TOK-3, TOK-4.** On the page entry point, attribute text on
-   top-level elements and on leaf hosts, and top-level link, textarea, select and bare text,
-   register nothing, and seven shared fixture rows derive ids no other SDK agrees with. Waits
-   on the registration-shape ruling.
-5. **CONF-2's shared contract fixture.** Five rows are `provisional` for want of a double that
-   can refuse and holds state. Fleet-blocked.
-6. **TOK-2's held C0 characters.** Content carrying U+001C–U+001F derives a different id than
-   the JS family, and on a pre-2.14 libxml2 a different one again. Rare; waits on the strip
-   ruling.
+1. **MIG-9 — no import of existing translations.** An app migrating off keys loses the human
+   translations it already paid for, and they are machine-translated again. Waits on the 907
+   endpoint.
+2. **Bare text directly under a container is not a unit.** `<body>Loose text</body>` registers
+   nothing, as on the PHP page path; TOK-6 names element units only.
 
 ## Declared obligations — framework wrappers
 
-GATE-3 requires the write decision not to survive a single request, and says explicitly that
-runtimes whose object graph outlives the request MUST reset it rather than rely on process
-death. A `LangsysClient` held as a module-level singleton, a Django app config, or a FastAPI
-dependency behind `lru_cache` is exactly that shape.
+A `LangsysClient` held for the life of a server process outlives every request, so three
+things are the wrapper's to do at each request, with the core providing the seam for each:
 
-The core provides the seam — **`reset_write_decision()`** — and cannot call it itself, because
-a library has no request lifecycle of its own. Each wrapper MUST call it at the request
-boundary (Django `request_finished`, FastAPI middleware or dependency teardown) and record that
-it does in its own conformance file.
+- **Mark the request scope (SRV-3).** Call `langsys.begin_request_scope()` at request start and
+  `end_request_scope(scope)` once the response has been sent, then `flush_pending()`. Misses
+  recorded inside are sent by no flush until then; misses outside any scope keep the debounce.
+  A wrapper adds no timers of its own (BIND-3).
+- **Flush unconditionally after the response (REG-3, GATE-2).** Let the core choose the lane: it
+  holds the queue when write capability is unknown and discards it on a server *no*. Gating the
+  flush on `can_write` discards the queue on an unknown answer, which GATE-2 forbids.
+- **Reset the write decision (GATE-3).** Call `reset_write_decision()` at the request boundary;
+  capability is address-dependent and must not carry from one request to the next.
 
-**REG-3 adds a second obligation.** The end-of-context flush is on by default, but on the
-server profile the automatic path is best-effort: an `atexit` hook does not run on an OOM kill
-or a hard timeout. A wrapper MUST also flush at the end of each request — `flush_pending()` is
-the public seam — rather than rely on process shutdown.
+The core also supplies what the framework-shaped rules build on: `resolve_request_locale()`
+(SRV-6), `server_message()` / `WORDINGS` / the listing command (MSG-9, MSG-10, MSG-12), and
+`translate_legacy()` (MIG-8), which a framework's own translation functions delegate to.
 
-A short-lived script, worker or CLI that builds a client per run needs no reset; there the
+A short-lived script, worker or CLI that builds a client per run needs none of this; there the
 process is the boundary.
 
-Tested here: `test_gating::test_GATE3_reset_write_decision_clears_an_observed_answer`,
-`…_reset_does_not_disturb_cached_project_metadata` and `…_reset_rearms_the_obs1_notice`.
+## Known trade-off
 
-**Measured in the wrappers and routed back here.** Neither obligation is discharged yet, and
-one wrapper pattern defeats a rule this core meets:
-
-- `langsys-python-django` `src/langsys_django/middleware.py:67–70` (@`34a6a87`) and
-  `langsys-python-fastapi` `src/langsys_fastapi/middleware.py:92–95` (@`29bb650`) call
-  `flush_pending()` only when `client.can_write` is true, and `clear_pending()` otherwise.
-  `can_write` collapses an **unknown** answer to `False` on purpose — never infer permission
-  from a failure to ask — so a transient authorize failure discards the request's discoveries
-  in the wrapper, and the GATE-2 hold this core implements never runs. A wrapper should call
-  `flush_pending()` unconditionally after the response and let the core choose the lane: it
-  holds on unknown and discards on a server *no*.
-- Neither wrapper calls `reset_write_decision()` at the request boundary.
-- **SRV-3 needs a core seam before any wrapper can meet it.** Stated as behaviour: a miss
-  recorded inside a request scope is sent by no flush — timer or explicit, this request's or
-  another's — until that scope's own response has been flushed; a miss recorded outside any
-  request scope (Celery, management commands, scripts) keeps REG-2's debounce; the binding
-  only marks the scope and flushes after its response, since BIND-3 forbids it timers. The
-  contract is an order-of-events test with two concurrent requests, ordered by events rather
-  than sleeps — the shape of the second SRV-3 xfail here. Held for the operator's ruling, which
-  is being made for the Ruby core at the same time.
-
-## Known trade-off, recorded rather than discovered
-
-On a **warm cache** the authorize payload lacks `write_enabled` by construction, because
-GATE-4 strips it. Per the fleet ruling, plain `read`/`write` keys then fall back to
-`key_type` — sound because the server guarantees `write_enabled ≡ key_type` for them —
-while `ip_write` never falls back and pays a live authorize.
-
-The consequence worth stating: a plain `write` key whose session is *not* write-enabled
-would be answered `true` from a warm cache. That combination is excluded by the server
-invariant, and it is honoured correctly on every live payload (`test_gating`
-first-call-honours-a-live-false). An earlier draft of this branch asserted the stricter
-behaviour — always re-ask — and that test was **replaced** when the ruling landed, not
-deleted quietly. If the invariant ever weakens, this is the row to revisit.
+On a **warm cache** the authorize payload lacks `write_enabled` by construction, because GATE-4
+strips it. Plain `read`/`write` keys then fall back to `key_type`, which is sound because the
+server guarantees `write_enabled ≡ key_type` for them, while `ip_write` never falls back and pays
+a live authorize. A plain `write` key whose session is not write-enabled would be answered `true`
+from a warm cache; the server invariant excludes that combination, and every live payload is
+honoured as sent (`test_gating::test_GATE8_a_live_false_is_honored_on_the_very_first_call`). If
+the invariant ever weakens, this is the row to revisit.

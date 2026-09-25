@@ -38,14 +38,14 @@ from langsys.html.parser import extract_phrases  # noqa: E402
 FIXTURE = Path(__file__).parent / "fixtures" / "canonicalization-reference.json"
 
 #: THE CHECK — content-addressed.
-SOURCE_BLOB_SHA = "9027a603def2116e89456cd8979b422c4f050cd7"
+SOURCE_BLOB_SHA = "34034931872b93e761faea49fb040f3fd8a6b9f5"
 #: THE PROVENANCE — a live ref.
-SOURCE_REF = "langsys-js-typescript be6ccd7 tests/fixtures/canonicalization-reference.json"
-#: What the fixture was AUTHORED against (langsys2 c1b16560, specVersion 8.2.10).
-FIXTURE_SPEC_BASIS = "e22dad188f1c1e6a972961cdf9675a84d891f5ec"
-#: What this SDK is FILED against (langsys2 a1b7568c, specVersion 8.2.12). The TOK and MARK
+SOURCE_REF = "langsys-js-typescript a639ae8 tests/fixtures/canonicalization-reference.json"
+#: What the fixture was AUTHORED against (langsys2 f5568b88, specVersion 8.2.15).
+FIXTURE_SPEC_BASIS = "b9fd4b5b1c15f7ba29656d550dca1f06013327c0"
+#: What this SDK is FILED against (langsys2 2dce7f41, specVersion 8.2.16). The TOK and MARK
 #: sections are byte-identical between the two, so every row binds the target unchanged.
-TARGET_SPEC_BLOB = "b0474afba2c9c1639baa8da219fa6a441b3e1c2f"
+TARGET_SPEC_BLOB = "99c86b55de39f7d45cf9c25d931d210953cff8be"
 
 _DOC = json.loads(FIXTURE.read_text(encoding="utf-8"))
 ROWS = _DOC["cases"]
@@ -69,12 +69,11 @@ def test_the_vendored_fixture_is_the_pinned_blob():
     )
 
 
-def test_the_fixture_declares_the_spec_revision_it_was_authored_against():
-    """The fixture declares the spec it was authored against, which is not the one this SDK is
-    filed against. Recorded rather than missed; fails the day the fixture is re-authored, so the
-    pin moves deliberately."""
+def test_the_fixture_declares_the_spec_it_was_authored_against():
+    """The fixture names its spec; where that is not this SDK's target the difference is recorded
+    here (with the TOK and MARK text checked identical), and the pin fails the day it changes."""
     assert FIXTURE_SPEC_BASIS in _DOC["spec_blob"], _DOC["spec_blob"]
-    assert TARGET_SPEC_BLOB not in _DOC["spec_blob"], "fixture now declares the target; update"
+    assert TARGET_SPEC_BLOB not in _DOC["spec_blob"], "the fixture now declares the target; update"
 
 
 @pytest.mark.parametrize("row", ROWS, ids=lambda r: r["id"])

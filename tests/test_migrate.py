@@ -280,3 +280,65 @@ def test_MIG7_the_listing_names_duplicates_and_verbatim_values(files, capsys):
     clean = source.parent / "clean.json"
     clean.write_text(json.dumps({"a": "b"}), encoding="utf-8")
     assert main([str(clean)]) == 0
+
+
+# -- MIG-8: a framework entry point and t() share one resolver ------------------------------------
+
+CART_PO = r'''msgid ""
+msgstr ""
+
+msgctxt "cart"
+msgid "%(count)s item"
+msgid_plural "%(count)s items"
+msgstr[0] ""
+msgstr[1] ""
+
+msgctxt "cart"
+msgid "Remove"
+msgstr ""
+'''
+
+
+@pytest.fixture
+def cart_po(tmp_path):
+    po = tmp_path / "django.po"
+    po.write_text(CART_PO, encoding="utf-8")
+    return po
+
+
+@pytest.mark.parametrize(("key", "call"), [
+    ("%(count)s item", {"entry_point": "ngettext", "plural": "%(count)s items", "params": {"count": 3}}),
+    ("Remove", {"entry_point": "gettext"}),
+], ids=["ngettext-plural", "gettext"])
+def test_MIG8_t_and_the_framework_entry_point_register_one_phrase_id_and_category(cart_po, key, call):
+    """Per ecosystem: the same key through `t()` and through the binding's entry point
+    (Django's ngettext/gettext) yields one phrase, one id and one category, with the file a
+    plural-converting format this core supports. The context is what exposes an entry point that
+    skipped the resolver: a literal conversion produces the same ICU string, but no category."""
+    via_t, patched = client([cart_po])
+    with patched:
+        via_t.translate(key, locale="it-it")
+    via_entry, patched = client([cart_po])
+    with patched:
+        via_entry.translate_legacy(key, locale="it-it", **call)
+    assert queued(via_t) == queued(via_entry)
+    (phrase, category), = queued(via_t)
+    assert category == "cart"
+    assert generate_custom_id(category, [phrase]) == generate_custom_id(queued(via_entry)[0][1], [queued(via_entry)[0][0]])
+
+
+def test_MIG8_the_entry_point_renders_the_resolved_plural(cart_po):
+    c, patched = client([cart_po])
+    with patched:
+        out = c.translate_legacy("%(count)s item", entry_point="ngettext", plural="%(count)s items",
+                                 params={"count": 3}, locale="en-us")
+    assert out == "3 items"
+
+
+def test_MIG8_a_literal_miss_converts_under_the_entry_points_syntax():
+    c, patched = client()
+    with patched:
+        c.translate_legacy("Hello %(name)s", entry_point="gettext", params={"name": "Ada"}, locale="it-it")
+        c.translate_legacy("Hi %(name)s and %(other)s", entry_point="gettext", params={"name": "Ada"},
+                           locale="it-it")
+    assert [p for p, _ in queued(c)] == ["Hello {name}", "Hi {name} and %(other)s"]

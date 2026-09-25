@@ -148,3 +148,120 @@ def test_SNAP_the_command_line_writes_a_loadable_snapshot(double, tmp_path, monk
     out = tmp_path / "cli.json"
     assert main(["--locale", "it-it", "--category", "UI", "--out", str(out)]) == 0
     assert Snapshot.load(out).catalog("it-it")["UI"]["Checkout"] == "Cassa"
+
+
+# -- SNAP-2: the loader the bindings seed from at startup -------------------------------------------
+
+
+def _seeded(double, tmp_path, **kw):
+    double.seed(world(phrases=PHRASES))
+    path = Snapshot.export(client(double), ["it-it"], ["UI"]).write_to(tmp_path / "s.json")
+    c = LangsysClient(WRITE_KEY, PROJECT, api_url=kw.get("api_url", double.base_url),
+                      cache=MemoryCache(), base_locale="en-us", debounce=0, auto_flush=False)
+    c.load_snapshot(path)
+    return c
+
+
+def test_SNAP2_a_seeded_phrase_renders_with_no_fetch(double, tmp_path):
+    c = _seeded(double, tmp_path, api_url="http://127.0.0.1:9/api")  # nothing is listening
+    assert c.translate("Checkout", category="UI", locale="it-it") == "Cassa"
+    assert c.translate("Untranslated", category="UI", locale="it-it") == "Untranslated"
+    assert not c.has_pending, "a phrase the snapshot holds is known"
+
+
+def test_SNAP2_a_phrase_the_snapshot_lacks_falls_back_to_the_fetch(double, tmp_path):
+    c = _seeded(double, tmp_path)
+    assert c.translate("The name is required.", category="Errors", locale="it-it") == (
+        "Il nome è obbligatorio."
+    ), "not in the snapshot (category Errors was not exported), so fetched"
+
+
+def test_SNAP2_and_to_source_text_with_the_network_unavailable(double, tmp_path):
+    c = _seeded(double, tmp_path, api_url="http://127.0.0.1:9/api")
+    assert c.translate("Buy now", category="Marketing", locale="it-it") == "Buy now"
+
+
+def test_SNAP2_a_seeded_block_renders_with_no_fetch(double, tmp_path):
+    from langsys.registration import generate_custom_id
+
+    tokens = ["Hello", "World"]
+    custom_id = generate_custom_id("UI", tokens)
+    double.seed(world(blocks=[{"category": "UI", "custom_id": custom_id, "phrases": [
+        {"phrase": "Hello", "translations": {"it-it": "Ciao"}},
+        {"phrase": "World", "translations": {"it-it": "Mondo"}},
+    ]}]))
+    path = Snapshot.export(client(double), ["it-it"], ["UI"]).write_to(tmp_path / "b.json")
+    c = LangsysClient(WRITE_KEY, PROJECT, api_url="http://127.0.0.1:9/api", cache=MemoryCache(),
+                      debounce=0, auto_flush=False)
+    c.set_locale("it-it")
+    c.load_snapshot(path)
+    out = c.translate_content_block("<div><p>Hello</p><p>World</p></div>", "UI")
+    assert "Ciao" in out and "Mondo" in out and f'data-ls-contentblock="{custom_id}"' in out
+    page = c.translate_page("<html><body><div><p>Hello <b>World</b></p></div></body></html>", "UI")
+    assert "<body>" in page
+
+
+def test_SNAP2_a_snapshot_for_another_project_is_refused(double, tmp_path):
+    double.seed(world(phrases=PHRASES))
+    path = Snapshot.export(client(double), ["it-it"], ["UI"]).write_to(tmp_path / "s.json")
+    other = LangsysClient(WRITE_KEY, "another-project", api_url=double.base_url,
+                          cache=MemoryCache(), debounce=0, auto_flush=False)
+    with pytest.raises(SnapshotError, match="another-project"):
+        other.load_snapshot(path)
+
+
+# -- SRV-6 with a snapshot loaded and authorization unavailable ----------------------------------
+
+
+def _offline_seeded(double, tmp_path):
+    double.seed(world(phrases=PHRASES))
+    path = Snapshot.export(client(double), ["es-es", "it-it"], ["UI"]).write_to(tmp_path / "s.json")
+    c = LangsysClient(WRITE_KEY, PROJECT, api_url="http://127.0.0.1:9/api", cache=MemoryCache(),
+                      debounce=0, auto_flush=False)  # no configured base: only the snapshot knows it
+    c.load_snapshot(path)
+    return c
+
+
+def test_SRV6_offline_a_snapshot_locale_is_served_from_the_snapshot(double, tmp_path):
+    c = _offline_seeded(double, tmp_path)
+    choice = c.resolve_request_locale(url="es-ES")
+    assert (choice.locale.lower(), choice.source) == ("es-es", "url")
+    assert c.translate("Checkout", category="UI", locale=choice.locale) == "Caja"
+
+
+def test_SRV6_offline_a_locale_the_snapshot_lacks_falls_to_its_base(double, tmp_path):
+    c = _offline_seeded(double, tmp_path)
+    choice = c.resolve_request_locale(url="fr-fr", accept_language="de")
+    assert (choice.locale.lower(), choice.source) == ("en-us", "base")
+
+
+def test_SRV6_control_without_a_snapshot_offline_serves_only_the_configured_base():
+    c = LangsysClient("k", PROJECT, api_url="http://127.0.0.1:9/api", cache=MemoryCache(),
+                      base_locale="en-us", debounce=0, auto_flush=False)
+    assert c.resolve_request_locale(url="es-es").source == "base"
+
+
+def test_SNAP2_the_live_catalog_outranks_the_snapshot_once_fetched(double, tmp_path):
+    double.seed(world(phrases=PHRASES))
+    path = Snapshot.export(client(double), ["it-it"], ["UI"]).write_to(tmp_path / "s.json")
+    double.seed(world(phrases=[{"category": "UI", "phrase": "Checkout", "translations": {"it-it": "Alla cassa"}}]))
+    c = client(double)
+    c.load_snapshot(path)
+    assert c.translate("Checkout", category="UI", locale="it-it") == "Cassa", "control: seeded"
+    c.translate("Not in the snapshot", category="UI", locale="it-it")  # this fetches the live catalog
+    assert c.translate("Checkout", category="UI", locale="it-it") == "Alla cassa"
+
+
+def test_SNAP2_registration_is_decided_against_the_live_catalog_never_the_snapshot(double, tmp_path):
+    """`Untranslated` is in the snapshot; the live catalog no longer holds it. Served from the
+    snapshot it decides nothing; once the live catalog is loaded, it is a miss."""
+    double.seed(world(phrases=PHRASES))
+    path = Snapshot.export(client(double), ["it-it"], ["UI"]).write_to(tmp_path / "s.json")
+    double.seed(world())
+    c = client(double)
+    c.load_snapshot(path)
+    c.translate("Untranslated", category="UI", locale="it-it")
+    assert not c.has_pending, "a snapshot hit decided a registration"
+    c.translate("Anything else", category="UI", locale="it-it")  # loads the live catalog
+    c.translate("Untranslated", category="UI", locale="it-it")
+    assert {"phrase": "Untranslated", "category": "UI"} in c.pending_phrases

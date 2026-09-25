@@ -48,6 +48,10 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   (`langsys-catalog-snapshot` v1), so it loads in every Langsys SDK. `Snapshot.load()` refuses a
   wrong format or version, a missing member, or a snapshot edited after export, naming which;
   the refresh is a new export.
+- **`client.load_snapshot()` seeds a client from a snapshot** with no network call; what the
+  snapshot lacks is fetched as usual. For framework integrations to call at startup. While the
+  API can't be reached, `resolve_request_locale()` serves the snapshot's locales rather than
+  falling back to the base locale.
 
 **Legacy-key migration (spec 8.2).**
 
@@ -56,8 +60,10 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   key's source text (never the key) under its namespace or `msgctxt`, and a miss is ordinary
   source text. Reads gettext `.po` and plain JSON; placeholders convert to `{name}`, gettext
   plurals to ICU, and anything that can't convert is kept verbatim with a warning. A `.mo` or an
-  unsupported format is refused at configuration. `langsys.migrate.convert_literal` converts a
-  framework call's literal under that framework's syntax, for integrations.
+  unsupported format is refused at configuration. `client.translate_legacy()` is the entry point a
+  framework's own translation functions (Django's `gettext`, `ngettext`, `pgettext`,
+  `{% blocktranslate %}`) delegate to: the same resolver as `translate()`, with a literal miss
+  converted under that framework's syntax.
 
 **Failed catalogs and unrenderable phrases (spec 8.2).**
 

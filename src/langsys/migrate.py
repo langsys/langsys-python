@@ -53,6 +53,11 @@ __all__ = [
 #: MIG-7 - the formats this core's ecosystem uses. Others are refused at load, by name.
 SUPPORTED_FORMATS = ("gettext", "plain")
 
+_DEFAULT_FORMATS = {
+    ".json": "plain", ".po": "gettext", ".mo": "gettext",
+    ".php": "laravel", ".yml": "rails-i18n", ".yaml": "rails-i18n",
+}
+
 _BRACED = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 _RAILS = re.compile(r"%\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _PY_NAMED = re.compile(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)([sd])")
@@ -66,10 +71,13 @@ _COLON_CASED = re.compile(r"(?<![\w:]):([A-Z][A-Za-z0-9_]*)\b")
 
 @dataclass(frozen=True)
 class LegacyFile:
-    """One configured source file and its declared format (MIG-7)."""
+    """One configured source file, its declared format, and an optional per-file namespace (MIG-7):
+    a file that holds one group's keys, as `locales/en/cart.json` holds `cart`'s, answers
+    `cart.items.title` for its `items.title`."""
 
     path: Union[str, Path]
     format: Optional[str] = None
+    namespace: Optional[str] = None
 
 
 @dataclass
@@ -77,19 +85,33 @@ class _Entry:
     phrase: str
     category: Optional[str]
     source: str
+    recognised: bool = True
+
+
+def _namespace(key: str) -> Optional[str]:
+    """MIG-5 - a dotted key's leading segment, when the key is dotted: `checkout.submit` is
+    `checkout`, while a sentence that ends in a full stop (`Welcome back.`) has none."""
+    head, dot, rest = key.partition(".")
+    if not dot or not head or not rest or any(c.isspace() for c in head):
+        return None
+    return head
 
 
 def _warn(message: str, *args: Any) -> None:
     logger.warning("langsys: " + message, *args)
 
 
-def convert_value(text: str, *, where: str = "") -> str:
-    """MIG-4 - a file value's placeholders, converted the same way whatever its format."""
-    unconvertible = (
+def _unconvertible(text: str) -> Optional[re.Match[str]]:
+    return (
         _PY_FORMATTED.search(text)
         or _COLON_CASED.search(text)
         or _PY_POSITIONAL.search(_PY_NAMED.sub("", text.replace("%%", "")))
     )
+
+
+def convert_value(text: str, *, where: str = "") -> str:
+    """MIG-4 - a file value's placeholders, converted the same way whatever its format."""
+    unconvertible = _unconvertible(text)
     if unconvertible:
         _warn("%s: %r holds %r, which {name} cannot express; registered verbatim.",
               where or "legacy value", text, unconvertible.group(0))
@@ -212,7 +234,9 @@ class LegacyKeys:
     def _load(self, spec: LegacyFile) -> None:
         path = Path(spec.path)
         suffix = path.suffix.lower()
-        fmt = spec.format or {".json": "plain", ".po": "gettext", ".mo": "gettext"}.get(suffix)
+        # MIG-7's defaults by file type: a PHP array is Laravel's, a YAML file Rails', a `.po`
+        # gettext, and undeclared JSON plain. Naming the format lets a refusal say which it is.
+        fmt = spec.format or _DEFAULT_FORMATS.get(suffix)
         if suffix == ".mo":
             raise ConfigurationError(
                 f"Langsys: {path} is a compiled gettext catalog. Configure its source instead: "
@@ -228,16 +252,19 @@ class LegacyKeys:
             flat: dict[str, str] = {}
             _flatten(json.loads(text), "", flat, str(path))
             for key, value in flat.items():
+                if spec.namespace:
+                    key = f"{spec.namespace}.{key}"
                 where = f"{path} key {key!r}"
                 if "|" in value:
                     _warn("%s: a '|' in a plain file is text, not a plural; registered "
                           "verbatim.", where)
                     self.unrecognised.append(where)
-                    phrase = value
+                    phrase, recognised = value, False
                 else:
                     phrase = convert_value(value, where=where)
-                namespace = key.split(".", 1)[0] if "." in key else None
-                self._add((None, key), _Entry(phrase, namespace, str(path)), key)
+                    recognised = phrase != value or not _unconvertible(value)
+                category = spec.namespace or _namespace(key)
+                self._add((None, key), _Entry(phrase, category, str(spec.path), recognised), key)
         else:
             for entry in _parse_po(text):
                 msgid = entry["msgid"]
@@ -249,7 +276,7 @@ class LegacyKeys:
                     phrase = gettext_plural(msgid, entry["msgid_plural"])
                 else:
                     phrase = convert_value(msgid, where=where)
-                self._add((context, msgid), _Entry(phrase, context, str(path)), msgid)
+                self._add((context, msgid), _Entry(phrase, context, str(spec.path)), msgid)
 
     def _add(self, key: tuple[Optional[str], str], entry: _Entry, name: str) -> None:
         if key in self.entries:
@@ -271,6 +298,18 @@ class LegacyKeys:
             )
             return arg, category, False
         return entry.phrase, category if category is not None else entry.category, True
+
+    def lookup(self, arg: str, category: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """A hit as the shared vectors describe it - phrase, category, the answering file, and
+        whether the value converted - or None for the MIG-2 miss."""
+        phrase, resolved, hit = self.resolve(arg, category)
+        if not hit:
+            return None
+        entry = (
+            self.entries.get((category, arg)) or self.entries.get((None, arg)) or self._by_key[arg]
+        )
+        return {"phrase": phrase, "category": resolved, "file": entry.source,
+                "recognised": entry.recognised}
 
     def problems(self) -> list[str]:
         """What the listing reports: keys defined twice, and values registered verbatim."""

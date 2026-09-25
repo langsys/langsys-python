@@ -124,7 +124,7 @@ class Snapshot:
             raise SnapshotError(f"Unsupported snapshot version {version!r}; export it again.")
         missing = [name for name in (*_FIELDS, "checksum") if name not in document]
         if missing:
-            raise SnapshotError(f"This snapshot has no {missing[0]} member; export it again.")
+            raise SnapshotError(f"This snapshot is missing member {missing[0]!r}; export it again.")
         payload = {name: document[name] for name in _FIELDS}
         if document["checksum"] != _checksum(payload):
             raise SnapshotError(
