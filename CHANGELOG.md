@@ -41,6 +41,18 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Server messages (spec 8.2).**
+
+- **MSG-1..8, MSG-11 — validation errors and system messages are translatable.**
+  `client.server_message(code, template, params, field)` builds the fleet's entry
+  (`{field, code, message, template, params}`) and registers a template the catalog lacks after
+  the response. `resolve_server_messages()` finds entries in any response body, and
+  `render_server_message()` renders one from the catalog, falling back to `message`.
+  `python -m langsys.messages` lists and registers every template an app declares, refusing
+  label markers and leftover framework placeholders, and exits non-zero on any message it cannot
+  list. A marker filled with a phrase the catalog already holds warns once. Templates live under
+  one category, `Errors` by default.
+
 **Request scopes (spec 8.2).**
 
 - **SRV-3 — misses discovered while serving a request are sent only after its response.**

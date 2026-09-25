@@ -5,7 +5,7 @@ from __future__ import annotations
 import atexit
 import threading
 import time
-from typing import Any, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 from ._log import logger
 from .cache.backend import CacheBackend
@@ -17,6 +17,7 @@ from .html.attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES
 from .http import HttpClient, encode_segment
 from .interpolate import interpolate
 from .locale import canonicalize_locale, detect_preferred_locale
+from .messages import DEFAULT_MESSAGE_CATEGORY, Entry
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
 from .scope import RequestScope, begin_request_scope, current_scope, end_request_scope
@@ -77,6 +78,7 @@ class LangsysClient:
         auto_flush: bool = True,
         debounce: Optional[float] = DEFAULT_DEBOUNCE_SECONDS,
         debug: bool = False,
+        message_category: str = DEFAULT_MESSAGE_CATEGORY,
     ) -> None:
         self._config = Config.resolve(
             api_key,
@@ -133,6 +135,10 @@ class LangsysClient:
         #: REG-11 — one warning per (category, phrase); the check runs on every render.
         self._warned_ellipsis: set[tuple[str, str]] = set()
         self._translatable_attributes: list[str] = list(DEFAULT_TRANSLATABLE_ATTRIBUTES)
+        #: MSG-6 - the one category server-message templates are registered and rendered under.
+        self.message_category = message_category
+        #: MSG-11 - one warning per (template, marker) whose value is a catalogued phrase.
+        self._warned_marker_values: set[tuple[str, str]] = set()
         self._utils = Utilities(self._http, self._config.project_id)
         self._registrar: Optional[Registrar] = None
 
@@ -598,6 +604,80 @@ class LangsysClient:
         phrases, blocks = self._sendable()
         if phrases or blocks:
             self._schedule_flush()
+
+    # -- server messages (MSG) -------------------------------------------------
+
+    def server_message(
+        self,
+        code: str,
+        template: str,
+        params: Optional[dict[str, Any]] = None,
+        field: Optional[str] = None,
+    ) -> Entry:
+        """Build the entry a server sends for a failure (MSG-1, MSG-4), and act on it.
+
+        MSG-8 - a template the catalog does not list yet is queued for registration on the ordinary
+        flush path, so it is sent after the response (inside a request scope) and never blocks the
+        request; a session that cannot write discards it like any other miss.
+        MSG-11 - a marker filled with a string that is itself a phrase in the catalog warns once
+        per `(template, marker)`: a translatable value in a marker is never translated.
+        """
+        from .messages import server_message, template_markers, warn_translatable_marker_value
+
+        entry = server_message(code, template, params, field)
+        category = self.message_category
+        fetch = self._catalog.get(self._effective_locale(None))
+        self._observe_decision(fetch.write_enabled)
+        if not fetch.ok:
+            return entry  # WIRE-4: no catalog, no decisions
+        phrases = _catalog_phrases(fetch.catalog)
+        for marker in template_markers(template):
+            value = (params or {}).get(marker)
+            key = (template, marker)
+            warned = key in self._warned_marker_values
+            if isinstance(value, str) and value in phrases and not warned:
+                self._warned_marker_values.add(key)
+                warn_translatable_marker_value(template, marker, value)
+        known = fetch.catalog.get(category)
+        if not (isinstance(known, dict) and template in known):
+            self._queue_missing(template, category, known)
+        return entry
+
+    def render_server_message(
+        self, entry: Entry, category: Optional[str] = None, locale: Optional[str] = None
+    ) -> str:
+        """Render a received entry: `t(template, category, params)` when the catalog translates
+        the template, `message` otherwise. `message` is filled, possibly localised text and is
+        never a lookup key (MSG-5)."""
+        category = category or self.message_category
+        fetch = self._catalog.get(self._effective_locale(locale))
+        translations = fetch.catalog.get(category) if fetch.ok else None
+        template = entry.get("template")
+        value = (
+            translations.get(template)
+            if isinstance(translations, dict) and isinstance(template, str)
+            else None
+        )
+        if not isinstance(value, str) or not value:
+            return str(entry.get("message", ""))
+        params = entry.get("params") or {}
+        return interpolate(value, params, self._effective_locale(locale)) if params else value
+
+    def register_templates(
+        self, templates: Iterable[str], *, category: Optional[str] = None
+    ) -> int:
+        """MSG-7 - register every listed template the catalog does not hold yet, under the message
+        category. Idempotent: a second run registers nothing. Returns how many were registered."""
+        category = category or self.message_category
+        fetch = self._catalog.get(self._effective_locale(None), use_cache=False)
+        if not fetch.ok:
+            raise NetworkError("Langsys: the catalog could not be read, so nothing was registered.")
+        known = fetch.catalog.get(category)
+        new = [t for t in templates if not (isinstance(known, dict) and t in known)]
+        if new:
+            self.register_phrases([{"phrase": t, "category": category} for t in new])
+            self._catalog.clear()
+        return len(new)
 
     # -- translatable-attribute configuration ---------------------------------
 
@@ -1115,3 +1195,17 @@ def _existing_keys(catalog: Catalog) -> set[str]:
                 for child in value:
                     keys.add(f"{category}::{child}")
     return keys
+
+
+def _catalog_phrases(catalog: Catalog) -> set[str]:
+    """Every source phrase a catalog holds, content-block children included."""
+    phrases: set[str] = set()
+    for entries in catalog.values():
+        if not isinstance(entries, dict):
+            continue
+        for phrase, value in entries.items():
+            if isinstance(value, dict):
+                phrases.update(k for k in value if isinstance(k, str))
+            elif not (phrase.startswith("__") and phrase.endswith("__")):
+                phrases.add(phrase)
+    return phrases
