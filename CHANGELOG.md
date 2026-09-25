@@ -44,8 +44,10 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
 **Catalog snapshots (spec 8.2).**
 
 - **SNAP-1, SNAP-3 — `python -m langsys.snapshot` exports the catalog for chosen locales and
-  categories** into a checksummed file, in the PHP SDK's format. `Snapshot.load()` refuses a
-  snapshot edited after export; the refresh is a new export.
+  categories** into a checksummed file in the fleet's one snapshot format
+  (`langsys-catalog-snapshot` v1), so it loads in every Langsys SDK. `Snapshot.load()` refuses a
+  wrong format or version, a missing member, or a snapshot edited after export, naming which;
+  the refresh is a new export.
 
 **Legacy-key migration (spec 8.2).**
 

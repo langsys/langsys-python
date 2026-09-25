@@ -234,3 +234,19 @@ def test_OBS1_control_an_allow_listed_session_is_not_reported(double, caplog):
         miss(c)
         c.flush_pending()
     assert _unusable(caplog) == []
+
+
+def test_WIRE3_an_uncategorised_block_reads_back_under_the_sentinel_and_is_found(double):
+    """The API stores an uncategorised block and serves it under `__uncategorized__`, as it does
+    uncategorised phrases; a second render must find it there instead of registering it again."""
+    double.seed(world())
+    html = "<div><p>First sentence</p><p>Second sentence</p></div>"
+    first = client(double)
+    first.translate_content_block(html)
+    assert first.flush_pending()["success"] is True
+    [block] = double.blocks()
+    assert block["category"] is None
+
+    second = client(double)
+    second.translate_content_block(html)
+    assert second.pending_content_blocks == [], "the stored block was not found under the sentinel"

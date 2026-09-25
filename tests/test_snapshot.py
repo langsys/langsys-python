@@ -1,12 +1,13 @@
-"""SNAP-1 - export is a client-side filter of the catalog; SNAP-3 - a snapshot is a cache.
+"""SNAP-1 - export is a client-side filter of the catalog into the fleet's one format; SNAP-3 - a
+snapshot is a cache.
 
 The export runs against the contract double: the snapshot must carry exactly what the API serves
-for the chosen categories. The format and checksum are the PHP SDK's, pinned by a vector PHP 8.3
-produced, so a snapshot exported by either SDK loads in both.
+for the chosen categories.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import httpx
@@ -15,7 +16,7 @@ from contract import PROJECT, WRITE_KEY, world
 
 from langsys import LangsysClient
 from langsys.cache import MemoryCache
-from langsys.snapshot import FORMAT, Snapshot, SnapshotError, _checksum
+from langsys.snapshot import FORMAT, Snapshot, SnapshotError, _canonical, _checksum
 
 PHRASES = [
     {"category": "UI", "phrase": "Checkout", "translations": {"it-it": "Cassa", "es-es": "Caja"}},
@@ -31,8 +32,8 @@ def client(double) -> LangsysClient:
 
 
 def served(double, locale):
-    response = httpx.get(f"{double.base_url}/translations/data",
-                         params={"project_id": PROJECT, "locale": locale},
+    response = httpx.get(f"{double.base_url}/translations",
+                         params={"project_id": PROJECT, "locale": locale, "format": "flat"},
                          headers={"X-Authorization": WRITE_KEY})
     return response.json()["data"]
 
@@ -44,11 +45,12 @@ def test_SNAP1_the_snapshot_carries_exactly_what_the_api_serves_for_its_categori
         api = served(double, locale)
         assert snapshot.catalog(locale) == {c: api[c] for c in ("UI", "Errors") if c in api}
     assert "Marketing" not in snapshot.catalog("it-it")
-    assert snapshot.locales == ["it-it", "es-es"] and snapshot.project_id == PROJECT
+    assert snapshot.locales == ["es-es", "it-it"], "locales are sorted ascending"
+    assert snapshot.project_id == PROJECT and snapshot.base_locale == "en-us"
 
 
 def test_SNAP1_a_catalog_that_cannot_be_read_fails_the_export(double):
-    double.seed(world(faults=[{"method": "GET", "path": "/translations/data", "status": 500}]))
+    double.seed(world(faults=[{"method": "GET", "path": "/translations", "status": 500}]))
     with pytest.raises(SnapshotError, match="it-it"):
         Snapshot.export(client(double), ["it-it"], ["UI"])
 
@@ -86,16 +88,54 @@ def test_SNAP3_anything_that_is_not_a_current_snapshot_is_refused(text):
         Snapshot.load(text)
 
 
-def test_SNAP_the_checksum_is_byte_identical_to_the_php_sdks():
-    """PHP 8.3.19: json_encode(payload, UNESCAPED_SLASHES|UNICODE|LINE_TERMINATORS), sha256. The
-    vector carries a slash, U+2028, non-ASCII and an empty locale map, which PHP writes as []."""
+def test_SNAP1_the_canonical_serialisation_is_the_specs():
+    """Keys in code point order (U+E000 before U+1F600, `"10"` before `"404"` as strings), no
+    whitespace, `{}` for an empty map, CID-1 escaping: a C0 control as lowercase `\\u00xx`,
+    U+2028 and `/` raw. `snapshot-vectors.json` will pin the fleet's bytes; until it is authored,
+    these are the spec's own cases."""
     payload = {
-        "project_id": "p", "generated_at": "2026-09-24T00:00:00Z", "locales": ["it-it"],
-        "categories": ["UI", "Empty"],
-        "catalog": {"it-it": {"UI": {"Checkout": "Cassa", "Pay/now   é": None, "blk": {"A": None}}},
-                    "es-es": {}},
+        "project_id": "p", "generated_at": "2026-09-24T00:00:00Z", "base_locale": "en-us",
+        "locales": ["es-es", "it-it"], "categories": ["UI"],
+        "catalog": {"it-it": {"UI": {"\U0001F600": "x", "\ue000": "y", "404": None, "10": "a/b\u2028\x1c",
+                                     "blk": {"A": None}}}, "es-es": {"UI": {}}},
     }
-    assert _checksum(payload) == "sha256:f66f2ca2791d8aa626351f57a8d4cb75231fc3b5601fe4e21727a39bdfe70d32"
+    expected = (
+        '{"base_locale":"en-us","catalog":{"es-es":{"UI":{}},"it-it":{"UI":{"10":"a/b\u2028\\u001c",'
+        '"404":null,"blk":{"A":null},"\ue000":"y","\U0001F600":"x"}}},"categories":["UI"],'
+        '"generated_at":"2026-09-24T00:00:00Z","locales":["es-es","it-it"],"project_id":"p"}'
+    )
+    assert _canonical(payload) == expected
+    assert _checksum(payload) == "sha256:" + hashlib.sha256(expected.encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize(("member", "value", "reason"), [
+    ("format", "other", "format"), ("version", 2, "version"), ("base_locale", None, "base_locale"),
+    ("checksum", "sha256:00", "checksum"),
+], ids=["format", "version", "missing-member", "checksum"])
+def test_SNAP1_a_loader_refuses_by_name(double, member, value, reason):
+    double.seed(world(phrases=PHRASES))
+    document = json.loads(Snapshot.export(client(double), ["it-it"], ["UI"]).to_json())
+    if value is None:
+        del document[member]
+    else:
+        document[member] = value
+    with pytest.raises(SnapshotError, match=reason):
+        Snapshot.load(json.dumps(document))
+
+
+def test_SNAP1_the_file_is_any_json_encoding_of_the_document(double):
+    """A loader recomputes the checksum from the parsed document, so re-encoding the file (key
+    order, whitespace, escapes) does not break it."""
+    double.seed(world(phrases=PHRASES))
+    document = json.loads(Snapshot.export(client(double), ["it-it"], ["UI"]).to_json())
+
+    def reversed_maps(node):
+        if isinstance(node, dict):
+            return {k: reversed_maps(v) for k, v in reversed(list(node.items()))}
+        return node
+
+    reencoded = json.dumps(reversed_maps(document), ensure_ascii=True, indent=1)
+    assert Snapshot.load(reencoded).catalog("it-it")["UI"]["Checkout"] == "Cassa"
 
 
 def test_SNAP_the_command_line_writes_a_loadable_snapshot(double, tmp_path, monkeypatch):

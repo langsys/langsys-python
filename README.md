@@ -191,8 +191,8 @@ python -m langsys.snapshot --locale it-it --locale es-es --category UI --categor
 
 A snapshot holds exactly what the API serves for those categories. It's a cache, never a source:
 it carries a checksum, and `Snapshot.load()` refuses one that was edited by hand. To change it,
-export again. The file format is shared with the PHP SDK, so either one reads the other's
-snapshots.
+export again. Every Langsys SDK writes and reads the same format, so a snapshot exported here
+loads in any of them, the browser SDK included.
 
 ### Migrating from translation keys
 

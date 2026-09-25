@@ -1,8 +1,9 @@
 """Catalog snapshots (spec SNAP): the catalog for chosen locales and categories, exported into a
 file an app can load without calling the API on its render path.
 
-Export is a client-side filter of ``GET /translations/data`` by category (SNAP-1); there is no
-export endpoint, and a snapshot carries exactly the entries the API returns for its categories.
+Export reads each locale's flat catalog - ``GET /translations``, the category map an SDK caches
+and seeds - and filters it client-side by category (SNAP-1); there is no export endpoint, and a
+snapshot carries exactly the entries the API returns for its categories.
 
 A snapshot is a cache, never a source (SNAP-3). It carries a checksum of its contents, and loading
 refuses one that no longer matches, so an edited snapshot is caught rather than served. The only
@@ -10,8 +11,11 @@ refresh is a new export:
 
     python -m langsys.snapshot --locale it-it --category UI --category Errors --out snapshot.json
 
-The file format is the PHP SDK's (``langsys-catalog-snapshot``, version 1), checksum included, so
-a snapshot exported by either SDK loads in both.
+Every Langsys SDK writes and reads one format, ``langsys-catalog-snapshot`` version 1, so a
+snapshot exported by any core loads in any other. Its checksum is ``sha256:`` over the canonical
+serialisation of every member but ``format``, ``version`` and ``checksum``: keys sorted in code
+point order (Python's own string order), no whitespace, empty maps ``{}``, and strings escaped as
+CID-1 escapes them (``"``, the backslash and U+0000-U+001F only; everything else raw UTF-8).
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ __all__ = ["FORMAT", "VERSION", "Snapshot", "SnapshotError"]
 
 FORMAT = "langsys-catalog-snapshot"
 VERSION = 1
-_FIELDS = ("project_id", "generated_at", "locales", "categories", "catalog")
+_FIELDS = ("project_id", "generated_at", "base_locale", "locales", "categories", "catalog")
 
 
 class SnapshotError(ConfigurationError):
@@ -42,16 +46,8 @@ class SnapshotError(ConfigurationError):
 
 
 def _canonical(payload: dict[str, Any]) -> str:
-    """The JSON the checksum is taken over, byte-identical to PHP's `json_encode` with unescaped
-    slashes, unicode and line terminators. An empty map is `[]` there, so it is here too."""
-    def php_shape(node: Any) -> Any:
-        if isinstance(node, dict):
-            return [] if not node else {k: php_shape(v) for k, v in node.items()}
-        if isinstance(node, list):
-            return [php_shape(v) for v in node]
-        return node
-
-    return json.dumps(php_shape(payload), ensure_ascii=False, separators=(",", ":"))
+    """The canonical serialisation the checksum is taken over (SNAP-1)."""
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def _checksum(payload: dict[str, Any]) -> str:
@@ -83,25 +79,31 @@ class Snapshot:
         """SNAP-1 - one ``GET /translations/data`` per locale, keeping only `categories`."""
         if not locales or not categories:
             raise SnapshotError("A snapshot names at least one locale and at least one category.")
-        wanted = list(dict.fromkeys(str(c) for c in categories))
-        chosen = list(dict.fromkeys(normalize_locale(loc) for loc in locales))
+        wanted = sorted({str(c) for c in categories})
+        chosen = sorted({normalize_locale(loc) for loc in locales})
         catalog: dict[str, dict[str, Any]] = {}
         for locale in chosen:
             try:
                 response = client._http.get(
-                    "translations/data",
-                    params={"project_id": client._config.project_id, "locale": locale},
+                    "translations",
+                    params={"project_id": client._config.project_id, "locale": locale,
+                            "format": "flat"},
                 )
             except (NetworkError, ApiError) as exc:
                 raise SnapshotError(f"The {locale} catalog could not be read: {exc}") from exc
             data = response.get("data")
             if response.get("status") is False or not isinstance(data, (dict, list)):
                 raise SnapshotError(f"The {locale} catalog response carried no catalog.")
-            data = data if isinstance(data, dict) else {}
+            data = data if isinstance(data, dict) else {}  # an empty project answers []
             catalog[locale] = {c: data[c] for c in wanted if c in data}
+        try:
+            base_locale = client.authorize().base_locale
+        except (NetworkError, ApiError, ConfigurationError) as exc:
+            raise SnapshotError(f"The project could not be read: {exc}") from exc
         return cls({
             "project_id": client._config.project_id,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "base_locale": normalize_locale(base_locale),
             "locales": chosen,
             "categories": wanted,
             "catalog": catalog,
@@ -114,26 +116,27 @@ class Snapshot:
         try:
             document = json.loads(text)
         except ValueError as exc:
-            raise SnapshotError("This is not a Langsys catalog snapshot.") from exc
+            raise SnapshotError("This is not JSON, so not a Langsys catalog snapshot.") from exc
         if not isinstance(document, dict) or document.get("format") != FORMAT:
-            raise SnapshotError("This is not a Langsys catalog snapshot.")
+            raise SnapshotError(f"Not a Langsys catalog snapshot: format is not {FORMAT!r}.")
         if document.get("version") != VERSION:
-            raise SnapshotError("This snapshot has an unsupported version; export it again.")
+            version = document.get("version")
+            raise SnapshotError(f"Unsupported snapshot version {version!r}; export it again.")
         missing = [name for name in (*_FIELDS, "checksum") if name not in document]
         if missing:
-            raise SnapshotError(f"This snapshot has no {missing[0]}; export it again.")
+            raise SnapshotError(f"This snapshot has no {missing[0]} member; export it again.")
         payload = {name: document[name] for name in _FIELDS}
         if document["checksum"] != _checksum(payload):
             raise SnapshotError(
-                "This snapshot was changed after it was exported. A snapshot is a cache of the "
-                "catalog and is never edited: export it again."
+                "This snapshot's checksum does not match: it was changed after it was exported. "
+                "A snapshot is a cache of the catalog and is never edited: export it again."
             )
         return cls(payload)
 
     def catalog(self, locale: str) -> Optional[dict[str, Any]]:
         """``category -> entries`` for a locale, as the API returned them; None if not held."""
         held = self._payload["catalog"].get(normalize_locale(locale))
-        return held if isinstance(held, dict) else ({} if held == [] else None)
+        return held if isinstance(held, dict) else None
 
     @property
     def locales(self) -> list[str]:
@@ -142,6 +145,10 @@ class Snapshot:
     @property
     def categories(self) -> list[str]:
         return list(self._payload["categories"])
+
+    @property
+    def base_locale(self) -> str:
+        return str(self._payload["base_locale"])
 
     @property
     def project_id(self) -> str:
