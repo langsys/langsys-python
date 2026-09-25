@@ -41,12 +41,14 @@ __all__ = [
     "TemplateProblem",
     "TemplateRefused",
     "TemplateList",
+    "WORDINGS",
     "fill_template",
     "resolve_server_messages",
     "server_message",
     "size_code",
     "template_markers",
     "to_server_message",
+    "with_label",
 ]
 
 #: MSG-6 - templates are registered and looked up under one category, identical on the server
@@ -61,6 +63,28 @@ MESSAGE_CODES = (
     "too_many", "not_allowed", "already_member", "not_member", "already_owner", "expired",
     "not_available", "invalid",
 )
+
+#: MSG-2 - the fleet's wording for failures the reference's rules do not produce: a validator
+#: reporting one of these uses exactly this code and template, so the same failure is the same
+#: phrase on every stack. `:attribute` is the authoring form, replaced by the field's label with
+#: `with_label` before the template is added (MSG-3); whole-request failures carry no `field`.
+#: An inclusive bound (`ge`, `le`) uses the reference's `min`/`max` templates and is not repeated
+#: here.
+WORDINGS: dict[str, tuple[str, str]] = {
+    "less_than": ("too_large", "The :attribute must be less than {value}."),
+    "extra_field": ("not_allowed", "This field is not allowed."),
+    "object_type": ("invalid_type", "The :attribute must be an object."),
+    "body_missing": ("required", "The request body is required."),
+    "body_not_json": ("invalid_format", "The request body must be valid JSON."),
+    "body_not_object": ("invalid_type", "The request body must be an object."),
+}
+
+
+def with_label(template: str, label: str) -> str:
+    """Write the field's label into an authoring-form template (`:attribute` -> label). The
+    label is translatable, so it belongs in the sentence, never in a marker (MSG-3)."""
+    return template.replace(":attribute", label)
+
 
 #: MSG-11 - marker names that carry a label by construction. A label is translatable, so it is
 #: written into the sentence; a template naming one of these is refused when it is added.

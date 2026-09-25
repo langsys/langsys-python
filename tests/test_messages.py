@@ -334,3 +334,31 @@ def test_MSG7_the_command_line_entry_point_lists_and_gates(capsys, monkeypatch):
     assert "The name is required." in capsys.readouterr().out
     assert main(["--provider", "msg_provider_good:templates", "--provider", "msg_provider_bad:templates"]) == 1
     assert "PROBLEM" in capsys.readouterr().out
+
+
+
+@pytest.mark.parametrize(("failure", "code", "template"), [
+    ("less_than", "too_large", "The :attribute must be less than {value}."),
+    ("extra_field", "not_allowed", "This field is not allowed."),
+    ("object_type", "invalid_type", "The :attribute must be an object."),
+    ("body_missing", "required", "The request body is required."),
+    ("body_not_json", "invalid_format", "The request body must be valid JSON."),
+    ("body_not_object", "invalid_type", "The request body must be an object."),
+], ids=lambda value: value if isinstance(value, str) and " " not in value else "")
+def test_MSG2_the_wording_table_is_the_specs(failure, code, template):
+    from langsys.messages import WORDINGS
+
+    assert WORDINGS[failure] == (code, template)
+    assert code in MESSAGE_CODES
+
+
+def test_MSG2_a_labelled_wording_is_a_valid_template_and_the_authoring_form_is_not():
+    from langsys.messages import WORDINGS, with_label
+
+    _, template = WORDINGS["less_than"]
+    with pytest.raises(TemplateRefused):
+        TemplateList().add(template)  # `:attribute` must be replaced first
+    labelled = with_label(template, "age")
+    TemplateList().add(labelled)
+    entry = server_message("too_large", labelled, {"value": 18}, field="age")
+    assert entry["message"] == "The age must be less than 18."
