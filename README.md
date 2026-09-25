@@ -191,6 +191,13 @@ from langsys.cache.redis import RedisCache            # pip install langsys[redi
 client = LangsysClient(..., cache=RedisCache(host="localhost"))
 ```
 
+When the catalog can't be fetched (the API is down, slow, or doesn't serve the locale), lookups
+render source text and nothing throws. The client then stops asking for that locale for a short
+window: 3 seconds, doubling on each consecutive failure up to 5 minutes, and reset by the first
+success. An outage costs one request per window rather than one per `t()` call. The window is
+held in the client, never in the shared cache, and concurrent lookups for one locale share a
+single request.
+
 ### Server-side HTML translation
 
 Translate whole blocks of HTML or entire pages (requires `pip install langsys[html]`):

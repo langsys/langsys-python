@@ -15,6 +15,7 @@ across languages:
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import logging
 import re
@@ -32,9 +33,18 @@ Params = dict[str, Any]
 _NOTICED: set[tuple[str, str]] = set()
 
 
+#: ICU-6 dedup: one warning per ``(template, locale)`` that the formatter could not render.
+_FAILED: set[tuple[str, str]] = set()
+
+
 def reset_recovery_notices() -> None:
-    """Forget which ``(template, locale)`` pairs have been noticed. Test seam."""
+    """Forget which ``(template, locale)`` pairs have been noticed or warned. Test seam."""
     _NOTICED.clear()
+    _FAILED.clear()
+
+
+class _FormatFailure(ValueError):
+    """A construct the formatter cannot render - no branch applies, an unsupported type."""
 
 # Same detection as the JS/PHP SDKs: an argument whose second token is a known ICU
 # keyword. The trailing ``[,}]`` also matches style-less ``{n, number}``.
@@ -42,6 +52,7 @@ _ICU_PATTERN = re.compile(
     r"\{[^{}]+,\s*(plural|select|selectordinal|number|date|time)\s*[,}]"
 )
 _SIMPLE_SLOT = re.compile(r"\{([^{},]+)\}")
+_ANY_CONSTRUCT = re.compile(r"\{\s*[A-Za-z_]\w*\s*,\s*[A-Za-z]")
 
 #: TOK-5 — `%name%` is accepted as an escape for `{name}`.
 #:
@@ -89,16 +100,21 @@ def interpolate(template: str, params: Params, locale: str = "en") -> str:
     # TOK-5 — the escape is resolved here, on the template, so everything downstream
     # sees one placeholder form and no substituted value is ever re-scanned.
     template = _rewrite_percent_slots(template, params)
-    if is_icu(template):
+    # Any `{name, kind ...}` construct goes to the ICU renderer, including a kind it does not
+    # support: that fails there and recovers through ICU-6, where the simple path would print it.
+    if is_icu(template) or _ANY_CONSTRUCT.search(template):
         recovered: list[str] = []
         try:
             nodes, _ = _parse(template, 0)
             out = _render(
                 nodes, params, locale, plural_value=None, offset=0, recovered=recovered
             )
-        except Exception:
-            # Malformed ICU (or an unexpected node) must never blow up a page.
-            return _simple(template, params, locale)
+        except Exception as exc:
+            # ICU-6 - a phrase the formatter cannot render goes through our own branch
+            # selection, and warns: an empty string or raw ICU syntax on the page is a
+            # silent hole only a developer can read.
+            _warn_format_failure(template, locale, exc)
+            return _lenient(template, params, locale, None)
         if recovered:
             _notice_recovery(template, locale, recovered)
         return out
@@ -448,7 +464,9 @@ def _render_arg(arg: _Arg, params: Params, locale: str, recovered: list[str]) ->
 
     options = arg.options or {}
     if arg.kind == "select":
-        branch = options.get(str(value)) or options.get("other") or []
+        branch = options.get(str(value)) or options.get("other")
+        if branch is None:
+            raise _FormatFailure(f"no branch of {arg.name!r} fits {value!r}, and none is other")
         return _render(branch, params, locale, plural_value=None, offset=0, recovered=recovered)
 
     # plural / selectordinal — supplied, so it keeps full CLDR selection (ICU-5).
@@ -459,7 +477,9 @@ def _render_arg(arg: _Arg, params: Params, locale: str, recovered: list[str]) ->
             exact, params, locale, plural_value=number, offset=arg.offset, recovered=recovered
         )
     category = _plural_category(number - arg.offset, locale, ordinal=arg.kind == "selectordinal")
-    branch = options.get(category) or options.get("other") or []
+    branch = options.get(category) or options.get("other")
+    if branch is None:
+        raise _FormatFailure(f"no branch of {arg.name!r} applies to {value!r} and none is other")
     return _render(
         branch, params, locale, plural_value=number, offset=arg.offset, recovered=recovered
     )
@@ -476,3 +496,129 @@ def _plural_category(number: float, locale: str, *, ordinal: bool) -> str:
         return str(rule(number))
     except Exception:
         return "other"
+
+
+# -- ICU-6: rendering what the formatter could not --------------------------------------------
+
+
+def _warn_format_failure(template: str, locale: str, exc: Exception) -> None:
+    """At WARNING whatever the log level, once per ``(template, locale)``. Unlike a missing
+    argument (ICU-4, debug), a phrase the formatter cannot render is a defect someone must fix."""
+    key = (template, locale)
+    if key in _FAILED:
+        return
+    _FAILED.add(key)
+    logger.warning(
+        "langsys: the formatter could not render this phrase in locale %s (%s); it was "
+        "rendered through branch selection instead. Fix the phrase: %s",
+        locale,
+        exc,
+        template,
+    )
+
+
+def _match_brace(text: str, start: int) -> int:
+    """Index of the `}` closing the `{` at `start`, or len(text) when it is never closed."""
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return len(text)
+
+
+def _lenient(text: str, params: Params, locale: str, hash_value: Optional[str]) -> str:
+    """Render `text` tolerating anything malformed: every construct becomes its chosen branch or
+    its value, a value not supplied stays the visible `{name}`, and no construct syntax - and no
+    empty string where a value exists - reaches the output."""
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "{":
+            end = _match_brace(text, i)
+            out.append(_lenient_arg(text[i + 1:end], params, locale))
+            i = end + 1
+        elif ch == "#" and hash_value is not None:
+            out.append(hash_value)
+            i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _split_top(text: str, limit: int) -> list[str]:
+    parts: list[str] = []
+    depth, start = 0, 0
+    for i, ch in enumerate(text):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == "," and depth == 0 and len(parts) < limit - 1:
+            parts.append(text[start:i])
+            start = i + 1
+    parts.append(text[start:])
+    return parts
+
+
+def _lenient_options(text: str) -> tuple[dict[str, str], int]:
+    options: dict[str, str] = {}
+    offset, i, n = 0, 0, len(text)
+    while i < n:
+        while i < n and text[i].isspace():
+            i += 1
+        start = i
+        while i < n and not text[i].isspace() and text[i] != "{":
+            i += 1
+        selector = text[start:i]
+        if selector.startswith("offset:"):
+            with contextlib.suppress(ValueError):
+                offset = int(selector[len("offset:"):])
+            continue
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n or text[i] != "{":
+            break
+        end = _match_brace(text, i)
+        if selector:
+            options[selector] = text[i + 1:end]
+        i = end + 1
+    return options, offset
+
+
+def _lenient_arg(inner: str, params: Params, locale: str) -> str:
+    parts = _split_top(inner, 3)
+    name = parts[0].strip()
+    value = params.get(name)
+    kind = parts[1].strip() if len(parts) > 1 else ""
+    if kind in ("plural", "selectordinal", "select"):
+        options, offset = _lenient_options(parts[2] if len(parts) > 2 else "")
+        if value is None:
+            branch = options.get("other")
+            if branch is None:
+                return "{" + name + "}"
+            return _lenient(branch, params, locale, "{" + name + "}" if kind != "select" else None)
+        if kind == "select":
+            branch = options.get(str(value), options.get("other"))
+            return str(value) if branch is None else _lenient(branch, params, locale, None)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            branch = options.get(str(value), options.get("other"))
+            return str(value) if branch is None else _lenient(branch, params, locale, None)
+        shown = _format_number(number - offset, locale)
+        branch = options.get("=" + _int_key(number))
+        if branch is None:
+            category = _plural_category(number - offset, locale, ordinal=kind == "selectordinal")
+            branch = options.get(category, options.get("other"))
+        return shown if branch is None else _lenient(branch, params, locale, shown)
+    if value is None:
+        return "{" + name + "}" if name else "{" + inner + "}"
+    if kind == "number":
+        return _format_number(value, locale) if isinstance(value, (int, float)) else str(value)
+    return _format_value(value, locale)

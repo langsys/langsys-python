@@ -189,10 +189,15 @@ def test_WIRE4_get_translations_returns_empty_rather_than_throwing(httpx_mock):
 
 def test_WIRE4_a_failed_fetch_is_not_cached_as_an_empty_catalog(httpx_mock):
     """Caching the failure would serve source text for the whole TTL, and would make
-    the outage outlive itself on every host sharing the store."""
+    the outage outlive itself on every host sharing the store. The failure is remembered only
+    for CACHE-2's short window, on this client; once it passes, the next lookup fetches again."""
+    from unittest.mock import patch
+
     httpx_mock.add_exception(httpx.ConnectError("refused"), url=TRANS_URL)
     httpx_mock.add_response(url=TRANS_URL, json=catalog_payload({"CAT": {"Hi": "Hola"}}))
     client = make()
-    assert client.translate("Hi", category="CAT", locale="es-es") == "Hi"
-    # Second call must re-fetch rather than read a cached empty catalog.
-    assert client.translate("Hi", category="CAT", locale="es-es") == "Hola"
+    now = [1000.0]
+    with patch("langsys.catalog._clock", lambda: now[0]):
+        assert client.translate("Hi", category="CAT", locale="es-es") == "Hi"
+        now[0] += 3.5  # past the first window
+        assert client.translate("Hi", category="CAT", locale="es-es") == "Hola"

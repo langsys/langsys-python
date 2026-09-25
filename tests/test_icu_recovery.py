@@ -104,12 +104,10 @@ def test_ICU1_missing_plural_argument_renders_the_other_branch():
 
 
 def test_ICU1_malformed_node_without_other_is_left_to_normal_handling():
-    """A `select` with no `other` branch is malformed; ICU-1 says leave it rather
-    than inventing a fallback. Degrading to simple interpolation is this SDK's
-    normal handling for malformed ICU."""
-    assert interpolate("{gender, select, male{M} female{F}}", {}, "en-US") == (
-        "{gender, select, male{M} female{F}}"
-    )
+    """A `select` with no `other` branch is malformed; ICU-1 leaves it to normal error handling,
+    which is ICU-6's recovery: the unsupplied value stays the visible `{gender}`, never the raw
+    construct."""
+    assert interpolate("{gender, select, male{M} female{F}}", {}, "en-US") == "{gender}"
 
 
 # -- ICU-3: recursion, and `#` becomes the visible argument name --------------
@@ -223,3 +221,84 @@ def test_ICU4_is_silent_when_debug_logging_is_off():
         log.removeHandler(handler)
         log.setLevel(logging.NOTSET)
     assert handler.messages == []
+
+
+
+# -- ICU-6: what the formatter cannot render goes through our own branch selection ---------------
+
+FAILURES = [
+    ("You have {count, plural, one {{count} car} other {{count} cars}} for {price, spellout}",
+     {"count": 3, "price": 5}, "You have 3 cars for 5"),
+    ("{count, plural, one {# car}}", {"count": 3}, "3"),
+    ("You have {count, plural, one {# car} other {# cars}", {"count": 3}, "You have 3 cars"),
+    ("You have {count, plural, one {# car} other {# cars}", {"count": 1}, "You have 1 car"),
+    ("{g, select, f {Ella}}", {"g": "m"}, "m"),
+    ("{g, select, f {Ella} other {{n, plural, one {# amigo}}}", {"g": "m"}, "{n}"),
+]
+FAILURE_IDS = ["unsupported-type", "no-branch-fits", "unbalanced-3", "unbalanced-1",
+               "select-no-branch", "nested-missing"]
+
+
+@pytest.mark.parametrize(("template", "params", "expected"), FAILURES, ids=FAILURE_IDS)
+def test_ICU6_a_phrase_the_formatter_cannot_render_goes_through_branch_selection(
+    template, params, expected
+):
+    rendered = interpolate(template, params, "en")
+    assert rendered == expected
+    assert rendered != "" and ", plural," not in rendered and ", select," not in rendered
+
+
+def _failure_warnings(caplog):
+    return [r for r in caplog.records
+            if r.levelname == "WARNING" and "could not render" in r.getMessage()]
+
+
+def test_ICU6_warns_with_debug_off_naming_the_phrase_the_locale_and_the_error(caplog):
+    template = "Total {price, spellout}"
+    with caplog.at_level(logging.WARNING, logger="langsys"):
+        assert interpolate(template, {"price": 5}, "it-IT") == "Total 5"
+    [record] = _failure_warnings(caplog)
+    message = record.getMessage()
+    assert template in message and "it-IT" in message and "spellout" in message
+
+
+def test_ICU6_the_warning_is_deduplicated_per_template_and_locale(caplog):
+    from langsys.interpolate import reset_recovery_notices
+
+    reset_recovery_notices()
+    template = "{count, plural, one {# car}}"
+    with caplog.at_level(logging.WARNING, logger="langsys"):
+        for _ in range(3):
+            interpolate(template, {"count": 3}, "en")
+        interpolate(template, {"count": 3}, "de")
+    assert len(_failure_warnings(caplog)) == 2
+
+
+def test_ICU6_control_the_shared_vector_renders_natively_and_warns_nothing(caplog):
+    """`{count}` inside a branch of its own plural: another platform's formatter fails on it,
+    ours does not, so this is the direct pass - and it must not raise a false alarm."""
+    template = "You have {count, plural, one {{count} car} other {{count} cars}}"
+    with caplog.at_level(logging.WARNING, logger="langsys"):
+        assert interpolate(template, {"count": 3}, "en") == "You have 3 cars"
+        assert interpolate(template, {"count": 1}, "en") == "You have 1 car"
+    assert _failure_warnings(caplog) == []
+
+
+@pytest.mark.parametrize(("template", "params", "expected"), [
+    ("{g, select, male {He} female {She} other {They}} left", {}, "They left"),
+    ("{count, plural, one {# item} other {# items}}", {}, "{count} items"),
+    ("{count, plural, one {# item} other {# items}}", {"count": None}, "{count} items"),
+], ids=["missing-select", "missing-plural", "null-count"])
+def test_ICU1_ICU2_recovery_is_normal_and_never_raises_the_formatter_failure_warning(
+    template, params, expected, caplog
+):
+    """A missing or null argument is the ordinary case ICU-1/ICU-2 recover from. ICU-6's warning
+    is for a phrase the formatter cannot render at all; raising it here would make every
+    gendered phrase a false alarm - and hide a recovery that had stopped working behind the
+    fallback that happens to render the same text."""
+    from langsys.interpolate import reset_recovery_notices
+
+    reset_recovery_notices()
+    with caplog.at_level(logging.WARNING, logger="langsys"):
+        assert interpolate(template, params, "en") == expected
+    assert _failure_warnings(caplog) == []

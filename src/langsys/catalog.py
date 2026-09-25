@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Optional
 
 from ._log import logger
@@ -10,6 +12,14 @@ from .exceptions import ApiError, NetworkError
 from .http import HttpClient, encode_segment
 from .locale import normalize_locale
 from .types import Catalog
+
+#: CACHE-2 - REG-8's clock on the read side: 3s, doubling, ceiling ~5min, reset on success.
+FAILURE_WINDOW_INITIAL = 3.0
+FAILURE_WINDOW_MAX = 300.0
+
+
+def _clock() -> float:
+    return time.monotonic()
 
 
 class CatalogFetch:
@@ -45,6 +55,14 @@ class CatalogStore:
 
     Locales are keyed and sent in the lowercase ``xx-yy`` wire form (WIRE-3), so
     ``en-US`` and ``en-us`` are one cache entry rather than two fetches.
+
+    CACHE-2 - a failed fetch is remembered, per locale, for a window that starts at 3s, doubles on
+    each consecutive failure to a 5-minute ceiling, and resets on the first success. Inside it a
+    lookup answers from source text without fetching again, so an outage costs one request per
+    window rather than one per lookup, and a hung upstream one timeout rather than one per token.
+    The window lives on this object - one per project, for the life of the client - and is never
+    written to the cache backend, which is shared across hosts. Concurrent fetches for one locale
+    share a single request.
     """
 
     def __init__(
@@ -60,27 +78,63 @@ class CatalogStore:
         self._cache = cache
         self._ttl = ttl
         self._memory: dict[str, Catalog] = {}
+        #: locale -> (monotonic time the window ends, its length)
+        self._failures: dict[str, tuple[float, float]] = {}
+        self._fetching: dict[str, threading.Lock] = {}
+        self._guard = threading.Lock()
 
     def _key(self, locale: str) -> str:
         return f"translations_{self._project_id}_{normalize_locale(locale)}"
 
     def get(self, locale: str, *, use_cache: bool = True) -> CatalogFetch:
         wire_locale = normalize_locale(locale)
-        if use_cache:
-            cached = self._memory.get(wire_locale)
-            if cached is not None:
-                return CatalogFetch(cached, ok=True)
-            persisted = self._cache.get(self._key(wire_locale))
-            if isinstance(persisted, dict):
-                self._memory[wire_locale] = persisted
-                return CatalogFetch(persisted, ok=True)
+        held = self._held(wire_locale) if use_cache else None
+        if held is not None:
+            return held
+        if self._in_failure_window(wire_locale):
+            return CatalogFetch({}, ok=False)
 
-        fetched = self._fetch(wire_locale)
-        if not fetched.ok:
+        with self._fetch_lock(wire_locale):
+            # Another request for this locale may have finished while this one waited.
+            held = self._held(wire_locale) if use_cache else None
+            if held is not None:
+                return held
+            if self._in_failure_window(wire_locale):
+                return CatalogFetch({}, ok=False)
+            fetched = self._fetch(wire_locale)
+            if not fetched.ok:
+                self._note_failure(wire_locale)
+                return fetched
+            self._failures.pop(wire_locale, None)
+            self._memory[wire_locale] = fetched.catalog
+            self._cache.set(self._key(wire_locale), fetched.catalog, self._ttl)
             return fetched
-        self._memory[wire_locale] = fetched.catalog
-        self._cache.set(self._key(wire_locale), fetched.catalog, self._ttl)
-        return fetched
+
+    def _held(self, wire_locale: str) -> Optional[CatalogFetch]:
+        cached = self._memory.get(wire_locale)
+        if cached is not None:
+            return CatalogFetch(cached, ok=True)
+        persisted = self._cache.get(self._key(wire_locale))
+        if isinstance(persisted, dict):
+            self._memory[wire_locale] = persisted
+            return CatalogFetch(persisted, ok=True)
+        return None
+
+    def _fetch_lock(self, wire_locale: str) -> threading.Lock:
+        with self._guard:
+            return self._fetching.setdefault(wire_locale, threading.Lock())
+
+    def _in_failure_window(self, wire_locale: str) -> bool:
+        failure = self._failures.get(wire_locale)
+        return failure is not None and _clock() < failure[0]
+
+    def _note_failure(self, wire_locale: str) -> None:
+        previous = self._failures.get(wire_locale)
+        window = (
+            FAILURE_WINDOW_INITIAL if previous is None
+            else min(previous[1] * 2, FAILURE_WINDOW_MAX)
+        )
+        self._failures[wire_locale] = (_clock() + window, window)
 
     def _fetch(self, wire_locale: str) -> CatalogFetch:
         try:
@@ -107,6 +161,13 @@ class CatalogStore:
             )
             return CatalogFetch({}, ok=False)
 
+        if response.get("status") is False:
+            logger.warning(
+                "langsys: catalog fetch for %s answered status false - serving source text and "
+                "registering nothing this pass.",
+                wire_locale,
+            )
+            return CatalogFetch({}, ok=False)
         data = response.get("data")
         write_enabled = response.get("write_enabled")
         return CatalogFetch(

@@ -41,6 +41,19 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   not-write-enabled, which is otherwise completely silent.
 - `KeyType` gained `ip_write`; it was previously collapsed into `read`.
 
+**Failed catalogs and unrenderable phrases (spec 8.2).**
+
+- **CACHE-2 — a failed catalog fetch is remembered for a short window.** Lookups for that locale
+  render source text without fetching again, for 3 seconds doubling to 5 minutes and reset on
+  success. Every lookup used to repeat the failing request, so an 11-token page against a hung
+  API waited the full timeout eleven times. Concurrent fetches for one locale share one request,
+  and a response with `status: false` counts as a failure.
+- **ICU-6 — a phrase the formatter can't render is rendered through branch selection, and
+  warns.** An unsupported argument type, unbalanced braces, or a plural or select with no branch
+  for the value used to put raw ICU syntax, or an empty string, on the page. Each construct now
+  renders its chosen branch or its value, a missing value stays visible as `{name}`, and one
+  warning per phrase and locale names the phrase and the error, whatever the log level.
+
 **Registration shape and markers (spec 8.2).** Content registered from HTML now takes the
 same shape in every Langsys SDK, so some phrases and content blocks derive ids they did not
 before.
