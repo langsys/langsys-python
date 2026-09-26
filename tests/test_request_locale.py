@@ -79,6 +79,42 @@ def test_SRV6_a_language_only_candidate_matches_its_supported_locale():
     assert resolve(url="es").locale.lower() == "es-es"
 
 
+# -- the framework already resolved it ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("framework", ["es-ES", "es_ES", "es-es"], ids=["bcp47", "posix", "project"])
+def test_SRV6_the_frameworks_locale_is_served_whatever_the_request_says_and_adds_no_vary(framework):
+    choice = resolve(framework=framework, url="it-it", cookie="it-it", accept_language="it")
+    assert (choice.locale, choice.source, choice.vary) == ("es-es", "framework", ())
+
+
+def test_SRV6_a_bare_framework_language_maps_through_the_projects_default_locales():
+    choice = resolve_request_locale(["en-us", "pt-br", "pt-pt"], "en-us", framework="pt",
+                                    accept_language="pt-PT", default_locales={"pt": "pt-br"})
+    assert (choice.locale, choice.source) == ("pt-br", "framework")
+
+
+def test_SRV6_a_framework_locale_the_project_does_not_serve_serves_the_base_not_the_request():
+    """The framework decided; the SDK validates it and never overrides it with its own negotiation."""
+    choice = resolve(framework="fr-FR", url="it-it", accept_language="it")
+    assert (choice.locale, choice.source, choice.vary) == ("en-us", "framework", ())
+
+
+def test_SRV6_control_with_nothing_from_the_framework_the_sdk_negotiates_and_varies():
+    for framework in (None, ""):
+        choice = resolve(framework=framework, accept_language="it")
+        assert (choice.locale, choice.source) == ("it-it", "accept-language")
+        assert "Accept-Language" in choice.vary
+
+
+def test_SRV6_the_client_maps_a_bare_framework_language_through_the_project(double):
+    double.seed(world(target_locales=["it-it", "es-es"]))
+    c = LangsysClient(WRITE_KEY, PROJECT, api_url=double.base_url, cache=MemoryCache(),
+                      debounce=0, auto_flush=False)
+    choice = c.resolve_request_locale(framework="es", accept_language="it")
+    assert (choice.locale, choice.source, choice.vary) == ("es-es", "framework", ())
+
+
 # -- the client reads the project's locales -------------------------------------------------------
 
 

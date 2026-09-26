@@ -1,17 +1,19 @@
-"""MSG-1..8 and MSG-11 - server messages: entries, fill, the template list, registration.
+"""MSG-1..8 and MSG-11 - translation for a framework's own error messages.
 
-The shared vectors (`server-message-vectors.json`, authored by the JS core) pin marker extraction,
-fill, entry resolution and rendering byte-for-byte with every other SDK. Registration rows run
-against the contract double and assert on accepted state.
+The SDK follows the framework's conventions: an entry needs only the framework's unfilled sentence
+(`template`) and its `params`; its `field` and `code` are the framework's own, passed through; the
+framework's error body is left as it is, with the entries attached beside it. The shared vectors
+(`server-message-vectors.json`) pin marker extraction, fill, entry resolution and rendering with
+every other SDK. Registration rows run against the contract double.
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import json
 import logging
-import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,31 +24,26 @@ from langsys import LangsysClient
 from langsys.cache import MemoryCache
 from langsys.catalog import CatalogFetch
 from langsys.messages import (
+    DEFAULT_ATTACH_KEY,
     DEFAULT_MESSAGE_CATEGORY,
-    MESSAGE_CODES,
     TemplateList,
     TemplateProblem,
     TemplateRefused,
+    attach_server_messages,
     fill_template,
     resolve_server_messages,
     run_listing,
     server_message,
-    size_code,
     template_markers,
 )
 from langsys.scope import request_scope
 
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "server-message-vectors.json"
 #: THE CHECK: the blob. THE PROVENANCE: the ref.
-VECTORS_BLOB = "c8125549cfee0f5286f79a8cbc194cd30ccd446e"
-VECTORS_REF = "langsys-js-typescript tests/fixtures/server-message-vectors.json (spec 8.2.9)"
+VECTORS_BLOB = "7333e3919dac43af81c6c20bfdba974efd79725b"
+VECTORS_REF = "langsys-js-typescript 239166a tests/fixtures/server-message-vectors.json (spec 8.2.18)"
 VECTORS = json.loads(VECTORS_FILE.read_text(encoding="utf-8"))
 ids = lambda row: row["id"]  # noqa: E731
-
-
-def slug(text: str) -> str:
-    """A parametrize id with no spaces: the mutation runner reads names up to the first one."""
-    return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
 
 
 def offline(catalog=None, **kw) -> tuple[LangsysClient, object]:
@@ -76,7 +73,9 @@ def test_MSG4_fill_matches_the_vectors(row):
 
 @pytest.mark.parametrize("row", VECTORS["resolve"], ids=ids)
 def test_MSG1_entry_resolution_matches_the_vectors(row):
-    assert resolve_server_messages(row["body"], key=row.get("key")) == row["expected"]
+    body = copy.deepcopy(row["body"])
+    assert resolve_server_messages(body, **row["options"]) == row["expected"]
+    assert body == row["body"], "resolving changed the body"
 
 
 @pytest.mark.parametrize("row", VECTORS["render"], ids=ids)
@@ -88,108 +87,162 @@ def test_MSG5_rendering_matches_the_vectors(row):
     assert not c.has_pending, "rendering a received entry registered something"
 
 
-@pytest.mark.parametrize("entry", VECTORS["canonical_entries"], ids=lambda e: e["code"])
+WIRE_PIECES = ("template", "params", "message", "field", "code")
+
+
+@pytest.mark.parametrize("entry", VECTORS["canonical_entries"],
+                         ids=[f"canonical-{i}" for i in range(len(VECTORS["canonical_entries"]))])
 def test_MSG4_every_canonical_entry_fills_to_its_message(entry):
+    """`framework` and `source` annotate the row; the entry is its wire pieces."""
     assert fill_template(entry["template"], entry.get("params") or {}) == entry["message"]
-    assert server_message(entry["code"], entry["template"], entry.get("params"),
-                          entry.get("field")) == entry
+    built = server_message(entry["template"], entry.get("params"), field=entry.get("field"),
+                           code=entry.get("code"))
+    assert built == {k: v for k, v in entry.items() if k in WIRE_PIECES}
 
 
-# -- MSG-1 ---------------------------------------------------------------------------------------
+# -- MSG-1: the entry, and the framework's own error body ---------------------------------------
+
+DJANGO_BODY = {"email": ["Enter a valid email address."], "name": ["This field is required."]}
+PYDANTIC_BODY = {"detail": [{"type": "string_too_short", "loc": ["body", "name"],
+                             "msg": "String should have at least 3 characters",
+                             "input": "Al", "ctx": {"min_length": 3}}]}
+ENTRIES = [
+    server_message("Enter a valid email address.", field="email", code="invalid"),
+    server_message("The name field is required.", field="name", code="required"),
+]
 
 
-def test_MSG1_the_default_envelope_and_a_foreign_one_resolve_to_the_same_entries():
-    entries = VECTORS["canonical_entries"][2:]
-    langsys_body = {"status": False, "error": {"code": "validation_failed",
-                    "message": "Failed.", "template": "Failed.", "errors": entries}}
-    house = {"problems": [{"path": e.get("field"), "slug": e["code"], "text": e["message"],
-                           "sentence": e["template"], "values": e.get("params")} for e in entries]}
+@pytest.mark.parametrize("native", [DJANGO_BODY, PYDANTIC_BODY], ids=["django", "pydantic"])
+def test_MSG1_entries_attach_beside_the_frameworks_body_which_is_otherwise_unchanged(native):
+    body = copy.deepcopy(native)
+    attach_server_messages(body, ENTRIES)
+    assert {k: v for k, v in body.items() if k != DEFAULT_ATTACH_KEY} == native
+    assert resolve_server_messages(body, key=DEFAULT_ATTACH_KEY) == ENTRIES
+    assert resolve_server_messages(body, resolver=lambda b: b[DEFAULT_ATTACH_KEY]) == ENTRIES
 
-    def resolver(body):
-        return [{"field": p["path"], "code": p["slug"], "message": p["text"],
-                 "template": p["sentence"], "params": p["values"]} for p in body["problems"]]
 
-    assert resolve_server_messages(house, resolver=resolver) == resolve_server_messages(langsys_body)[1:]
+def test_MSG1_the_attach_key_is_configurable_and_never_overwrites():
+    body = attach_server_messages({"errors": {}}, ENTRIES, key="translated")
+    assert resolve_server_messages(body, key="translated") == ENTRIES
+    with pytest.raises(ValueError):
+        attach_server_messages({DEFAULT_ATTACH_KEY: 1}, ENTRIES)
+
+
+def test_MSG1_the_default_key_is_the_fleets():
+    assert DEFAULT_ATTACH_KEY == "langsys_errors"
+
+
+def test_MSG1_an_entry_needs_only_a_template_and_its_params():
+    entry = server_message("At least {min} characters.", {"min": 3})
+    assert entry == {"template": "At least {min} characters.", "params": {"min": 3},
+                     "message": "At least 3 characters."}
+    c, patched = offline({"Errors": {}})
+    with patched:
+        shown = c.render_server_message({"template": "At least {min}.", "params": {"min": 3}})
+    assert shown == "At least 3.", "with no message on the wire, the fallback is the fill"
+
+
+def test_MSG1_an_entry_with_no_template_is_not_looked_up_and_shows_its_message():
+    c, patched = offline({"Errors": {"Bad.": "Male."}})
+    with patched:
+        assert c.render_server_message({"message": "Bad."}) == "Bad."
+    assert resolve_server_messages({"e": [{"message": "Bad.", "code": "x"}]}, key="e") == [
+        {"message": "Bad.", "code": "x"}
+    ]
 
 
 def test_MSG1_a_json_string_body_resolves_and_garbage_resolves_to_nothing():
-    body = json.dumps({"errors": VECTORS["canonical_entries"][2:3]})
-    assert resolve_server_messages(body) == VECTORS["canonical_entries"][2:3]
-    assert resolve_server_messages("<html>500</html>") == []
+    assert resolve_server_messages(json.dumps({"e": ENTRIES}), key="e") == ENTRIES
+    assert resolve_server_messages("<html>500</html>", key="e") == []
 
 
-# -- MSG-2 ---------------------------------------------------------------------------------------
+def test_MSG1_the_body_is_never_searched_by_shape():
+    with pytest.raises(TypeError):
+        resolve_server_messages({DEFAULT_ATTACH_KEY: ENTRIES})
+    assert resolve_server_messages({"errors": ENTRIES}, key=DEFAULT_ATTACH_KEY) == []
+    assert resolve_server_messages({"errors": ENTRIES}, key="errors") == ENTRIES, "control"
 
 
-def test_MSG2_the_vocabulary_is_the_spec_list_in_order():
-    assert MESSAGE_CODES[0] == "required" and MESSAGE_CODES[-1] == "invalid"
-    assert len(MESSAGE_CODES) == len(set(MESSAGE_CODES)) == 21
+# -- MSG-2: the code is the framework's own ------------------------------------------------------
 
 
-@pytest.mark.parametrize("value, small, large", [
-    ("abc", "too_short", "too_long"),
-    (3, "too_small", "too_large"),
-    (2.5, "too_small", "too_large"),
-    ([1], "too_few", "too_many"),
-])
-def test_MSG2_a_size_rule_picks_its_code_by_the_field_type(value, small, large):
-    assert (size_code(value, "small"), size_code(value, "large")) == (small, large)
+def test_MSG2_the_frameworks_code_and_field_path_pass_through_unchanged():
+    entry = server_message("String should have at least {min_length} characters",
+                           {"min_length": 3}, field=["body", "name"], code="string_too_short")
+    assert entry["code"] == "string_too_short" and entry["field"] == ["body", "name"]
+    assert resolve_server_messages({"langsys_errors": [entry]}, key=DEFAULT_ATTACH_KEY) == [entry]
 
 
-def test_MSG2_the_code_does_not_move_with_the_locale_or_the_wording():
-    c, patched = offline({"Errors": {}})
+def test_MSG2_a_failure_with_no_identifier_carries_no_code():
+    assert "code" not in server_message("Something failed.")
+    assert "field" not in server_message("Something failed.")
+
+
+def test_MSG2_the_code_is_unchanged_across_locales_and_never_chooses_text():
+    c, patched = offline({"Errors": {"The name field is required.": "Il campo nome è obbligatorio."}})
     with patched:
-        before = c.server_message("too_short", "The password must be at least {min} characters.", {"min": 8})
+        entry = c.server_message("The name field is required.", code="required", field="name")
         c.set_locale("es-es")
-        after = c.server_message("too_short", "Your password needs {min} characters or more.", {"min": 8})
-    assert before["code"] == after["code"] == "too_short"
+        again = c.server_message("The name field is required.", code="required", field="name")
+        rendered = c.render_server_message(dict(entry, code="something_else"), locale="it-it")
+    assert entry["code"] == again["code"] == "required"
+    assert rendered == "Il campo nome è obbligatorio.", "the code chose the text"
 
 
-# -- MSG-3 / MSG-11: the template list refuses what it can see is wrong --------------------------
+def test_MSG2_the_sdk_imposes_no_vocabulary_or_wording():
+    import langsys.messages as messages
+
+    for gone in ("MESSAGE_CODES", "size_code", "WORDINGS", "with_label", "LABEL_MARKERS"):
+        assert not hasattr(messages, gone), f"{gone} is still exported"
+
+
+# -- MSG-3 / MSG-11 ------------------------------------------------------------------------------
 
 
 def test_MSG3_one_template_per_field_is_two_phrases():
     c, patched = offline({"Errors": {}})
     with patched:
-        c.server_message("required", "The password is required.", field="password")
-        c.server_message("required", "The name is required.", field="name")
-    assert [p["phrase"] for p in c.pending_phrases] == ["The password is required.", "The name is required."]
+        c.server_message("The password field is required.", field="password", code="required")
+        c.server_message("The name field is required.", field="name", code="required")
+    assert [p["phrase"] for p in c.pending_phrases] == [
+        "The password field is required.", "The name field is required."
+    ]
 
 
 def test_MSG3_a_template_with_no_marker_is_its_own_message_and_carries_no_params():
-    entry = server_message("required", "The password is required.", {"min": 3})
+    entry = server_message("This field is required.", {"min": 3})
     assert entry["message"] == entry["template"] and "params" not in entry
 
 
 @pytest.mark.parametrize("template", [
-    "The {field} is required.",
-    "{attribute} is invalid.",
-    "Pick one of {values}.",
-    "The :attribute field is required.",
-    "The {{ field }} is required.",
+    "%(model_name)s with this %(field_label)s already exists.",
+    "%(model_name)s with this %(field_labels)s already exists.",
+    "%(field_label)s must be unique for %(date_field_label)s %(lookup_type)s.",
     "The %(field)s is required.",
-    "%s is required.",
-    "The {0} is required.",
-], ids=["label-field", "label-attribute", "label-values", "laravel-colon", "double-brace",
-        "percent-named", "percent-positional", "str-format-positional"])
-def test_MSG11_a_label_marker_or_a_leftover_placeholder_is_refused_when_added(template):
+    "The {{ field }} is required.",
+], ids=["field-label", "field-labels", "date-field-label", "field", "template-field"])
+def test_MSG11_a_framework_label_placeholder_is_refused_when_added(template):
     with pytest.raises(TemplateRefused):
         TemplateList().add(template)
 
 
 @pytest.mark.parametrize("template", [
-    "The password must be at least {min} characters.",
-    "Between {min} and {max} characters.",
-    "It is 10:30 and the ratio is 3:1.",
-    "Use a 100% unique name.",
+    "Ensure this value has at least {limit_value} characters.",
+    "The email with this Email already exists.",
+    "String should have at least {min_length} characters",
     "A 5% discount applies to 3 items.",
-    "Up to 50% off, 10% for members.",
-    "{count, plural, one {Select # item.} other {Select # items.}}",
-])
-def test_MSG11_control_ordinary_templates_are_accepted(template):
+], ids=["django-limit", "label-written-in", "pydantic", "percent-prose"])
+def test_MSG11_control_the_frameworks_sentences_with_labels_written_in_are_accepted(template):
     listing = TemplateList()
     listing.add(template)
     assert list(listing) == [template]
+
+
+def test_MSG11_a_binding_names_its_own_frameworks_placeholders():
+    """Pydantic's messages carry no label placeholder, so a FastAPI binding passes none."""
+    TemplateList(label_placeholders=()).add("The %(field)s is required.")
+    with pytest.raises(TemplateRefused):
+        TemplateList(label_placeholders=(":attribute",)).add("The :attribute field is required.")
 
 
 def _marker_warnings(caplog):
@@ -201,26 +254,34 @@ def test_MSG11_a_marker_filled_with_a_catalogued_phrase_warns_once(caplog):
     c, patched = offline(catalog)
     with patched, caplog.at_level(logging.WARNING, logger="langsys"):
         for _ in range(3):
-            c.server_message("invalid_option", "The order is {status}.", {"status": "Shipped"})
+            c.server_message("The order is {status}.", {"status": "Shipped"})
     assert len(_marker_warnings(caplog)) == 1
 
 
 def test_MSG11_control_a_value_the_catalog_has_never_seen_stays_silent(caplog):
     c, patched = offline({"Orders": {"Shipped": "Enviado"}, "Errors": {}})
     with patched, caplog.at_level(logging.WARNING, logger="langsys"):
-        c.server_message("invalid_option", "The order is {status}.", {"status": "ORD-1234"})
-        c.server_message("too_small", "At least {min}.", {"min": 3})
+        c.server_message("The order is {status}.", {"status": "ORD-1234"})
+        c.server_message("At least {min}.", {"min": 3})
     assert _marker_warnings(caplog) == []
 
 
+# -- MSG-4 ---------------------------------------------------------------------------------------
+
+
 def test_MSG4_a_present_but_null_param_stays_its_marker():
-    assert server_message("too_short", "At least {min} characters.", {"min": None})["message"] == \
+    assert server_message("At least {min} characters.", {"min": None})["message"] == \
         "At least {min} characters."
 
 
 def test_MSG4_a_numeric_param_is_a_json_number():
-    wire = json.dumps(server_message("too_short", "At least {min} characters.", {"min": 12}))
+    wire = json.dumps(server_message("At least {min} characters.", {"min": 12}))
     assert '"params": {"min": 12}' in wire
+
+
+@pytest.mark.parametrize("value, printed", [(3.0, "3"), (2.5, "2.5"), (True, "true"), (0, "0")])
+def test_MSG4_a_param_prints_as_the_reference_prints_it(value, printed):
+    assert fill_template("At least {min}.", {"min": value}) == f"At least {printed}."
 
 
 # -- MSG-6 ---------------------------------------------------------------------------------------
@@ -230,8 +291,8 @@ def test_MSG6_the_category_defaults_to_errors_and_is_configurable():
     assert DEFAULT_MESSAGE_CATEGORY == "Errors"
     c, patched = offline({"Errors": {}, "Validation": {}}, message_category="Validation")
     with patched:
-        c.server_message("required", "The name is required.")
-    assert c.pending_phrases == [{"phrase": "The name is required.", "category": "Validation"}]
+        c.server_message("The name field is required.")
+    assert c.pending_phrases == [{"phrase": "The name field is required.", "category": "Validation"}]
 
 
 # -- MSG-7 / MSG-8 against the contract double -----------------------------------------------------
@@ -243,7 +304,8 @@ def _client(double: ContractDouble, key: str = WRITE_KEY) -> LangsysClient:
 
 
 def _provider():
-    return ["The password is required.", "The password must be at least {min} characters."]
+    return ["The password field is required.",
+            "Ensure this value has at least {limit_value} characters."]
 
 
 def test_MSG7_the_listing_registers_every_template_and_a_second_run_nothing_new(double):
@@ -256,66 +318,27 @@ def test_MSG7_the_listing_registers_every_template_and_a_second_run_nothing_new(
     assert "0 newly registered" in again.getvalue()
 
 
-def test_MSG7_an_unlistable_message_fails_the_run_with_an_actionable_line():
-    def provider():
-        yield "The email is required."
-        yield TemplateProblem("closure rule has no template", source="app/forms.py:SignupForm",
-                              field="email", fix="give the rule a template")
-        yield {"template": "The {field} is required.", "source": "app/forms.py", "field": "name"}
+def _unlistable():
+    yield "The email field is required."
+    yield TemplateProblem("the message is built at runtime", source="app/forms.py:SignupForm",
+                          field="email", fix="give the validator an unfilled message")
+    yield {"template": "%(model_name)s with this %(field_label)s already exists.",
+           "source": "app/models.py", "field": "email"}
 
+
+def test_MSG7_an_unlistable_message_is_reported_and_the_run_still_exits_zero():
+    """MSG-8 registers it the first time it is emitted, so it is advice, not a failure."""
     out = io.StringIO()
-    assert run_listing([provider], out=out) == 1
+    assert run_listing([_unlistable], out=out) == 0
     lines = [line for line in out.getvalue().splitlines() if line.startswith("PROBLEM")]
     assert len(lines) == 2, out.getvalue()
-    assert "app/forms.py:SignupForm field 'email'" in lines[0] and "give the rule a template" in lines[0]
-    assert "{field}" in lines[1]
+    assert "app/forms.py:SignupForm field 'email'" in lines[0] and "unfilled message" in lines[0]
+    assert "%(field_label)s" in lines[1]
 
 
-def test_MSG8_an_unlisted_template_is_registered_after_the_response_not_before(double):
-    double.seed(world())
-    c = _client(double)
-    with request_scope():
-        c.server_message("invalid_option", "Archived is not a valid status.", field="status")
-        c.flush_pending()
-        assert double.phrases() == [], "registered on the request path"
-    assert c.flush_pending()["success"] is True
-    assert double.phrases() == [("Errors", "Archived is not a valid status.")]
-
-
-def test_MSG8_a_listed_template_is_not_registered_again(double):
-    double.seed(world(phrases=[{"category": "Errors", "phrase": "The name is required."}]))
-    c = _client(double)
-    c.server_message("required", "The name is required.", field="name")
-    assert not c.has_pending
-
-
-def test_MSG8_a_session_that_cannot_write_registers_nothing_even_once_it_could(double):
-    """Drift: told no, the allow-list widens, and still nothing lands. Control acts in the new world."""
-    double.seed(world())
-    c = _client(double, IP_WRITE_KEY)
-    c.server_message("invalid", "Something failed.")
-    c.flush_pending()
-    double.seed(world(ip_allowlist=["127.0.0.1"]))
-    c.flush_pending(force=True)
-    assert double.phrases() == []
-    control = _client(double, IP_WRITE_KEY)
-    control.server_message("invalid", "Something failed.")
-    assert control.flush_pending()["success"] is True
-    assert double.phrases() == [("Errors", "Something failed.")]
-
-
-def test_MSG8_a_read_key_reports_the_skip(double):
-    double.seed(world())
-    c = _client(double, READ_KEY)
-    c.server_message("invalid", "Something failed.")
-    assert c.flush_pending()["success"] is False
-
-
-@pytest.mark.parametrize("value, printed", [(3.0, "3"), (2.5, "2.5"), (True, "true"), (0, "0")])
-def test_MSG4_a_param_prints_as_the_reference_prints_it(value, printed):
-    """The server fills `message` with the reference's rules; a client disagreeing on how 3.0 or
-    True print would fill a different sentence."""
-    assert fill_template("At least {min}.", {"min": value}) == f"At least {printed}."
+def test_MSG7_strict_fails_the_run_on_any_unlistable_message():
+    assert run_listing([_unlistable], strict=True, out=io.StringIO()) == 1
+    assert run_listing([_provider], strict=True, out=io.StringIO()) == 0, "control"
 
 
 def test_MSG7_the_command_line_entry_point_lists_and_gates(capsys, monkeypatch):
@@ -325,40 +348,53 @@ def test_MSG7_the_command_line_entry_point_lists_and_gates(capsys, monkeypatch):
     from langsys.messages import main
 
     good = types.ModuleType("msg_provider_good")
-    good.templates = lambda: ["The name is required."]  # type: ignore[attr-defined]
+    good.templates = lambda: ["The name field is required."]  # type: ignore[attr-defined]
     bad = types.ModuleType("msg_provider_bad")
-    bad.templates = lambda: ["The {label} is required."]  # type: ignore[attr-defined]
+    bad.templates = lambda: ["The %(field)s is required."]  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "msg_provider_good", good)
     monkeypatch.setitem(sys.modules, "msg_provider_bad", bad)
     assert main(["--provider", "msg_provider_good:templates"]) == 0
-    assert "The name is required." in capsys.readouterr().out
-    assert main(["--provider", "msg_provider_good:templates", "--provider", "msg_provider_bad:templates"]) == 1
+    assert "The name field is required." in capsys.readouterr().out
+    assert main(["--provider", "msg_provider_bad:templates"]) == 0
     assert "PROBLEM" in capsys.readouterr().out
+    assert main(["--provider", "msg_provider_bad:templates", "--strict"]) == 1
 
 
-
-@pytest.mark.parametrize(("failure", "code", "template"), [
-    ("less_than", "too_large", "The :attribute must be less than {value}."),
-    ("extra_field", "not_allowed", "This field is not allowed."),
-    ("object_type", "invalid_type", "The :attribute must be an object."),
-    ("body_missing", "required", "The request body is required."),
-    ("body_not_json", "invalid_format", "The request body must be valid JSON."),
-    ("body_not_object", "invalid_type", "The request body must be an object."),
-], ids=lambda value: value if isinstance(value, str) and " " not in value else "")
-def test_MSG2_the_wording_table_is_the_specs(failure, code, template):
-    from langsys.messages import WORDINGS
-
-    assert WORDINGS[failure] == (code, template)
-    assert code in MESSAGE_CODES
+def test_MSG8_an_unlisted_template_is_registered_after_the_response_not_before(double):
+    double.seed(world())
+    c = _client(double)
+    with request_scope():
+        c.server_message("Archived is not a valid status.", field="status")
+        c.flush_pending()
+        assert double.phrases() == [], "registered on the request path"
+    assert c.flush_pending()["success"] is True
+    assert double.phrases() == [("Errors", "Archived is not a valid status.")]
 
 
-def test_MSG2_a_labelled_wording_is_a_valid_template_and_the_authoring_form_is_not():
-    from langsys.messages import WORDINGS, with_label
+def test_MSG8_a_listed_template_is_not_registered_again(double):
+    double.seed(world(phrases=[{"category": "Errors", "phrase": "The name field is required."}]))
+    c = _client(double)
+    c.server_message("The name field is required.", field="name")
+    assert not c.has_pending
 
-    _, template = WORDINGS["less_than"]
-    with pytest.raises(TemplateRefused):
-        TemplateList().add(template)  # `:attribute` must be replaced first
-    labelled = with_label(template, "age")
-    TemplateList().add(labelled)
-    entry = server_message("too_large", labelled, {"value": 18}, field="age")
-    assert entry["message"] == "The age must be less than 18."
+
+def test_MSG8_a_session_that_cannot_write_registers_nothing_even_once_it_could(double):
+    """Drift: told no, the allow-list widens, and still nothing lands. Control acts in the new world."""
+    double.seed(world())
+    c = _client(double, IP_WRITE_KEY)
+    c.server_message("Something failed.")
+    c.flush_pending()
+    double.seed(world(ip_allowlist=["127.0.0.1"]))
+    c.flush_pending(force=True)
+    assert double.phrases() == []
+    control = _client(double, IP_WRITE_KEY)
+    control.server_message("Something failed.")
+    assert control.flush_pending()["success"] is True
+    assert double.phrases() == [("Errors", "Something failed.")]
+
+
+def test_MSG8_a_read_key_reports_the_skip(double):
+    double.seed(world())
+    c = _client(double, READ_KEY)
+    c.server_message("Something failed.")
+    assert c.flush_pending()["success"] is False

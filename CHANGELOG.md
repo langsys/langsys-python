@@ -104,25 +104,30 @@ before.
 
 **Request locale and resolved pages (spec 8.2).**
 
-- **SRV-6 — `client.resolve_request_locale()` picks a request's locale** from the URL, then a
-  cookie or session value, then `Accept-Language`, then the project's base locale. Every
-  candidate is validated against the project's locales, and the result names the `Vary` headers
-  the response needs.
+- **SRV-6 — `client.resolve_request_locale()` serves the request's locale.** A locale the
+  framework or app already resolved (`framework=`) is used, mapped to the project's form
+  (`es-ES`/`es_ES` → `es-es`, a bare `es` through the project's `default_locales`), validated,
+  and given no `Vary`. Where nothing resolved it, the SDK takes the URL, then a cookie or
+  session value, then `Accept-Language`, then the project's base locale, validating every
+  candidate and naming the `Vary` headers the response needs.
 - **GATE-10 — `translate_page()` marks a translated page's root `data-ls-resolved`**, so a
   browser SDK on the page doesn't register already-translated text as source. Base-locale
   renders are not marked.
 
 **Server messages (spec 8.2).**
 
-- **MSG-1..8, MSG-11 — validation errors and system messages are translatable.**
-  `client.server_message(code, template, params, field)` builds the fleet's entry
-  (`{field, code, message, template, params}`) and registers a template the catalog lacks after
-  the response. `resolve_server_messages()` finds entries in any response body, and
+- **MSG-1..8, MSG-11 — a framework's own error messages are translatable.**
+  `client.server_message(template, params, field=, code=)` builds an entry from the framework's
+  unfilled sentence with the field's label written in; `field` and `code` are the framework's
+  own, passed through, and `message` is the fill a client falls back to. A template the catalog
+  lacks is registered after the response. `attach_server_messages()` adds entries beside the
+  framework's native error body under `langsys_errors` (configurable) and changes nothing else;
+  `resolve_server_messages()` reads them back through that key or an app's resolver, and
   `render_server_message()` renders one from the catalog, falling back to `message`.
-  `python -m langsys.messages` lists and registers every template an app declares, refusing
-  label markers and leftover framework placeholders, and exits non-zero on any message it cannot
-  list. A marker filled with a phrase the catalog already holds warns once. Templates live under
-  one category, `Errors` by default.
+  `python -m langsys.messages` lists and registers every template an app declares, refuses a
+  template still holding its framework's label placeholder, and reports each message it cannot
+  list; `--strict` makes those fail the run. A marker filled with a phrase the catalog already
+  holds warns once. Templates live under one category, `Errors` by default.
 
 **Request scopes (spec 8.2).**
 

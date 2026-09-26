@@ -43,9 +43,9 @@ SOURCE_BLOB_SHA = "34034931872b93e761faea49fb040f3fd8a6b9f5"
 SOURCE_REF = "langsys-js-typescript a639ae8 tests/fixtures/canonicalization-reference.json"
 #: What the fixture was AUTHORED against (langsys2 f5568b88, specVersion 8.2.15).
 FIXTURE_SPEC_BASIS = "b9fd4b5b1c15f7ba29656d550dca1f06013327c0"
-#: What this SDK is FILED against (langsys2 2dce7f41, specVersion 8.2.16). The TOK and MARK
+#: What this SDK is FILED against (langsys2 a95af2c2, specVersion 8.2.18). The TOK and MARK
 #: sections are byte-identical between the two, so every row binds the target unchanged.
-TARGET_SPEC_BLOB = "99c86b55de39f7d45cf9c25d931d210953cff8be"
+TARGET_SPEC_BLOB = "5d7e6890b733a50fb6f5f5c30e0056c6ef7bcf45"
 
 _DOC = json.loads(FIXTURE.read_text(encoding="utf-8"))
 ROWS = _DOC["cases"]

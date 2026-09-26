@@ -123,6 +123,21 @@ so it can be called from a different task than the one that began the scope.
 
 ### Choosing the request's locale
 
+Where your framework has already resolved the locale — Django's `request.LANGUAGE_CODE`, your
+own middleware — pass it, and that is the locale served:
+
+```python
+choice = client.resolve_request_locale(framework=request.LANGUAGE_CODE)
+client.set_locale(choice.locale)
+```
+
+It is mapped to the project's form (`es-ES` and `es_ES` are `es-es`; a bare `es` is the
+project's default locale for Spanish) and checked against the locales the project serves; one it
+doesn't serve is served as the project's base locale. The SDK adds no `Vary` header for it: the
+framework's choice is the framework's to vary on.
+
+Where nothing has resolved it, the SDK resolves it itself:
+
 ```python
 choice = client.resolve_request_locale(
     url=path_locale,                       # what your routes carry, or None
@@ -148,37 +163,52 @@ translated text as new source phrases. A base-locale render is not marked.
 ### Server messages (validation errors)
 
 A validation error only exists after someone submits bad input, so no visitor's page ever
-discovers it. The server registers these messages itself, as whole sentences:
+discovers it. The server registers these messages itself, as whole sentences, and your
+framework's error response stays exactly as it is:
 
 ```python
 from langsys import LangsysClient
+from langsys.messages import attach_server_messages
 
 client = LangsysClient(...)                      # message_category="Errors" by default
 entry = client.server_message(
-    "too_short", "The password must be at least {min} characters.", {"min": 12}, field="password"
+    "Ensure this field has at least {min_length} characters.", {"min_length": 12},
+    field="password", code="min_length",
 )
-# {"field": "password", "code": "too_short",
-#  "message": "The password must be at least 12 characters.",
-#  "template": "The password must be at least {min} characters.", "params": {"min": 12}}
+# {"template": "Ensure this field has at least {min_length} characters.",
+#  "params": {"min_length": 12},
+#  "message": "Ensure this field has at least 12 characters.",
+#  "field": "password", "code": "min_length"}
+
+body = attach_server_messages(serializer.errors, [entry])   # adds body["langsys_errors"]
 ```
 
-Send the entry in your error response however your API shapes errors; a client renders
-`t(template, category, params)` and falls back to `message`. Write every translatable word into
-the template, the field's label included: `The password is required.` and `The name is
-required.` are two templates, because a translator has to inflect each sentence around its own
-noun. A `{name}` marker holds only a value that is never translated: a number, a date, the
-user's raw input.
+The template is your framework's own sentence before its values are filled, with the field's
+label written in where the sentence refers to the field: `The password field is required.` and
+`The name field is required.` are two templates, because a translator has to inflect each
+sentence around its own noun. A `{name}` marker holds only a value that is never translated: a
+number, a date, the user's raw input. `field` and `code` are your framework's own — a dotted
+name, Pydantic's `loc` list, Django's error code — passed through unchanged; leave `code` out
+where the framework has none. `message` is the filled sentence, which a client shows when it
+can't look the template up.
 
 - A template the catalog doesn't hold yet is queued like any other miss and sent after the
   response.
-- `resolve_server_messages(body)` finds entries anywhere in a response body, and
-  `client.render_server_message(entry)` renders one.
-- `python -m langsys.messages --provider app.errors:templates [--register]` lists every template
-  your app can emit, and registers the new ones with `--register`. It refuses label markers
-  (`{field}`, `{attribute}`, …) and leftover `:attribute`, `{{ field }}` or `%(field)s`
-  placeholders, and exits non-zero naming each message it cannot list, so it can gate CI.
-  A provider is any callable returning templates, and framework integrations supply one built
-  from your forms.
+- `attach_server_messages(body, entries, key=...)` puts the entries beside the framework's own
+  error body, under `langsys_errors` unless you choose another key. It never overwrites a member
+  the body already has.
+- `resolve_server_messages(body, key="langsys_errors")` reads them back, or pass `resolver=` to
+  map a body yourself and `pieces=` if your entries use other piece names. The rest of the body is
+  never searched. `client.render_server_message(entry)` renders one, falling back to `message`.
+- `python -m langsys.messages --provider app.errors:templates [--register] [--strict]` lists
+  every template your app can emit, and registers the new ones with `--register`. It refuses a
+  template that still holds a framework label placeholder (Django's `%(field_label)s`,
+  `%(model_name)s`, `{{ field }}` and the like; a binding names its own framework's), because the
+  label should have been written in. A message it cannot list ahead of time is reported with where
+  it comes from and how to make it listable; that is advice, because the message is registered
+  the first time it is sent. `--strict` makes those reports fail the run, for a team that wants
+  no error shown untranslated even once. A provider is any callable returning templates, and
+  framework integrations supply one built from your forms.
 
 ### Catalog snapshots
 

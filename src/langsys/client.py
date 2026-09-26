@@ -17,7 +17,7 @@ from .html.attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES
 from .http import HttpClient, encode_segment
 from .interpolate import interpolate
 from .locale import canonicalize_locale, detect_preferred_locale, normalize_locale
-from .messages import DEFAULT_MESSAGE_CATEGORY, Entry
+from .messages import DEFAULT_MESSAGE_CATEGORY, Entry, fill_template
 from .migrate import LegacyKeys
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
@@ -735,23 +735,28 @@ class LangsysClient:
     def resolve_request_locale(
         self,
         *,
+        framework: Optional[str] = None,
         url: Optional[str] = None,
         cookie: Optional[str] = None,
         accept_language: Optional[str] = None,
         uses_cookie: bool = True,
     ) -> LocaleChoice:
-        """The locale to serve this request in: URL, then cookie or session, then
-        `Accept-Language`, then the project's base locale, each validated against the locales
-        the project serves. The result names the `Vary` headers the response must carry. See
-        `langsys.request_locale`.
+        """The locale to serve this request in (SRV-6), in the project's lowercase form.
 
-        If the project's locales cannot be read (WIRE-4), no candidate can be validated, so the
-        request is served in the configured base locale rather than in an unchecked one.
+        `framework` is the locale the framework or app already resolved: it decides, mapped and
+        validated (a bare `es` is authorization's default Spanish locale; an unsupported value is
+        the base), with no `Vary`. With nothing resolved, the SDK takes the URL, then the cookie
+        or session, then `Accept-Language`, then the base, and the result names the `Vary`
+        headers the response must carry. See `langsys.request_locale`.
+
+        If the project's locales cannot be read (WIRE-4), a loaded snapshot's locales are served;
+        without one, only the configured base locale.
         """
         try:
             project = self.authorize()
             supported = [project.base_locale, *project.target_locales]
             base = project.base_locale
+            default_locales = dict(project.default_locales)
         except (NetworkError, ApiError, ConfigurationError) as exc:
             logger.warning("langsys: could not read the project's locales (%s).", exc)
             if self._snapshot_locales is not None:
@@ -761,21 +766,27 @@ class LangsysClient:
             else:
                 base = self._config.base_locale or ""
                 supported = [base] if base else []
+            default_locales = {}
         return resolve_request_locale(
-            supported, base, url=url, cookie=cookie,
+            supported, base, framework=framework, url=url, cookie=cookie,
             accept_language=accept_language, uses_cookie=uses_cookie,
+            default_locales=default_locales,
         )
 
     # -- server messages (MSG) -------------------------------------------------
 
     def server_message(
         self,
-        code: str,
         template: str,
         params: Optional[dict[str, Any]] = None,
-        field: Optional[str] = None,
+        *,
+        field: Any = None,
+        code: Any = None,
     ) -> Entry:
         """Build the entry a server sends for a failure (MSG-1, MSG-4), and act on it.
+
+        `template` is the framework's own unfilled sentence with the label written in (MSG-3);
+        `field` and `code` are the framework's own, passed through (MSG-1, MSG-2).
 
         MSG-8 - a template the catalog does not list yet is queued for registration on the ordinary
         flush path, so it is sent after the response (inside a request scope) and never blocks the
@@ -785,7 +796,7 @@ class LangsysClient:
         """
         from .messages import server_message, template_markers, warn_translatable_marker_value
 
-        entry = server_message(code, template, params, field)
+        entry = server_message(template, params, field=field, code=code)
         category = self.message_category
         fetch = self._catalog.get(self._effective_locale(None))
         self._observe_decision(fetch.write_enabled)
@@ -820,7 +831,10 @@ class LangsysClient:
             else None
         )
         if not isinstance(value, str) or not value:
-            return str(entry.get("message", ""))
+            message = entry.get("message")
+            if isinstance(message, str):
+                return message
+            return fill_template(template, entry.get("params")) if isinstance(template, str) else ""
         params = entry.get("params") or {}
         return interpolate(value, params, self._effective_locale(locale)) if params else value
 
