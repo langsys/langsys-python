@@ -183,6 +183,71 @@ def test_REG10_a_read_only_flush_is_reported_as_failure(double):
     assert control.flush_pending()["success"] is True
 
 
+def test_REG10_a_skip_names_not_write_enabled(double):
+    double.seed(world())
+    c = client(double, READ_KEY)
+    miss(c)
+    result = c.flush_pending()
+    assert (result["success"], result["skipped"], result["reason"]) == (False, True, "not-write-enabled")
+    synced = client(double, READ_KEY).sync(["Brand new"], locale="it-it")
+    assert (synced["success"], synced["skipped"], synced["reason"]) == (False, True, "not-write-enabled")
+    assert double.phrases() == []
+
+
+def test_REG10_a_skip_names_the_unavailable_catalog(double):
+    double.seed(world(faults=[{"method": "GET", "path": "/translations", "status": 500}] * 4))
+    result = client(double).sync(["Brand new"], locale="it-it")
+    assert (result["success"], result["skipped"], result["reason"]) == (False, True, "catalog-unavailable")
+    assert double.phrases() == []
+
+
+def test_REG10_a_flush_with_nothing_queued_because_the_catalog_failed_names_it(double):
+    """WIRE-4 queues nothing off an unread catalog, so the flush has nothing to send: that is a
+    skipped write, not an empty success."""
+    double.seed(world(faults=[{"method": "GET", "path": "/translations", "status": 500}]))
+    c = client(double)
+    c.translate("Checkout", category="UI", locale="it-it")
+    assert not c.has_pending
+    result = c.flush_pending()
+    assert (result["success"], result["skipped"], result["reason"]) == (False, True, "catalog-unavailable")
+
+
+def test_REG10_once_the_catalog_recovers_an_empty_flush_is_an_honest_success(double):
+    from unittest.mock import patch
+
+    now = [1000.0]
+    double.seed(world(faults=[{"method": "GET", "path": "/translations", "status": 500}]))
+    with patch("langsys.catalog._clock", lambda: now[0]):
+        c = client(double)
+        c.translate("Checkout", category="UI", locale="it-it")
+        assert c.flush_pending()["reason"] == "catalog-unavailable", "control: the failure is seen"
+        now[0] += 3600
+        double.seed(world(phrases=[{"category": "UI", "phrase": "Checkout",
+                                    "translations": {"it-it": "Cassa"}}]))
+        assert c.translate("Checkout", category="UI", locale="it-it") == "Cassa"
+        assert c.flush_pending() == {"phrases": 0, "content_blocks": 0, "success": True}
+
+
+def test_REG10_a_refused_batch_is_a_failure_distinct_from_both_skips(double):
+    double.seed(world(faults=[{"method": "POST", "path": "/translatable-items", "status": 500}]))
+    c = client(double)
+    miss(c)
+    result = c.flush_pending()
+    assert result["success"] is False and not result.get("skipped")
+    assert result["reason"] == "registration-failed"
+    assert double.phrases() == []
+
+
+def test_REG10_control_a_write_enabled_registration_succeeds_and_reads_back(double):
+    double.seed(world())
+    c = client(double)
+    miss(c, "Brand new")
+    assert c.flush_pending()["success"] is True
+    synced = client(double).sync([{"phrase": "Also new", "category": "UI"}], locale="it-it")
+    assert synced["success"] is True and synced["synced"] is True
+    assert ("UI", "Also new") in double.phrases() and any(p == "Brand new" for _, p in double.phrases())
+
+
 # -- WIRE-2 / WIRE-4 ------------------------------------------------------------------------
 
 

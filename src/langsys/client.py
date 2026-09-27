@@ -985,6 +985,11 @@ class LangsysClient:
     def _flush_outer(self, *, force: bool) -> dict[str, Any]:
         self._cancel_timer()
         if not self.has_pending:
+            if self._catalog.unavailable():
+                # REG-10 - nothing was queued because a catalog could not be read (WIRE-4), so
+                # misses went undecided: a skipped write, and it says so.
+                return {"phrases": 0, "content_blocks": 0, "success": False, "skipped": True,
+                        "reason": "catalog-unavailable"}
             return {"phrases": 0, "content_blocks": 0, "success": True}
         # SRV-3 - work recorded under a request whose response is not out yet is not this
         # flush's to send, whoever is flushing. Checked before anything costly. The shutdown
@@ -1127,6 +1132,7 @@ class LangsysClient:
                 "phrases": 0,
                 "content_blocks": 0,
                 "success": False,
+                "reason": "registration-failed",
                 "error": str(exc),
                 "queued_phrases": phrase_count,
                 "queued_content_blocks": block_count,
@@ -1195,7 +1201,8 @@ class LangsysClient:
             # WIRE-4 — without a catalog every phrase looks new; registering them
             # all is the write storm this guard exists to prevent.
             logger.warning("langsys: sync skipped — the catalog could not be read.")
-            return {"new_phrases": [], "synced": False, "success": False}
+            return {"new_phrases": [], "synced": False, "success": False, "skipped": True,
+                    "reason": "catalog-unavailable"}
         existing = _existing_keys(fetch.catalog)
 
         new_items: list[PhraseInput] = []
@@ -1206,17 +1213,21 @@ class LangsysClient:
             if key not in existing:
                 new_items.append(phrase)
 
+        names = [p if isinstance(p, str) else p["phrase"] for p in new_items]
         synced = False
-        if new_items and self._resolve_write_enabled() is True:
+        if new_items:
+            decision = self._resolve_write_enabled()
+            if decision is not True:
+                # REG-10 - a skipped write says why, and is never success-shaped.
+                return {"new_phrases": names, "synced": False, "success": False, "skipped": True,
+                        "reason": "not-write-enabled" if decision is False
+                        else "capability-unknown"}
             self._reg.register_phrases(new_items)
             self._catalog.clear(loc)
             self._catalog.get(loc, use_cache=False)
             synced = True
 
-        return {
-            "new_phrases": [p if isinstance(p, str) else p["phrase"] for p in new_items],
-            "synced": synced,
-        }
+        return {"new_phrases": names, "synced": synced, "success": True}
 
     def _require_write(self) -> None:
         """Gate an explicit registration call, distinguishing denial from ignorance.

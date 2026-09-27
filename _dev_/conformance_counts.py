@@ -41,8 +41,8 @@ CONFORMANCE = REPO_ROOT / "CONFORMANCE.md"
 
 #: Pinned in CONFORMANCE.md's header, by commit rather than by branch: a branch moves, and this
 #: must resolve the revision the rows were actually filed against.
-SPEC_COMMIT = "a95af2c2596d5a882473d9ef09d232eb5c1d7a12"
-SPEC_BLOB = "5d7e6890b733a50fb6f5f5c30e0056c6ef7bcf45"
+SPEC_COMMIT = "234eab14cd8787ad9b4a8c51287590865adff69a"
+SPEC_BLOB = "7eee2c10398a1032831837c310215f3b9f16d306"
 SPEC_PATH = "docs/sdk-spec.mdx"
 LANGSYS2 = Path.home() / "Documents" / "dev" / "langsys2"
 

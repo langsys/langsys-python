@@ -100,6 +100,8 @@ SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})
 #: `classify_block_attribute` (MARK-3), which every walker shares so none can drift.
 PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
 BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
+#: GATE-10 - both spellings are read; writers emit `data-ls-resolved`.
+RESOLVED_ATTRS = ("data-ls-resolved", "data-langsys-resolved")
 
 
 def normalize_whitespace(text: Optional[str]) -> str:

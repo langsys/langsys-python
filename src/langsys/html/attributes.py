@@ -58,9 +58,9 @@ MARKER_OPT_OUT_VALUES = frozenset({"false", "0"})
 def classify_block_attribute(value: Optional[str]) -> str:
     """``"absent"`` | ``"declaration"`` | ``"opt-out"`` | ``"identity"``.
 
-    ``identity`` means the value is the host's `custom_id`, stamped by a renderer: the host
-    renders from the catalog entry under that id, registers nothing, and is excised from any
-    enclosing walk.
+    ``identity`` means the value is the host's `custom_id`, stamped by a renderer or supplied by
+    the app: the host renders from the catalog entry under that id and is excised from any
+    enclosing walk. It registers under that id on a miss unless it sits in a resolved scope.
     """
     if value is None:
         return "absent"

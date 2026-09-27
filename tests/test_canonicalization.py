@@ -43,9 +43,10 @@ SOURCE_BLOB_SHA = "34034931872b93e761faea49fb040f3fd8a6b9f5"
 SOURCE_REF = "langsys-js-typescript a639ae8 tests/fixtures/canonicalization-reference.json"
 #: What the fixture was AUTHORED against (langsys2 f5568b88, specVersion 8.2.15).
 FIXTURE_SPEC_BASIS = "b9fd4b5b1c15f7ba29656d550dca1f06013327c0"
-#: What this SDK is FILED against (langsys2 a95af2c2, specVersion 8.2.18). The TOK and MARK
-#: sections are byte-identical between the two, so every row binds the target unchanged.
-TARGET_SPEC_BLOB = "5d7e6890b733a50fb6f5f5c30e0056c6ef7bcf45"
+#: What this SDK is FILED against (langsys2 234eab14, specVersion 8.2.20). The TOK sections are
+#: byte-identical between the two, and of MARK only MARK-3 differs, which no row exercises (no row
+#: carries a content-block marker), so every row binds the target unchanged.
+TARGET_SPEC_BLOB = "7eee2c10398a1032831837c310215f3b9f16d306"
 
 _DOC = json.loads(FIXTURE.read_text(encoding="utf-8"))
 ROWS = _DOC["cases"]
@@ -542,26 +543,27 @@ JS_STAMPED_PAGE = (
 )
 
 
-def test_MARK2_a_js_stamped_block_host_is_not_re_registered_on_the_page_path():
-    """The failure MARK-2's *Why* names, on the block half rather than the phrase half.
-
-    A `<Translate>` host rendered by the TypeScript core carries its resolved id. This
-    SDK also lets an author *declare* a block with a truthy flag, and treating any
-    non-empty value as a declaration meant a foreign identity was read as a request:
-    the subtree was re-tokenized, re-keyed under this page's category, queued as a new
-    block, and the other SDK's stamp overwritten. One block, two ids."""
+def test_MARK2_a_js_stamped_block_host_is_not_re_split_on_the_page_path():
+    """A `<Translate>` host rendered by the TypeScript core carries its resolved id. Read as a
+    host, its content is one block under that id; walked into, it would be re-tokenized, re-keyed
+    under this page's category, and registered a second time under an id of our own."""
+    stamped = "deadbeefdeadbeefdeadbeefdeadbeef"
     client, patched = _client_with_catalog({})
     with patched:
         out = client.translate_page(JS_STAMPED_PAGE, category="CAT")
 
-    block_phrases = [t for b in client.pending_content_blocks for t in b["phrases"]]
-    assert "Hello" not in block_phrases, f"re-registered: {block_phrases}"
-    assert "Second" not in block_phrases, f"re-registered: {block_phrases}"
-    assert 'data-ls-contentblock="deadbeefdeadbeefdeadbeefdeadbeef"' in out, (
-        "the foreign stamp was overwritten with our own id"
-    )
-    assert "Other" in block_phrases, "control: ordinary blocks must still be discovered"
-
+    ids_holding = {
+        text: sorted(b["custom_id"] for b in client.pending_content_blocks if text in b["phrases"])
+        for text in ("Hello", "Second")
+    }
+    assert [b for b in client.pending_content_blocks if b["custom_id"] == stamped] == [
+        {"content": "<p>Hello <b>x</b></p><p>Second</p>", "category": "CAT",
+         "custom_id": stamped, "phrases": ["Hello", "x", "Second"]}
+    ], "the host is one block under its own id"
+    assert ids_holding["Hello"] == ids_holding["Second"] == [stamped], f"re-split: {ids_holding}"
+    assert f'data-ls-contentblock="{stamped}"' in out, "the foreign stamp was overwritten"
+    assert any("Other" in b["phrases"] for b in client.pending_content_blocks
+               if b["custom_id"] != stamped), "control: ordinary blocks must still be discovered"
 
 
 # -- MARK-1: the stamp must not corrupt the markup it is inserted into --------
@@ -726,29 +728,89 @@ def test_MARK3_an_opt_out_registers_the_content_as_its_units_would(suffix, spell
     assert client.pending_content_blocks == []
 
 
+IDENTITY_BODY = "<p>Hello</p>"
+RESOLVED_SPELLINGS = ["data-ls-resolved", "data-langsys-resolved"]
+
+
+def _identity_page(value, spelling="data-ls-contentblock", host_extra="", body_extra=""):
+    return (f'<html><body{body_extra}><div {spelling}="{value}"{host_extra}>{IDENTITY_BODY}</div>'
+            "</body></html>")
+
+
 @pytest.mark.parametrize("spelling", BLOCK_SPELLINGS)
 @pytest.mark.parametrize("value", ["abc123", "no", "off"])
-def test_MARK3_any_other_value_is_an_identity_that_renders_and_registers_nothing(value, spelling):
-    """`no` and `off` are identities now, not opt-outs: only `false` and `0` opt out."""
-    catalog = {"CAT": {value: {"Hello": "Ciao"}}}
-    client, patched = _client_with_catalog(catalog)
-    with patched:
-        out = client.translate_page(
-            f'<html><body><div {spelling}="{value}"><p>Hello</p></div></body></html>', category="CAT"
-        )
-    assert client.pending_phrases == [] and client.pending_content_blocks == []
-    assert "<p>Ciao</p>" in out, "the host did not render the catalog entry under its id"
-
-
-def test_MARK3_an_identity_with_no_catalog_entry_keeps_its_source():
+def test_MARK3_an_identity_outside_a_resolved_scope_registers_its_content_under_its_id(value, spelling):
+    """`no` and `off` are identities, not opt-outs: only `false` and `0` opt out. Outside a resolved
+    scope the id is the block's id, so a block the catalog lacks registers under it."""
     client, patched = _client_with_catalog({"CAT": {}})
     with patched:
-        out = client.translate_page(
-            '<html><body><div data-ls-contentblock="abc123"><p>Hello</p></div></body></html>',
-            category="CAT",
-        )
-    assert "<p>Hello</p>" in out
+        out = client.translate_page(_identity_page(value, spelling), category="CAT")
+    assert client.pending_phrases == []
+    assert client.pending_content_blocks == [
+        {"content": IDENTITY_BODY, "category": "CAT", "custom_id": value, "phrases": ["Hello"]}
+    ]
+    assert IDENTITY_BODY in out, "a miss renders its source"
+
+
+def test_MARK3_an_identity_registers_in_a_translated_render_whose_own_root_stamp_is_not_the_input():
+    """The page's root is stamped resolved by THIS render; that stamp is output, and the host was
+    not inside a resolved scope in the page it was given."""
+    client, patched = _client_with_catalog({"CAT": {}})
+    client.set_locale("it-it")
+    with patched:
+        out = client.translate_page(_identity_page("abc123"), category="CAT")
+    assert 'data-ls-resolved="it-it"' in out, "control: this render stamps its root"
+    assert [b["custom_id"] for b in client.pending_content_blocks] == ["abc123"]
+
+
+@pytest.mark.parametrize("resolved", RESOLVED_SPELLINGS)
+@pytest.mark.parametrize("where", ["host", "ancestor"])
+def test_MARK3_an_identity_inside_a_resolved_scope_renders_under_its_id_and_registers_nothing(
+    where, resolved
+):
+    marker = f' {resolved}="es-es"'
+    page = _identity_page("abc123", host_extra=marker if where == "host" else "",
+                          body_extra=marker if where == "ancestor" else "")
+    client, patched = _client_with_catalog({"CAT": {"abc123": {"Hello": "Ciao"}}})
+    with patched:
+        out = client.translate_page(page, category="CAT")
+    assert "<p>Ciao</p>" in out, "the host did not render the catalog entry under its id"
     assert client.pending_phrases == [] and client.pending_content_blocks == []
+    empty, patched = _client_with_catalog({"CAT": {}})
+    with patched:
+        out = empty.translate_page(page, category="CAT")
+    assert IDENTITY_BODY in out
+    assert empty.pending_phrases == [] and empty.pending_content_blocks == [], "a miss registered"
+
+
+@pytest.mark.parametrize("host, ancestor", [('="false"', '="es-es"'), ("", '="0"')],
+                         ids=["host-opts-back-out", "ancestor-opted-out"])
+def test_MARK3_the_nearest_resolved_marker_decides(host, ancestor):
+    host_extra = f" data-ls-resolved{host}" if host else ""
+    page = _identity_page("abc123", host_extra=host_extra, body_extra=f" data-ls-resolved{ancestor}")
+    client, patched = _client_with_catalog({"CAT": {}})
+    with patched:
+        client.translate_page(page, category="CAT")
+    assert [b["custom_id"] for b in client.pending_content_blocks] == ["abc123"]
+
+
+def test_MARK3_an_identity_with_a_catalog_entry_renders_it_and_registers_nothing():
+    client, patched = _client_with_catalog({"CAT": {"abc123": {"Hello": "Ciao"}}})
+    with patched:
+        out = client.translate_page(_identity_page("abc123"), category="CAT")
+    assert "<p>Ciao</p>" in out
+    assert client.pending_phrases == [] and client.pending_content_blocks == []
+
+
+def test_MARK3_an_identity_registers_nothing_off_a_catalog_that_could_not_be_read():
+    from unittest.mock import patch
+
+    from langsys.catalog import CatalogFetch
+
+    client, _ = _client_with_catalog({})
+    with patch.object(client._catalog, "get", return_value=CatalogFetch({}, ok=False)):
+        out = client.translate_page(_identity_page("abc123"), category="CAT")
+    assert IDENTITY_BODY in out and client.pending_content_blocks == []
 
 
 def test_MARK3_an_identity_on_the_block_path_renders_under_its_id():
@@ -756,6 +818,14 @@ def test_MARK3_an_identity_on_the_block_path_renders_under_its_id():
     with patched:
         out = client.translate_content_block('<div data-ls-contentblock="abc123"><p>Hello</p></div>', "CAT")
     assert "<p>Ciao</p>" in out and client.pending_content_blocks == []
+
+
+def test_MARK3_an_identity_on_the_block_path_registers_under_its_id():
+    client, patched = _client_with_catalog({"CAT": {}})
+    with patched:
+        out = client.translate_content_block('<div data-ls-contentblock="abc123"><p>Hello</p></div>', "CAT")
+    assert IDENTITY_BODY in out
+    assert [b["custom_id"] for b in client.pending_content_blocks] == ["abc123"]
 
 
 def test_MARK3_the_classifier_table():

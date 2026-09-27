@@ -24,10 +24,12 @@ from ..locale import normalize_locale
 from ..registration import generate_custom_id
 from ..translate import lookup_block
 from ..types import UNCATEGORIZED
+from .attributes import marker_is_on
 from .markup import encode_phrase_host, render_phrase_host
 from .parser import (
     BLOCK_HOST_ATTRS,
     PHRASE_HOST_ATTRS,
+    RESOLVED_ATTRS,
     apply_block_translations,
     apply_element,
     block_marker_kind,
@@ -81,11 +83,12 @@ def translate_page(
     selmap = _build_selector_map(doc, selector_categories or {})
 
     _process_head(client, doc, locale, default_category)
-    _mark_resolved(client, doc, locale)
 
     body = doc.find("body")
     root = body if body is not None else doc
     _walk(client, root, attrs, locale, default_category, inherited=None, selmap=selmap)
+    # After the walk: this render's own mark is output, and MARK-3 reads the page it was given.
+    _mark_resolved(client, doc, locale)
 
     return str(lxml_html.tostring(doc, encoding="unicode"))
 
@@ -264,16 +267,37 @@ def _process_host(
                 render_phrase_host(el, translated, slots)
         return
     if block_marker_kind(el) == "identity":
-        # MARK-3 - a stamped id is this host's custom_id. Render the catalog entry under it, or
-        # leave the source; register nothing.
-        custom_id = next((v for v in (el.get(a) for a in BLOCK_HOST_ATTRS) if v is not None), "")
+        # MARK-3 - a stamped id is this host's custom_id: render the catalog entry under it.
+        # Inside a resolved scope a server already rendered the host, so a miss registers
+        # nothing; outside one, a miss registers the host's content under the id.
+        stamped = next((v for v in (el.get(a) for a in BLOCK_HOST_ATTRS) if v is not None), "")
+        custom_id = stamped.strip()
         fetch = client._catalog.get(client._effective_locale(None))
         block = fetch.catalog.get(item_cat, {}) if fetch.ok else {}
-        entry = block.get(custom_id.strip()) if isinstance(block, dict) else None
+        entry = block.get(custom_id) if isinstance(block, dict) else None
         if isinstance(entry, dict):
             apply_element(el, entry, attrs)
+        elif fetch.ok and not _in_resolved_scope(el):
+            tokens, _ = unit_tokens(el, attrs)
+            if tokens:
+                client._queue_content_block(
+                    _registered_content(el, attrs), item_cat, custom_id, tokens
+                )
         return
     _process_unit(client, el, attrs, locale, item_cat, declared=True)
+
+
+def _in_resolved_scope(el: _Element) -> bool:
+    """GATE-10's reading: the nearest element, the host included, that carries a resolved marker
+    in either spelling decides, and `false`/`0` there opts back out."""
+    node: Optional[_Element] = el
+    while node is not None:
+        for marker in RESOLVED_ATTRS:
+            value = node.get(marker)
+            if value is not None:
+                return marker_is_on(value)
+        node = node.getparent()
+    return False
 
 
 def _process_nested_hosts(

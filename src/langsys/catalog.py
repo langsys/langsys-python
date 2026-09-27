@@ -176,6 +176,13 @@ class CatalogStore:
             write_enabled=write_enabled if isinstance(write_enabled, bool) else None,
         )
 
+    def unavailable(self, locale: Optional[str] = None) -> bool:
+        """Whether the last fetch for `locale` (any locale, when None) failed and none has
+        succeeded since (CACHE-2)."""
+        if locale is None:
+            return bool(self._failures)
+        return normalize_locale(locale) in self._failures
+
     def clear(self, locale: Optional[str] = None) -> None:
         if locale is None:
             self._memory.clear()

@@ -92,8 +92,10 @@ you should not rely on the first two alone:
 Registration is resilient by design: a failed send keeps its queue and backs off
 exponentially rather than retrying into a failing endpoint, and a failure to reach the
 API at all is never treated as "you may not write" — the queue is held, not discarded.
-`flush_pending()` returns a result whose `success` is only ever `True` for work that
-actually happened.
+`flush_pending()` and `sync()` return a result whose `success` is only ever `True` for work
+that actually happened. A skipped write sets `skipped` and names its `reason`
+(`not-write-enabled`, `capability-unknown`, `catalog-unavailable`, …); a send the server
+refused has `reason: "registration-failed"` and the `error`.
 
 If you construct a client per short-lived script or worker run, the defaults are fine as
 they are. If you hold one for the life of a server process, call `flush_pending()` at
@@ -299,8 +301,11 @@ registers, so markup served by one and read by another resolves to one entry.
 
 - `data-ls-contentblock` (or `data-langsys-contentblock`): bare, `""`, `true`, `1` or `yes`
   makes the element one content block. `false` or `0` makes the marker ignored. Any other value
-  is the block's id, set by whichever SDK rendered it: the element renders from the catalog
-  entry under that id and registers nothing.
+  is the block's id, stamped by whichever SDK rendered it or supplied by your app: the element
+  renders from the catalog entry under that id. When the catalog lacks it, the element's content
+  registers under that id, unless it sits in a resolved scope (the element or its nearest
+  ancestor carrying `data-ls-resolved`), where a server has already rendered it and nothing
+  registers.
 - `data-ls-phrase` (or `data-langsys-phrase`) keeps an element's content as one phrase, inline
   markup included. `<p data-ls-phrase>Based on {n} <strong>reviews</strong></p>` registers
   `Based on {n} {m0o}reviews{m0c}`, so a count and the noun it governs are translated together.

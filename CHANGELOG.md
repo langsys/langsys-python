@@ -34,7 +34,9 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   `0`. Recovery emits one debug notice per `(template, locale)`. Supplied arguments keep full
   CLDR selection — recovery rewrites only the missing nodes and adds no second renderer.
 - **REG-9** — content blocks register in one batched POST per chunk instead of one POST each.
-- **REG-10** — a skipped or failed write no longer returns a success-shaped result.
+- **REG-10** — a skipped or failed write never returns a success-shaped result, and says why:
+  a skip names its `reason` (`not-write-enabled`, `catalog-unavailable`, …), and a refused
+  send is `registration-failed`, distinct from both. `sync()` reports the same way.
 - **WIRE-3** — locales go on the wire lowercase and cache keys use the same form, so `en-US`
   and `en-us` are one entry rather than two fetches.
 - **OBS-1** — one warning per process when a write-capable key type resolves to
@@ -193,6 +195,10 @@ before.
   `&eacute;` and unquoted attribute values survive verbatim, where previously a block
   with no translation yet came back re-serialised.
 - Blocks rendered by full-page translation are stamped too, not only single-block ones.
+- **MARK-3 — a block carrying its own id stays discoverable.** A `data-ls-contentblock="<id>"`
+  host renders the catalog entry under that id; when the catalog lacks it, the host's content
+  registers under that id, unless the host sits in a resolved scope (`data-ls-resolved` on it
+  or its nearest marked ancestor), where it registers nothing.
 - A `data-ls-contentblock` attribute now means one of three things, decided in a single
   place: a truthy value declares a subtree to be one block, an empty/`0`/`false` value or
   the bare attribute opts out and the content is discovered normally, and anything else
