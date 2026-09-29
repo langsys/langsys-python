@@ -290,7 +290,7 @@ def _apply_hash(text: str, plural_value: Optional[float], offset: int, locale: s
 
 
 def _render_missing(arg: _Arg, params: Params, locale: str) -> str:
-    """Recover from an absent (or ``None``) argument, as langsys-js-typescript 0.6.4 and langsys-php 1.3.1 do.
+    """Recover from an absent (or ``None``) argument, as the JS (0.6.4) and PHP (1.3.1) SDKs do.
 
     Reachable with no caller mistake: Langsys promotes a plain ``{name}`` phrase to
     ``{name_gender, select, …}`` in gendered target locales, and the app never passes
@@ -307,7 +307,8 @@ def _render_missing(arg: _Arg, params: Params, locale: str) -> str:
     if other is not None and arg.kind == "select":
         return _render(other, params, locale, plural_value=None, offset=0)
     if other is not None and arg.kind in ("plural", "selectordinal"):
-        return _render(other, params, locale, plural_value=None, offset=0, hash_text="{" + arg.name + "}")
+        slot = "{" + arg.name + "}"
+        return _render(other, params, locale, plural_value=None, offset=0, hash_text=slot)
     return "{" + arg.name + "}"
 
 
