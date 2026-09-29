@@ -14,6 +14,10 @@ Initial release of the Python base SDK.
 - Interpolation: `{name}` slots with locale-aware CLDR number/date formatting (Babel) and a
   pure-Python ICU MessageFormat parser (plural / select / selectordinal / number / date / time)
   — no system libicu dependency. Untranslated phrases fall back to the source text.
+  A missing or `None` ICU argument recovers the same way as langsys-js-typescript 0.6.4
+  and langsys-php 1.3.1, so a phrase Langsys promoted to `{name_gender, select, …}` reads
+  as a sentence when the app passes no gender: `select` takes its `other` branch, `plural`
+  takes `other` with `#` shown as `{name}`, and any other slot stays visible as `{name}`.
 - Locale helpers: `canonicalize_locale` (BCP-47), `normalize_locale`, `parse_accept_language`,
   and `detect_preferred_locale` (exact + likely-subtags; returns `None` on no match).
 - Write path: `register_phrases`, `register_content_block`, `sync`, a phrase/content-block
