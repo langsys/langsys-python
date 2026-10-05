@@ -11,6 +11,9 @@ across languages:
   ``{n, number|date|time}``) is handled by a small pure-Python parser backed by Babel's
   CLDR plural rules — no libicu system dependency. Anything malformed degrades to simple
   interpolation instead of raising.
+* a missing (or ``None``) ICU argument recovers like the JS/PHP SDKs: ``select`` takes
+  its ``other`` branch, ``plural`` takes ``other`` with ``#`` shown as ``{name}``, and
+  any other slot stays visible (see ``_render_missing``).
 """
 
 from __future__ import annotations
@@ -261,12 +264,20 @@ def _expect(text: str, i: int, ch: str) -> None:
 
 
 def _render(
-    nodes: list[_Node], params: Params, locale: str, plural_value: Optional[float], offset: int
+    nodes: list[_Node],
+    params: Params,
+    locale: str,
+    plural_value: Optional[float],
+    offset: int,
+    hash_text: Optional[str] = None,
 ) -> str:
     out: list[str] = []
     for node in nodes:
         if isinstance(node, str):
-            out.append(_apply_hash(node, plural_value, offset, locale))
+            if hash_text is not None:
+                out.append(node.replace("#", hash_text))
+            else:
+                out.append(_apply_hash(node, plural_value, offset, locale))
         else:
             out.append(_render_arg(node, params, locale))
     return "".join(out)
@@ -278,9 +289,32 @@ def _apply_hash(text: str, plural_value: Optional[float], offset: int, locale: s
     return text.replace("#", _format_number(plural_value - offset, locale))
 
 
+def _render_missing(arg: _Arg, params: Params, locale: str) -> str:
+    """Recover from an absent (or ``None``) argument, as the JS (0.6.4) and PHP (1.3.1) SDKs do.
+
+    Reachable with no caller mistake: Langsys promotes a plain ``{name}`` phrase to
+    ``{name_gender, select, …}`` in gendered target locales, and the app never passes
+    ``name_gender``. So:
+
+    * ``select`` takes its ``other`` branch: a correct sentence for an unknown value;
+    * ``plural``/``selectordinal`` take ``other`` with ``#`` shown as ``{name}``: the
+      sentence survives with a visible gap, since nothing can be inferred for a count;
+    * anything else (``{name}``, ``{n, number}``, dates) stays visible as ``{name}``.
+
+    A plural or select without an ``other`` branch is malformed, so it stays visible too.
+    """
+    other = (arg.options or {}).get("other")
+    if other is not None and arg.kind == "select":
+        return _render(other, params, locale, plural_value=None, offset=0)
+    if other is not None and arg.kind in ("plural", "selectordinal"):
+        slot = "{" + arg.name + "}"
+        return _render(other, params, locale, plural_value=None, offset=0, hash_text=slot)
+    return "{" + arg.name + "}"
+
+
 def _render_arg(arg: _Arg, params: Params, locale: str) -> str:
     if arg.name not in params or params[arg.name] is None:
-        return "{" + arg.name + "}"
+        return _render_missing(arg, params, locale)
     value = params[arg.name]
 
     if arg.kind is None:
