@@ -17,6 +17,8 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **ICU-7 — phrases are written flat in the README and the example**, `You have {count} new
+  messages` rather than a hand-written plural, and a test keeps every shipped surface that way.
 - **VAR-1/3/7 — values marked in the HTML are placeholders.** `<!--ls:NAME-->VALUE<!--/ls-->` and
   `<span data-ls-param="NAME">VALUE</span>` read as `{NAME}` on every HTML path, render back in
   their markers, and store as `{NAME}` in a block's content; a unit made only of markers, or one

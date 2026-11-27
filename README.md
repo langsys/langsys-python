@@ -31,11 +31,16 @@ client.set_locale("es-ES")
 client.translate("Save")                       # -> "Guardar"
 client.translate("Save", category="UI")        # category is part of the key
 client.translate(
-    "Hello, {name}! You have {count, plural, one {# new message} other {# new messages}}.",
+    "Hello, {name}! You have {count} new messages.",
     category="Greetings",
     params={"name": "Sarah", "count": 3},
 )
 ```
+
+Write each phrase as the sentence reads, every value a `{placeholder}`. Langsys writes the plural
+and gender forms each language needs into its translations, the base language included, and
+`translate()` picks the right one from your params. A sentence that says something different at
+zero (`Your inbox is empty.`) is a phrase of its own, chosen in your code.
 
 ### Configuration
 
@@ -66,10 +71,12 @@ construction still never raises.
 ### Interpolation
 
 Params accept `str`, `int`, `float`, `bool`, and `datetime`. Numbers and dates are
-CLDR-formatted for the loaded locale (pass a string to opt out). ICU MessageFormat —
-`{n, plural, …}`, `select`, `selectordinal`, `{n, number|date|time}` — is supported via a
-pure-Python parser backed by Babel's plural rules (no system libicu required). An unknown
-placeholder is left visible (`{name}`) rather than blanked.
+CLDR-formatted for the loaded locale (pass a string to opt out). The catalog's translations are
+ICU MessageFormat, which Langsys writes for you: `translate()` renders their
+`{n, plural, …}`, `select`, `selectordinal` and `{n, number|date|time}` with a pure-Python parser
+backed by Babel's plural rules (no system libicu required), and so does `interpolate()` for code
+that renders a catalog string itself. An unknown placeholder is left visible (`{name}`) rather
+than blanked.
 
 ### Reference data & locale detection
 

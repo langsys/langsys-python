@@ -20,10 +20,11 @@ def main() -> None:
     # Plain translation — the phrase is the key and the base-language default.
     print(client.translate("Technical Support", category="CAT_3"))
 
-    # Interpolation with locale-aware formatting + ICU plurals.
+    # Write the sentence as it reads and pass the values: Langsys makes the plural forms every
+    # language needs, English included, and the catalog's translation chooses one by `count`.
     print(
         client.translate(
-            "Hello, {name}! You have {count, plural, one {# new message} other {# new messages}}.",
+            "Hello, {name}! You have {count} new messages.",
             category="Greetings",
             params={"name": "Sarah", "count": 3},
         )
