@@ -101,6 +101,10 @@ SKIP_TAGS = frozenset({"script", "style", "noscript", "template", "math"})
 #: `classify_block_attribute` (MARK-3), which every walker shares so none can drift.
 PHRASE_HOST_ATTRS = ("data-ls-phrase", "data-langsys-phrase")
 BLOCK_HOST_ATTRS = ("data-ls-contentblock", "data-langsys-contentblock")
+#: MOVE-5 - what a host filled from its previous category carries beside its own identity, in
+#: both spellings for readers; writers emit `data-ls-*`.
+PREVIOUS_BLOCK_ATTRS = ("data-ls-previous-contentblock", "data-langsys-previous-contentblock")
+PREVIOUS_CATEGORY_ATTRS = ("data-ls-previous-category", "data-langsys-previous-category")
 #: GATE-10 - both spellings are read; writers emit `data-ls-resolved`.
 RESOLVED_ATTRS = ("data-ls-resolved", "data-langsys-resolved")
 
@@ -277,7 +281,7 @@ def _walk_extract(
                     text_nodes[0] += 1
 
 
-def stamp_content_block(html: str, custom_id: str) -> str:
+def stamp_content_block(html: str, custom_id: str, *, previous: Optional[str] = None) -> str:
     """MARK-1 — put the resolved ``custom_id`` on the rendered host.
 
     An identity you cannot observe from the DOM is one nobody can debug: whether this
@@ -292,8 +296,21 @@ def stamp_content_block(html: str, custom_id: str) -> str:
     a bare text run, or several siblings with no common parent inside this call. There
     is nothing to carry the attribute there, and inventing a wrapper would change the
     markup the caller handed us.
+
+    MOVE-5 - a block filled from its previous category also carries that category's id as
+    ``data-ls-previous-contentblock``.
     """
-    if not html or not custom_id:
+    if not custom_id:
+        return html
+    stamps = [("data-ls-contentblock", custom_id)]
+    if previous:
+        stamps.append(("data-ls-previous-contentblock", previous))
+    return stamp_host(html, stamps)
+
+
+def stamp_host(html: str, stamps: Sequence[tuple[str, str]]) -> str:
+    """Add attributes to a fragment's one host element, in the caller's own string."""
+    if not html or not stamps:
         return html
     root = _parse_fragment(html)
     children = [c for c in root if isinstance(c.tag, str)]
@@ -309,7 +326,7 @@ def stamp_content_block(html: str, custom_id: str) -> str:
     match = _search_open_tag(html)
     if match is None:  # pragma: no cover - a single element always has an open tag
         return html
-    attribute = f' data-ls-contentblock="{_attr_escape(custom_id)}"'
+    attribute = "".join(f' {name}="{_attr_escape(value)}"' for name, value in stamps)
     cut = match.end() - len(match.group("selfclose")) - 1
     return html[:cut] + attribute + html[cut:]
 

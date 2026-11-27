@@ -329,7 +329,7 @@ def test_MARK2_both_category_spellings_are_read(spelling):
     from langsys.html.page import _effective_category
 
     el = LH.fragment_fromstring(f'<div {spelling}="Blog"><p>Hi</p></div>')
-    assert _effective_category(el, None, {}) == "Blog"
+    assert _effective_category(el, None, {}) == ("Blog", None)
 
 
 # -- MARK-2, the spec's own test: on a PAGE and on a BLOCK --------------------

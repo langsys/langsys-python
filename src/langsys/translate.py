@@ -18,13 +18,20 @@ from .types import UNCATEGORIZED, Catalog
 class Resolution:
     """Result of a catalog lookup."""
 
-    __slots__ = ("text", "missing")
+    __slots__ = ("text", "missing", "translated")
 
-    def __init__(self, text: str, missing: bool) -> None:
+    def __init__(self, text: str, missing: bool, translated: bool = False) -> None:
         #: The resolved string (a translation, or the base phrase on fallback).
         self.text = text
         #: True only when the phrase key is absent — i.e. a candidate for discovery.
         self.missing = missing
+        #: True when the text is the catalog's translation, not the source on fallback.
+        self.translated = translated
+
+
+def displayable(value: Any) -> bool:
+    """CAT-2 - a translation renders only as a non-empty string; absent, null or empty is source."""
+    return isinstance(value, str) and value != ""
 
 
 def resolve(
@@ -41,13 +48,14 @@ def resolve(
         block = cat.get(content_block_id)
         if isinstance(block, dict):
             value = block.get(phrase)
-            return Resolution(value if isinstance(value, str) and value else phrase, missing=False)
+            if isinstance(value, str) and value:
+                return Resolution(value, missing=False, translated=True)
         return Resolution(phrase, missing=False)
 
     if phrase in cat:
         raw = cat[phrase]
-        if isinstance(raw, str) and raw != "":
-            return Resolution(raw, missing=False)
+        if isinstance(raw, str) and raw:
+            return Resolution(raw, missing=False, translated=True)
         # present but null/empty/content-block-collision -> base phrase, already registered
         return Resolution(phrase, missing=False)
 
@@ -103,3 +111,42 @@ def lookup_block(
         )
         return candidate
     return None
+
+
+# -- MOVE-4: the previous category's entry -------------------------------------------------------
+
+
+def previous_entry(catalog: Catalog, previous: str, phrase: str) -> Optional[str]:
+    """The translation the catalog holds for `phrase` under its previous category, by CAT-2's rule.
+    `''` reads the no-category entries, under the catalog's own key for them."""
+    cat = catalog.get(previous or UNCATEGORIZED)
+    value = cat.get(phrase) if isinstance(cat, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+def block_translated(block: Any) -> bool:
+    """A block entry is a translation when it translates at least one of its phrases; a block with
+    no phrases, or none translated, is no translation (MOVE-4)."""
+    return isinstance(block, dict) and any(displayable(v) for v in block.values())
+
+
+def previous_block(
+    catalog: Catalog,
+    block: Optional[dict[str, Any]],
+    previous: Optional[str],
+    phrases: Sequence[str],
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    """What a block renders from, and the previous category's id when that is where it came from.
+
+    The current category's entry, its historical ids included, is read first (`block`); only when
+    it is no translation does the previous category's id, then its historical ids, decide. The
+    current entry renders as before when the previous category has nothing either."""
+    if previous is None or block_translated(block):
+        return block, None
+    from .registration import generate_custom_id
+
+    prior_id = generate_custom_id(previous, phrases)
+    earlier = lookup_block(catalog.get(previous or UNCATEGORIZED), previous, prior_id, phrases)
+    if block_translated(earlier):
+        return earlier, prior_id
+    return block, None

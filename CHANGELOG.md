@@ -17,6 +17,13 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **MOVE-1..5 — content moved between categories.** Every call that takes a category takes
+  `previous_category` (`""` for none), as do `data-ls-previous-category`, selector configs and
+  `register_phrases()`/`sync()` items; `previous_categories={current: previous}` and
+  `message_previous_category` move a whole category. It is sent beside `category` on the
+  registration a miss triggers, the first one named winning, and is never part of an id. Until the
+  new category has a translation the previous one's renders, and a host filled that way carries
+  `data-ls-previous-contentblock` or `data-ls-previous-category`.
 - **ICU-7 — phrases are written flat in the README and the example**, `You have {count} new
   messages` rather than a hand-written plural, and a test keeps every shipped surface that way.
 - **VAR-1/3/7 — values marked in the HTML are placeholders.** `<!--ls:NAME-->VALUE<!--/ls-->` and

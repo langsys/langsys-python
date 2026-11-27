@@ -84,9 +84,9 @@ def count_queue_calls(body):
         calls["phrase"].append(phrase)
         return real_phrase(phrase, category, *args, **kwargs)
 
-    def spy_block(html, category, custom_id, phrases):
+    def spy_block(html, category, custom_id, phrases, **kwargs):
         calls["block"].append(tuple(phrases))
-        return real_block(html, category, custom_id, phrases)
+        return real_block(html, category, custom_id, phrases, **kwargs)
 
     client._queue_missing = spy_phrase
     client._queue_content_block = spy_block

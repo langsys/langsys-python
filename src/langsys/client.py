@@ -32,7 +32,8 @@ from .registration import PhraseInput, Registrar, generate_custom_id
 from .request_locale import LocaleChoice, resolve_request_locale
 from .scope import RequestScope, begin_request_scope, current_scope, end_request_scope
 from .text import strip_c0
-from .translate import lookup_block, resolve
+from .translate import block_translated, lookup_block, previous_block, previous_entry, resolve
+from .translate import displayable as _displayable
 from .types import (
     UNCATEGORIZED,
     Catalog,
@@ -109,6 +110,8 @@ class LangsysClient:
         debounce: Optional[float] = DEFAULT_DEBOUNCE_SECONDS,
         debug: bool = False,
         message_category: str = DEFAULT_MESSAGE_CATEGORY,
+        message_previous_category: Optional[str] = None,
+        previous_categories: Optional[Mapping[str, Optional[str]]] = None,
         legacy_files: Optional[Sequence[Any]] = None,
         require_credentials: bool = False,
     ) -> None:
@@ -161,7 +164,9 @@ class LangsysClient:
         self._decision_stamp = 0
         # The queue is reachable from the debounce timer thread as well as the caller.
         self._lock = threading.RLock()
-        self._pending: dict[tuple[str, str], None] = {}
+        #: Each queued phrase with the previous category its registration carries (MOVE-3), or
+        #: None when it did not move.
+        self._pending: dict[tuple[str, str], Optional[str]] = {}
         self._pending_blocks: dict[str, dict[str, Any]] = {}
         #: SRV-3 - which open request scopes recorded each queued item. An item absent from
         #: these maps was recorded outside any scope and is sendable now; an item present is
@@ -182,6 +187,18 @@ class LangsysClient:
         self._translatable_attributes: list[str] = list(DEFAULT_TRANSLATABLE_ATTRIBUTES)
         #: MSG-6 - the one category server-message templates are registered and rendered under.
         self.message_category = message_category
+        #: MOVE-1 - the category the message category's templates were registered under before
+        #: a rename; it wins over `previous_categories` for the message category.
+        self.message_previous_category = message_previous_category
+        #: MOVE-1 - `{current: previous}`, the move of a whole category at once: every item
+        #: registered under `current` whose call names no previous category carries it. `''` is
+        #: "no category before"; a category not in the map, or a None value, did not move.
+        self._previous_categories: dict[str, Optional[str]] = dict(previous_categories or {})
+        #: MOVE-1 - with debug on, a phrase moved out of a category while another call still
+        #: renders it there is reported once: (category, phrase) pairs of each kind.
+        self._moved_out: set[tuple[str, str]] = set()
+        self._rendered_in: set[tuple[str, str]] = set()
+        self._warned_left_behind: set[tuple[str, str]] = set()
         #: MIG-1 - legacy-key mode runs only when files are configured. Unset, no file is read
         #: and no key lookup happens. Loaded here, so a file this SDK cannot read (a `.mo`, an
         #: unsupported format) fails at configuration, naming the file.
@@ -519,14 +536,34 @@ class LangsysClient:
         params: Optional[dict[str, Any]] = None,
         locale: Optional[str] = None,
         content_block_id: Optional[str] = None,
+        previous_category: Optional[str] = None,
     ) -> str:
         """Translate ``phrase`` (falling back to the phrase itself if untranslated),
-        then interpolate ``params`` with locale-aware CLDR formatting."""
+        then interpolate ``params`` with locale-aware CLDR formatting.
+
+        ``previous_category`` names the category the phrase was registered under before it moved
+        (``""`` for none): its registration carries it, and until the new category has a
+        translation the previous category's renders (MOVE-1, MOVE-4)."""
+        return self._translate(phrase, category, params, locale, content_block_id,
+                               previous_category)[0]
+
+    def _translate(
+        self,
+        phrase: str,
+        category: Optional[str],
+        params: Optional[dict[str, Any]],
+        locale: Optional[str],
+        content_block_id: Optional[str],
+        previous_category: Optional[str],
+    ) -> tuple[str, bool, Optional[str]]:
+        """`translate()`, whether the text is the current category's translation, and the previous
+        category it came from instead, if it did (MOVE-5)."""
         # MIG-2 - in legacy-key mode the argument is a key first: a hit becomes its source value
         # (never the key) under its namespace, a miss stays literal source text.
         if self._legacy is not None and content_block_id is None:
             phrase, category, _ = self._legacy.resolve(phrase, category)
-        return self._render_phrase(phrase, category, params, locale, content_block_id)
+        return self._resolve_phrase(phrase, category, params, locale, content_block_id,
+                                    previous_category)
 
     #: Short alias mirroring ``t()`` across the other SDKs.
     t = translate
@@ -540,6 +577,7 @@ class LangsysClient:
         category: Optional[str] = None,
         params: Optional[dict[str, Any]] = None,
         locale: Optional[str] = None,
+        previous_category: Optional[str] = None,
     ) -> str:
         """A framework translation function's call, through the same resolver as `t()` (MIG-8).
 
@@ -564,103 +602,190 @@ class LangsysClient:
             phrase = gettext_plural(text, plural, literal=True, passed=values)
         else:
             phrase = convert_literal(text, entry_point, values)
-        return self._render_phrase(phrase, category, params, locale, None)
+        return self._resolve_phrase(phrase, category, params, locale, None, previous_category)[0]
 
-    def _render_phrase(
+    def _move_of(self, category: Optional[str], named: Optional[str]) -> Optional[str]:
+        """MOVE-1 - the previous category an item under `category` carries: the one its call
+        names, else the configured map's (the message category's own first). None is no move,
+        and so is a previous category equal to the current one."""
+        current = "" if category in (None, UNCATEGORIZED) else str(category)
+        if named is not None and named != current:
+            return named
+        if current == self.message_category and self.message_previous_category is not None:
+            moved: Optional[str] = self.message_previous_category
+        else:
+            moved = self._previous_categories.get(current)
+        return None if moved is None or moved == current else moved
+
+    def _resolve_phrase(
         self,
         phrase: str,
         category: Optional[str],
         params: Optional[dict[str, Any]],
         locale: Optional[str],
         content_block_id: Optional[str],
-    ) -> str:
+        previous_category: Optional[str] = None,
+    ) -> tuple[str, bool, Optional[str]]:
         # TOK-2 - a code-registered key is stripped of C0 controls on lookup and on register
         # alike, so a phrase carrying one resolves to the same entry as the markup that holds it.
         phrase = strip_c0(phrase)
         loc = self._effective_locale(locale)
+        moved = self._move_of(category, previous_category) if content_block_id is None else None
+        self._note_use(phrase, category, moved)
         if content_block_id is None and self._preloaded:
             held, value = self._preloaded_entry(loc, category or UNCATEGORIZED, phrase)
             if held:
-                text = value if isinstance(value, str) and value else phrase
-                return interpolate(text, params, loc) if params else text
+                current = _displayable(value)
+                text, prior = (value if current else phrase), None
+                if not current and moved is not None:
+                    # MOVE-4 - the snapshot's entry under the previous category, by the same rule.
+                    found, earlier = self._preloaded_entry(loc, moved or UNCATEGORIZED, phrase)
+                    if found and _displayable(earlier):
+                        text, prior = earlier, moved
+                return (interpolate(text, params, loc) if params else text), current, prior
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
         result = resolve(fetch.catalog, phrase, category, content_block_id)
+        text, prior = result.text, None
+        if moved is not None and not result.translated:
+            # MOVE-4 - no translation under the current category: the previous category's entry
+            # for the same text renders, until the current one has its own.
+            earlier = previous_entry(fetch.catalog, moved, phrase)
+            if earlier is not None:
+                text, prior = earlier, moved
         # WIRE-4 — without a catalog a miss is indistinguishable from a hit, so an
         # outage would re-register everything that already exists. Record nothing.
+        # CAT-1 - registration is decided under the current category alone.
         if result.missing and content_block_id is None and fetch.ok:
-            self._queue_missing(phrase, category, fetch.catalog.get(category or UNCATEGORIZED))
+            self._queue_missing(phrase, category, fetch.catalog.get(category or UNCATEGORIZED),
+                                previous_category=moved)
         if params:
-            return interpolate(result.text, params, loc)
-        return result.text
+            return interpolate(text, params, loc), result.translated, prior
+        return text, result.translated, prior
+
+    def _note_use(self, phrase: str, category: Optional[str], moved: Optional[str]) -> None:
+        """MOVE-1's SHOULD, with debug on: a phrase moved out of a category while another call
+        still renders it there leaves that call behind, which is reported once per pair."""
+        if not self._config.debug:
+            return
+        current = "" if category in (None, UNCATEGORIZED) else str(category)
+        with self._lock:
+            if moved is not None:
+                self._moved_out.add((moved, phrase))
+            else:
+                self._rendered_in.add((current, phrase))
+            pair = (moved, phrase) if moved is not None else (current, phrase)
+            if (pair in self._moved_out and pair in self._rendered_in
+                    and pair not in self._warned_left_behind):
+                self._warned_left_behind.add(pair)
+                logger.debug(
+                    "langsys: %r is moved out of category %r by one call while another still "
+                    "renders it there; the item stands for every use, so that call's text drops "
+                    "out of the Translation Manager. Move every use, or give it its own text.",
+                    phrase, pair[0],
+                )
 
     # -- content blocks (server-side HTML) ------------------------------------
 
-    def translate_content_block(self, html: str, category: Optional[str] = None) -> str:
+    def translate_content_block(
+        self, html: str, category: Optional[str] = None, *, previous_category: Optional[str] = None
+    ) -> str:
         """Translate a fragment of HTML as one unit (TOK-6). A fragment whose one token is its one
         text node is a phrase; anything else is a content block, returned stamped with its id
         (MARK-1). Untranslated content returns as authored and is queued for registration.
+        ``previous_category`` is the category it was registered under before it moved (MOVE-1).
         Requires ``pip install langsys[html]``."""
         from .html.page import translate_fragment
 
         self._assert_usable()
         if not html or self._not_configured is not None:
             return html
-        return translate_fragment(self, html, category)
+        return translate_fragment(self, html, category, previous_category)
 
-    def _render_block(self, html: str, category: Optional[str], phrases: list[str]) -> str:
+    def _render_block(
+        self,
+        html: str,
+        category: Optional[str],
+        phrases: list[str],
+        previous_category: Optional[str] = None,
+    ) -> str:
         """Look a content block up under its id, render it, and stamp it; queue it on a miss."""
         from .html.parser import apply_block_translations, placeholder_html, stamp_content_block
 
         loc = self._effective_locale(None)
         attrs = self._translatable_attributes
         cat_name = category or UNCATEGORIZED
+        moved = self._move_of(category, previous_category)
         # CID-2 — the hash takes the *raw* category, `''` when there is none.
         # `__uncategorized__` is a cache-lookup namespace and must never reach the id.
+        # MOVE-2 - the current category alone: a previous category is never part of identity.
         custom_id = generate_custom_id(category, phrases)
         held, preloaded = self._preloaded_entry(loc, cat_name, custom_id)
         if held and isinstance(preloaded, dict):
-            translated = apply_block_translations(html, preloaded, attrs, locale=loc)
-            return stamp_content_block(translated, custom_id)
+            render: dict[str, Any] = preloaded
+            prior_id: Optional[str] = None
+            if moved is not None and not block_translated(preloaded):
+                prior_key = generate_custom_id(moved, phrases)
+                found, earlier = self._preloaded_entry(loc, moved or UNCATEGORIZED, prior_key)
+                if found and block_translated(earlier):
+                    render, prior_id = earlier, prior_key
+            translated = apply_block_translations(html, render, attrs, locale=loc)
+            return stamp_content_block(translated, custom_id, previous=prior_id)
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
         cat = fetch.catalog.get(cat_name)
         block = lookup_block(cat, category, custom_id, phrases)
-        if not isinstance(block, dict):
+        found_block, prior_id = previous_block(fetch.catalog, block, moved, phrases)
+        if not isinstance(block, dict) and fetch.ok:
             # WIRE-4 — see translate(): never queue off a catalog we could not read.
-            if fetch.ok:
-                # VAR-3 - stored content holds each marked value as its placeholder.
-                self._queue_content_block(placeholder_html(html), cat_name, custom_id, phrases)
+            # VAR-3 - stored content holds each marked value as its placeholder.
+            self._queue_content_block(placeholder_html(html), cat_name, custom_id, phrases,
+                                      previous_category=moved)
+        if found_block is None:
             # MARK-1 — the id is what the block IS, not what the catalog happened to
             # hold. An unstamped miss is the case you most need to inspect.
             return stamp_content_block(html, custom_id)
-        translated = apply_block_translations(html, block, attrs, locale=loc)
-        return stamp_content_block(translated, custom_id)
+        translated = apply_block_translations(html, found_block, attrs, locale=loc)
+        return stamp_content_block(translated, custom_id, previous=prior_id)
 
     def translate_page(
         self,
         html: str,
         category: Optional[str] = None,
         selector_categories: Optional[dict[str, Any]] = None,
+        *,
+        previous_category: Optional[str] = None,
     ) -> str:
         """Translate a whole HTML document (head + body) in place, classifying each
-        block as a phrase or a content block. Requires ``pip install langsys[html]``."""
+        block as a phrase or a content block. ``previous_category`` is the previous category
+        of ``category``, the page's default (MOVE-1); a selector's config and an element's
+        ``data-ls-previous-category`` name their own. Requires ``pip install langsys[html]``."""
         from .html.page import translate_page
 
         self._assert_usable()
         if self._not_configured is not None:
             return html  # WIRE-4: the page as given, as when the catalog failed to load
-        return translate_page(self, html, category, selector_categories)
+        return translate_page(self, html, category, selector_categories, previous_category)
 
     def _queue_content_block(
-        self, html: str, category: str, custom_id: str, phrases: list[str]
+        self,
+        html: str,
+        category: str,
+        custom_id: str,
+        phrases: list[str],
+        *,
+        previous_category: Optional[str] = None,
     ) -> None:
         with self._lock:
             existed = custom_id in self._pending_blocks
-            self._pending_blocks.setdefault(
+            entry = self._pending_blocks.setdefault(
                 custom_id,
                 {"content": html, "category": category, "custom_id": custom_id, "phrases": phrases},
             )
+            # MOVE-3 - the first previous category named is kept; a later call naming none
+            # never clears it, so an unmoved use rendered first cannot drop a move.
+            if previous_category is not None and entry.get("previous_category") is None:
+                entry["previous_category"] = previous_category
             self._tag(self._block_scopes, custom_id, existed)
         self._schedule_flush()
 
@@ -845,8 +970,10 @@ class LangsysClient:
                 self._warned_marker_values.add(key)
                 warn_translatable_marker_value(template, marker, value)
         known = fetch.catalog.get(category)
+        # MSG-6 - registered or not is decided under the message category alone.
         if not (isinstance(known, dict) and template in known):
-            self._queue_missing(template, category, known)
+            self._queue_missing(template, category, known,
+                                previous_category=self._move_of(category, None))
         return entry
 
     def render_server_message(
@@ -854,7 +981,9 @@ class LangsysClient:
     ) -> str:
         """Render a received entry: `t(template, category, params)` when the catalog translates
         the template, `message` otherwise. `message` is filled, possibly localised text and is
-        never a lookup key (MSG-5)."""
+        never a lookup key (MSG-5). With the message category's previous category configured, a
+        template the category does not translate yet renders the previous category's entry
+        before falling back to `message` (MSG-6, MOVE-4)."""
         category = category or self.message_category
         fetch = self._catalog.get(self._effective_locale(locale))
         translations = fetch.catalog.get(category) if fetch.ok else None
@@ -864,6 +993,9 @@ class LangsysClient:
             if isinstance(translations, dict) and isinstance(template, str)
             else None
         )
+        moved = self._move_of(category, None)
+        if not _displayable(value) and moved is not None and fetch.ok and isinstance(template, str):
+            value = previous_entry(fetch.catalog, moved, template)
         if not isinstance(value, str) or not value:
             message = entry.get("message")
             if isinstance(message, str):
@@ -950,7 +1082,7 @@ class LangsysClient:
                                                    "reason": "no-source-key"})
 
         try:
-            responses = self._reg.register_phrases(list(items.values()))
+            responses = self._reg.register_phrases([self._with_move(i) for i in items.values()])
         except (NetworkError, ApiError) as exc:
             logger.warning("langsys: the import was refused (%s); nothing is marked imported.",
                            exc)
@@ -984,6 +1116,7 @@ class LangsysClient:
         known = fetch.catalog.get(category)
         new = [t for t in templates if not (isinstance(known, dict) and t in known)]
         if new:
+            # MOVE-1 - each carries the message category's previous category, when configured.
             self.register_phrases([{"phrase": t, "category": category} for t in new])
             self._catalog.clear()
         return len(new)
@@ -1010,14 +1143,21 @@ class LangsysClient:
     # -- discovery queue ------------------------------------------------------
 
     def _queue_missing(
-        self, phrase: str, category: Optional[str], catalog_category: Any = None
+        self,
+        phrase: str,
+        category: Optional[str],
+        catalog_category: Any = None,
+        *,
+        previous_category: Optional[str] = None,
     ) -> None:
         key = (category or UNCATEGORIZED, phrase)
         if self._ellipsis_suppresses(phrase, key, catalog_category):
             return
         with self._lock:
             existed = key in self._pending
-            self._pending[key] = None
+            # MOVE-3 - the first previous category named is kept, and none never clears it.
+            if not existed or self._pending[key] is None:
+                self._pending[key] = previous_category
             self._tag(self._phrase_scopes, key, existed)
         self._schedule_flush()
 
@@ -1075,8 +1215,9 @@ class LangsysClient:
         """Phrases seen during rendering that aren't registered yet."""
         with self._lock:
             return [
-                {"phrase": phrase, "category": category}
-                for (category, phrase) in self._pending
+                {"phrase": phrase, "category": category,
+                 **({"previous_category": moved} if moved is not None else {})}
+                for (category, phrase), moved in self._pending.items()
             ]
 
     @property
@@ -1242,10 +1383,11 @@ class LangsysClient:
             else:
                 phrase_keys, block_ids = self._sendable()
             items: list[PhraseInput] = [
-                {"phrase": phrase, "category": None if category == UNCATEGORIZED else category}
+                _queued_phrase(phrase, category, self._pending[(category, phrase)])
                 for (category, phrase) in phrase_keys
             ]
-            blocks = [self._pending_blocks[b] for b in block_ids]
+            sent_moves = {key: self._pending[key] for key in phrase_keys}
+            blocks = [dict(self._pending_blocks[b]) for b in block_ids]
         phrase_count, block_count = len(items), len(blocks)
 
         try:
@@ -1279,10 +1421,19 @@ class LangsysClient:
 
         self._reset_backoff()
         with self._lock:
+            # MOVE-3 - an item that named its previous category only while this send was out is
+            # kept, so its move is sent: the API copies and retires once, and a repeat does nothing.
             for key in phrase_keys:
+                if key in self._pending and self._pending[key] != sent_moves[key]:
+                    continue
                 self._pending.pop(key, None)
                 self._phrase_scopes.pop(key, None)
-            for block_id in block_ids:
+            for block in blocks:
+                block_id = block["custom_id"]
+                queued = self._pending_blocks.get(block_id)
+                if queued is not None and (queued.get("previous_category")
+                                           != block.get("previous_category")):
+                    continue
                 self._pending_blocks.pop(block_id, None)
                 self._block_scopes.pop(block_id, None)
         self._catalog.clear()  # new items exist server-side now; refetch next time
@@ -1308,9 +1459,24 @@ class LangsysClient:
     # -- registration (write key) ---------------------------------------------
 
     def register_phrases(self, phrases: Sequence[PhraseInput]) -> list[dict[str, Any]]:
-        """Register phrases (strings, or ``{"phrase", "category"?, "translatable"?}``)."""
+        """Register phrases (strings, or ``{"phrase", "category"?, "previous_category"?,
+        "translatable"?}``). An item naming no previous category takes the configured map's
+        (MOVE-1)."""
         self._require_write()
-        return self._reg.register_phrases(phrases)
+        return self._reg.register_phrases([self._with_move(p) for p in phrases])
+
+    def _with_move(self, phrase: PhraseInput) -> PhraseInput:
+        """MOVE-1 - an explicit item with the previous category its call or the map gives it."""
+        text = phrase if isinstance(phrase, str) else phrase["phrase"]
+        category = None if isinstance(phrase, str) else phrase.get("category")
+        named = None if isinstance(phrase, str) else phrase.get("previous_category")
+        moved = self._move_of(category, named)
+        if isinstance(phrase, str):
+            return phrase if moved is None else {"phrase": text, "previous_category": moved}
+        item = {k: v for k, v in phrase.items() if k != "previous_category"}
+        if moved is not None:
+            item["previous_category"] = moved
+        return item
 
     def register_content_block(
         self,
@@ -1320,12 +1486,16 @@ class LangsysClient:
         category: Optional[str] = None,
         custom_id: Optional[str] = None,
         label: Optional[str] = None,
+        previous_category: Optional[str] = None,
     ) -> dict[str, Any]:
         """Register a content block. ``phrases`` are its child phrases (auto-extraction
-        from HTML arrives with page translation in phase 3)."""
+        from HTML arrives with page translation in phase 3). ``previous_category`` is the
+        category it was registered under before it moved (MOVE-1); its id is the current
+        category's (MOVE-2)."""
         self._require_write()
         return self._reg.register_content_block(
-            content, phrases, category=category, custom_id=custom_id, label=label
+            content, phrases, category=category, custom_id=custom_id, label=label,
+            previous_category=self._move_of(category, previous_category),
         )
 
     def sync(
@@ -1344,13 +1514,39 @@ class LangsysClient:
                     "reason": "catalog-unavailable"}
         existing = _existing_keys(fetch.catalog)
 
+        # MOVE-1 - one item stands for every entry naming its text and category: the first
+        # previous category an entry names is the one sent, and entries that disagree are reported.
         new_items: list[PhraseInput] = []
+        by_key: dict[str, int] = {}
+        conflicts: list[dict[str, Any]] = []
         for phrase in local_phrases:
             text = phrase if isinstance(phrase, str) else phrase["phrase"]
             category = None if isinstance(phrase, str) else phrase.get("category")
             key = f"{category or UNCATEGORIZED}::{text}"
-            if key not in existing:
+            if key in existing:
+                continue
+            named = None if isinstance(phrase, str) else phrase.get("previous_category")
+            current = "" if category in (None, UNCATEGORIZED) else category
+            named = None if named == current else named
+            if key not in by_key:
+                by_key[key] = len(new_items)
                 new_items.append(phrase)
+                continue
+            first = new_items[by_key[key]]
+            earlier = None if isinstance(first, str) else first.get("previous_category")
+            earlier = None if earlier == current else earlier
+            if named is None:
+                continue
+            if earlier is None:
+                new_items[by_key[key]] = {**({"phrase": first} if isinstance(first, str)
+                                             else first), "previous_category": named}
+            elif earlier != named:
+                conflicts.append({"phrase": text, "category": category,
+                                  "previous_categories": [earlier, named]})
+                logger.warning(
+                    "langsys: %r under %r names two previous categories, %r and %r; sending the "
+                    "first.", text, current, earlier, named)
+        new_items = [self._with_move(p) for p in new_items]
 
         names = [p if isinstance(p, str) else p["phrase"] for p in new_items]
         synced = False
@@ -1360,13 +1556,14 @@ class LangsysClient:
                 # REG-10 - a skipped write says why, and is never success-shaped.
                 return {"new_phrases": names, "synced": False, "success": False, "skipped": True,
                         "reason": "not-write-enabled" if decision is False
-                        else "capability-unknown"}
+                        else "capability-unknown", "move_conflicts": conflicts}
             self._reg.register_phrases(new_items)
             self._catalog.clear(loc)
             self._catalog.get(loc, use_cache=False)
             synced = True
 
-        return {"new_phrases": names, "synced": synced, "success": True}
+        return {"new_phrases": names, "synced": synced, "success": True,
+                "move_conflicts": conflicts}
 
     def _require_write(self) -> None:
         """Gate an explicit registration call, distinguishing denial from ignorance.
@@ -1527,6 +1724,15 @@ def _without_write_decision(data: dict[str, Any]) -> dict[str, Any]:
     TTL, and fleet-wide on a shared Redis.
     """
     return {k: v for k, v in data.items() if k != "write_enabled"}
+
+
+def _queued_phrase(phrase: str, category: str, moved: Optional[str]) -> dict[str, Any]:
+    """A queued miss as the item it registers: its previous category only when it moved."""
+    item: dict[str, Any] = {"phrase": phrase,
+                            "category": None if category == UNCATEGORIZED else category}
+    if moved is not None:
+        item["previous_category"] = moved
+    return item
 
 
 def _existing_keys(catalog: Catalog) -> set[str]:

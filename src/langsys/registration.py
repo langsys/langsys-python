@@ -243,12 +243,14 @@ def legacy_custom_ids(category: Optional[str], phrases: Sequence[str]) -> list[s
 class _Flight:
     """One content block's registration request, and the answer its waiters take."""
 
-    __slots__ = ("done", "result", "error")
+    __slots__ = ("done", "result", "error", "previous")
 
-    def __init__(self) -> None:
+    def __init__(self, previous: Optional[str] = None) -> None:
         self.done = threading.Event()
         self.result: Optional[dict[str, Any]] = None
         self.error: Optional[BaseException] = None
+        #: The previous category the request carries (MOVE-1), None when it carries no move.
+        self.previous = previous
 
     def wait(self) -> dict[str, Any]:
         self.done.wait()
@@ -265,13 +267,13 @@ _IN_FLIGHT: dict[tuple[str, ...], _Flight] = {}
 _FLIGHT_GUARD = threading.Lock()
 
 
-def _claim(key: tuple[str, ...]) -> tuple[_Flight, bool]:
+def _claim(key: tuple[str, ...], previous: Optional[str] = None) -> tuple[_Flight, bool]:
     """The flight for `key`, and whether this caller owns it (sends) or joins it (waits)."""
     with _FLIGHT_GUARD:
         flight = _IN_FLIGHT.get(key)
         if flight is not None:
             return flight, False
-        flight = _IN_FLIGHT[key] = _Flight()
+        flight = _IN_FLIGHT[key] = _Flight(previous)
         return flight, True
 
 
@@ -322,14 +324,26 @@ class Registrar:
         category: Optional[str] = None,
         custom_id: Optional[str] = None,
         label: Optional[str] = None,
+        previous_category: Optional[str] = None,
     ) -> dict[str, Any]:
         item = self._content_block_item(
-            content, phrases, category=category, custom_id=custom_id, label=label
+            content, phrases, category=category, custom_id=custom_id, label=label,
+            previous_category=previous_category,
         )
+        return self._register_block(item)
+
+    def _register_block(self, item: dict[str, Any]) -> dict[str, Any]:
         key = self._flight_key(item)
-        flight, owner = _claim(key)
-        if not owner:
-            return flight.wait()  # REG-7: the request in flight answers for this one too
+        moved = item.get("previous_category")
+        while True:
+            flight, owner = _claim(key, moved)
+            if owner:
+                break
+            result = flight.wait()  # REG-7: the request in flight answers for this one too
+            if moved is None or flight.previous is not None:
+                return result
+            # MOVE-3 - the request in flight carries no move, so this one's is sent once it has
+            # answered; a move is idempotent on the API, and a repeat copies nothing.
         try:
             responses = self._post_items([item])
         except BaseException as exc:
@@ -354,20 +368,21 @@ class Registrar:
                 category=block.get("category"),
                 custom_id=block.get("custom_id"),
                 label=block.get("label"),
+                previous_category=block.get("previous_category"),
             )
             for block in blocks
         ]
         # REG-7 - send only the blocks no other request has in flight; for the rest, take the
         # answer of the request that does, after this one's own blocks have been answered.
         owned: list[tuple[tuple[str, ...], _Flight, dict[str, Any]]] = []
-        joined: list[_Flight] = []
+        joined: list[tuple[_Flight, dict[str, Any]]] = []
         for item in items:
             key = self._flight_key(item)
-            flight, owner = _claim(key)
+            flight, owner = _claim(key, item.get("previous_category"))
             if owner:
                 owned.append((key, flight, item))
             else:
-                joined.append(flight)
+                joined.append((flight, item))
         try:
             responses = self._post_items([item for _, _, item in owned]) if owned else []
         except BaseException as exc:
@@ -376,8 +391,10 @@ class Registrar:
             raise
         for index, (key, flight, _) in enumerate(owned):
             _land(key, flight, result=responses[index // self.batch_limit] if responses else None)
-        for flight in joined:
+        for flight, item in joined:
             flight.wait()
+            if item.get("previous_category") is not None and flight.previous is None:
+                self._register_block(item)  # MOVE-3: a move the request in flight did not carry
         return responses
 
     # -- internals ------------------------------------------------------------
@@ -392,6 +409,10 @@ class Registrar:
             "category": phrase.get("category"),
             "translatable": phrase.get("translatable", True),
         }
+        # MOVE-1 - beside `category`, only when the phrase moved; `''` is a value (no category
+        # before). The client has already resolved it, a value equal to the category being none.
+        if phrase.get("previous_category") is not None:
+            item["previous_category"] = phrase["previous_category"]
         # MIG-9 - a phrase's existing translations, one {locale, translation} entry per locale,
         # stored by the API as human translations.
         if phrase.get("translations"):
@@ -409,6 +430,7 @@ class Registrar:
         category: Optional[str] = None,
         custom_id: Optional[str] = None,
         label: Optional[str] = None,
+        previous_category: Optional[str] = None,
     ) -> dict[str, Any]:
         item: dict[str, Any] = {
             "type": "content_block",
@@ -420,6 +442,8 @@ class Registrar:
         # server-internal and is never sent.
         if category is not None and category != _UNCATEGORIZED:
             item["category"] = category
+        if previous_category is not None:
+            item["previous_category"] = previous_category
         if label is not None:
             item["label"] = label
         return item

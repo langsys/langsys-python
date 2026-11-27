@@ -160,6 +160,51 @@ and a client built part-way through a request joins it. A scope that is never en
 its misses until the process-exit flush. `end_request_scope` takes the handle explicitly,
 so it can be called from a different task than the one that began the scope.
 
+### Moving content to another category
+
+When you move a phrase or a block to another category, name the category it was registered
+under before, and its translations move with it instead of being made again:
+
+```python
+client.translate("Buy now", category="Checkout", previous_category="Header")
+client.translate_content_block(html, "Checkout", previous_category="Header")
+client.translate_page(page, category="Checkout", previous_category="Header")
+```
+
+`previous_category=""` says it had no category before; leaving it out (or `None`) says it did not
+move. Every call that takes a category takes it, `register_phrases()` and `sync()` items
+included, and so do markup and selectors: `data-ls-previous-category` beside
+`data-ls-category`, and `{"category": "Menu", "previous_category": "Nav"}` in
+`selector_categories`. A phrase host inside a block that names no category of its own moves with
+the block; one that names its own category moves only if it names its own previous category.
+
+- **It is sent once.** The previous category goes with the registration a miss triggers, and the
+  API copies the old item's translations to the new one and retires the old one. Once the catalog
+  holds the item under its new category, the option does nothing and can be deleted whenever you
+  like. Of two calls queued before a send, the first previous category named is the one sent.
+- **It never shows source in between.** Until the new category has a translation, the old
+  category's translation renders, phrase or block, by its old id. A block rendered that way carries
+  `data-ls-previous-contentblock` with the old id beside `data-ls-contentblock`, and a phrase host
+  carries `data-ls-previous-category`, so the page says where its text came from.
+- **It is never part of an id.** A block's `custom_id` and every catalog key use the current
+  category alone.
+- **One item stands for every use.** Naming a previous category retires the old item for every
+  call that registers that text there, so move every use of it in one release. With `debug=True`,
+  a phrase moved out of a category while another call still renders it there is reported once.
+
+A category your calls don't write themselves, such as a translation key's group or the message
+category, moves by configuration:
+
+```python
+client = LangsysClient(..., previous_categories={"checkout": "header", "contact": ""},
+                       message_category="Messages", message_previous_category="Errors")
+```
+
+Every item registered under a category in `previous_categories` carries its previous category
+unless its call names one (`""` included). The message category's own previous category wins over
+any entry the map has for it, and a server message whose template has no translation under the
+new category renders the old category's before falling back to `message`.
+
 ### Choosing the request's locale
 
 Where your framework has already resolved the locale — Django's `request.LANGUAGE_CODE`, your
