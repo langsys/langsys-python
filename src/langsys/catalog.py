@@ -82,6 +82,9 @@ class CatalogStore:
         self._cache = cache
         self._ttl = ttl
         self._memory: dict[str, Catalog] = {}
+        #: Every locale this store has held, read or fetched: what `clear()` drops from a backend
+        #: that other projects share.
+        self._known: set[str] = set()
         #: locale -> (monotonic time the window ends, its length)
         self._failures: dict[str, tuple[float, float]] = {}
         self._fetching: dict[str, threading.Lock] = {}
@@ -94,6 +97,7 @@ class CatalogStore:
         if not self._configured:
             return CatalogFetch({}, ok=False)
         wire_locale = normalize_locale(locale)
+        self._known.add(wire_locale)
         held = self._held(wire_locale) if use_cache else None
         if held is not None:
             return held
@@ -191,9 +195,13 @@ class CatalogStore:
         return normalize_locale(locale) in self._failures
 
     def clear(self, locale: Optional[str] = None) -> None:
+        """Drop this project's catalog for `locale`, or for every locale this store knows, from
+        memory and the backend. Never empties the backend: it holds other projects' entries."""
         if locale is None:
+            known = self._known | set(self._memory)
             self._memory.clear()
-            self._cache.clear()
+            for wire_locale in known:
+                self._cache.delete(self._key(wire_locale))
         else:
             wire_locale = normalize_locale(locale)
             self._memory.pop(wire_locale, None)

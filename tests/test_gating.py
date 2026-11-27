@@ -667,3 +667,24 @@ def test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item
     assert result["success"] is True, result
     assert sorted(accepted) == sorted(phrases), "the server does not hold every discovered phrase"
     assert not client.has_pending
+
+
+def test_CACHE1_clearing_one_projects_catalogs_leaves_another_projects_entries(httpx_mock):
+    """A cache backend is shared across projects (a Redis, a file directory). A successful flush
+    and `refresh()` drop this project's catalogs so the next read refetches; they must not empty
+    the backend, which holds every other project's catalogs and authorizations too."""
+    shared = MemoryCache()
+    shared.set("translations_proj-2_es-es", {"UI": {"Save": "Guardar"}})
+    shared.set("auth_proj-2", {"id": "proj-2", "key_type": "read"})
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}},
+                            is_reusable=True)
+    httpx_mock.add_response(url=ITEMS, json={"status": True})
+    client = make(cache=shared)
+    queue_one(client)
+    assert client.flush_pending()["success"] is True
+    client.refresh()
+    client.clear_cache()
+    assert shared.get("translations_proj-2_es-es") == {"UI": {"Save": "Guardar"}}
+    assert shared.get("auth_proj-2") is not None
+    assert shared.get("translations_proj-1_en-us") is None, "control: this project's catalog stayed"
