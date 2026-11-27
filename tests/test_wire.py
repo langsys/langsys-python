@@ -47,7 +47,7 @@ def test_WIRE1_every_request_authenticates_with_the_x_authorization_header(httpx
     why API-key requests are exempt from CSRF server-side. Raw key, no scheme, never a cookie
     or a query parameter, on every endpoint this SDK calls rather than the first one."""
     httpx_mock.add_response(url=AUTH, json=auth(), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     client.translate("Save", category="UI", locale="en-us")
@@ -71,7 +71,7 @@ def test_WIRE2_an_empty_204_is_a_success_not_a_parse_error(httpx_mock):
     unconditionally throws on a SUCCESSFUL response - and on the registration path that reads
     as a failure: the queue is kept and the SDK backs off from a server that said yes."""
     httpx_mock.add_response(url=AUTH, json=auth(), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, status_code=204, content=b"")
     client = make()
     client.translate("Save", category="UI", locale="en-us")
@@ -84,7 +84,7 @@ def test_WIRE2_control_an_empty_error_body_is_still_a_failure(httpx_mock):
     """Without this, "never raise on an empty body" passes against an implementation that
     reads every empty response as success."""
     httpx_mock.add_response(url=AUTH, json=auth(), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, status_code=500, content=b"")
     client = make()
     client.translate("Save", category="UI", locale="en-us")

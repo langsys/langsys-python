@@ -126,8 +126,7 @@ def test_GATE4_the_decision_never_reaches_the_cache():
 
 def test_no_write_grant_header_is_ever_sent():
     """Server posture is affirmative non-participation: this SDK holds a write key and
-    takes the ``type-allows-write`` arm only. If this ever changes, the key_type
-    short-circuit documented alongside GATE-1 stops being sound."""
+    takes the ``type-allows-write`` arm only. A grant would make capability per user."""
     c = _client_for("LANGSYS_API_KEY")
     assert "X-Write-Grant" not in c._http._client.headers
     assert "x-write-grant" not in {k.lower() for k in c._http._client.headers}

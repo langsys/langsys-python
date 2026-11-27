@@ -63,7 +63,7 @@ def queue_one(client):
 def test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register(httpx_mock):
     """The discriminating half. `key_type` says write; the server says no."""
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": False, "data": {"UI": {}}}, is_reusable=True)
     client = make()
     queue_one(client)
     result = client.flush_pending()
@@ -76,7 +76,7 @@ def test_GATE1_an_ip_write_key_that_is_write_enabled_does_register(httpx_mock):
     Our renderer runs the customer's page on exactly this shape, so a key_type test
     defeats discovery outright."""
     httpx_mock.add_response(url=AUTH, json=auth("ip_write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     queue_one(client)
@@ -92,30 +92,63 @@ def test_GATE1_reads_the_flag_from_the_authorize_payload_not_the_envelope(httpx_
     assert client.can_write is True
 
 
-# -- GATE-8: absence is a version signal, never permission --------------------
+# -- GATE-8: a missing write_enabled is not write-enabled ---------------------
+#
+# The API sends the field on every answer that carries the decision, so these run in-process
+# (tier n/a (pure)): no clone can answer without it.
 
 
-def test_GATE8_absent_flag_falls_back_to_key_type_for_the_plain_write_arm(httpx_mock):
-    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=None), is_reusable=True)
-    assert make().can_write is True
+def _posts(httpx_mock):
+    return [r for r in httpx_mock.get_requests() if r.method == "POST"]
 
 
-@pytest.mark.parametrize("key_type", ["ip_write", "read"])
-def test_GATE8_absent_flag_is_never_inferred_for_a_non_plain_write_key(httpx_mock, key_type):
-    """For `ip_write` the decision is address-dependent, so the absence of a positive
-    signal IS the answer. Inferring around it converts a closed gate into an open one."""
+def test_GATE8_an_authorization_without_the_flag_leaves_a_write_key_not_write_enabled(httpx_mock):
+    """The key type says write and the catalog comes from the cache, so the authorization is the
+    only answer, and it carries no flag: only reading that as `false` keeps this session from
+    registering."""
+    cache = MemoryCache()
+    _warm(cache, httpx_mock, "write")
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=None))
+    client = make(cache=cache)
+    queue_one(client)
+    result = client.flush_pending()
+    assert result["reason"] == "not-write-enabled", result
+    assert _posts(httpx_mock) == [], "registered on a missing write_enabled"
+
+
+@pytest.mark.parametrize("key_type", ["write", "ip_write", "read"])
+def test_GATE8_a_missing_flag_is_not_write_enabled_for_any_key_type(httpx_mock, key_type):
     httpx_mock.add_response(url=AUTH, json=auth(key_type, write_enabled=None), is_reusable=True)
     assert make().can_write is False
 
 
-def test_GATE8_the_decision_is_re_evaluated_per_response_not_latched(httpx_mock):
-    """A server upgraded mid-deployment must be picked up without an SDK release, and
-    a latched decision strands the ip_write carve-out."""
-    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False))
-    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True))
+def test_GATE8_a_catalog_envelope_without_the_flag_is_an_answer_of_false(httpx_mock):
+    """The other place the decision arrives. A newer catalog answer with no flag reads exactly as
+    one saying false, so it withdraws an earlier yes; the authorization would answer yes again if
+    asked, so a client that took the envelope for silence registers."""
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
     client = make()
-    assert client.can_write is False
-    assert client.can_write is True, "the decision was latched"
+    assert client.can_write is True  # control: the authorization's yes stands
+    queue_one(client)  # fetches the catalog live: its envelope carries no flag
+    result = client.flush_pending()
+    assert result["reason"] == "not-write-enabled", result
+    assert _posts(httpx_mock) == []
+
+
+@pytest.mark.parametrize("flag", ["true", 1, "yes", None])
+def test_GATE8_only_a_boolean_true_write_enables(httpx_mock, flag):
+    """A flag present but not the boolean `true` grants nothing."""
+    data = auth("read", write_enabled=None)
+    data["data"]["write_enabled"] = flag
+    httpx_mock.add_response(url=AUTH, json=data, is_reusable=True)
+    assert make().can_write is False
+
+
+def test_GATE8_a_present_true_write_enables_whatever_the_key_type(httpx_mock):
+    """The positive control for the tests above: the same read key, the flag sent as true."""
+    httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=True), is_reusable=True)
+    assert make().can_write is True
 
 
 def test_GATE1_a_failure_to_ask_is_not_permission(httpx_mock):
@@ -123,75 +156,84 @@ def test_GATE1_a_failure_to_ask_is_not_permission(httpx_mock):
     assert make().can_write is False
 
 
-# -- the ordering hazard: absence must mean absence, not "not looked yet" -----
-
-
 def test_GATE8_a_live_false_is_honored_on_the_very_first_call(httpx_mock):
-    """The inversion this guards against: reading the decision slot before authorize
-    has populated it makes a live `write_enabled: false` look like *absence*, and the
-    key_type fallback then answers true — a closed gate reported open.
-
-    No warm state exists here, so this is the first call by construction."""
+    """No warm state exists here, so this is the first call by construction."""
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False), is_reusable=True)
     client = make()
     assert client._warm_authorize_payload() is None, "control failed: state was already warm"
     assert client.can_write is False
 
 
-def test_GATE8_the_fallback_engages_only_when_the_payload_truly_lacked_the_field(httpx_mock):
-    """Same key type, same call site; the only difference is whether the server sent
-    the field. If both answer the same way, the flag is not being read at all."""
+def test_GATE8_a_newer_answer_replaces_the_one_held(httpx_mock):
+    """The session holds the API's newest answer, and a new answer replaces it."""
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False))
-    assert make().can_write is False, "a present false was ignored"
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True))
+    client = make()
+    assert client.can_write is False
+    client.authorize(force=True)
+    assert client.can_write is True, "an older answer outranked a newer one"
 
+
+def test_GATE8_an_authorization_without_the_flag_withdraws_a_yes_held_from_an_envelope(httpx_mock):
+    """The authorization lane's absence, as a newer answer: the session held a yes from a catalog
+    envelope, and the authorization it asks for next carries no flag."""
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {}})
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=None))
-    assert make().can_write is True, "the fallback did not engage on genuine absence"
+    client = make()
+    client.get_translations("es-es")
+    assert client.can_write is True  # control: the envelope's yes is held
+    client.authorize(force=True)
+    assert client.can_write is False, "a missing flag on a newer authorization was taken as silence"
 
 
-# -- warm cache: absence by construction (our own GATE-4 strip) ---------------
+# -- a cached payload is not an answer (GATE-4 strips the flag before caching) --
 
 
 def _warm(cache, httpx_mock, key_type):
-    """Authorize once so the stripped payload is cached, then drop the mock."""
+    """One session authorizes and fetches its catalog, so both are cached; then the mocks go."""
     httpx_mock.add_response(url=AUTH, json=auth(key_type, write_enabled=True))
-    make(cache=cache).authorize()
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}})
+    client = make(cache=cache)
+    client.authorize()
+    client.get_translations("en-us")
 
 
 @pytest.mark.parametrize(
-    ("key_type", "expected"),
-    [("write", True), ("read", False)],
+    ("key_type", "answer"),
+    [("write", False), ("read", True), ("ip_write", False), ("ip_write", True)],
 )
-def test_GATE8_a_plain_key_falls_back_to_key_type_on_a_warm_cache(
-    httpx_mock, key_type, expected
-):
-    """On a cache hit the payload lacks write_enabled by construction, because we
-    stripped it. For plain keys the server guarantees `write_enabled == key_type`, so
-    the fallback is sound and costs no round-trip."""
+def test_GATE8_a_warm_cache_decides_nothing_the_api_is_asked(httpx_mock, key_type, answer):
+    """The cached metadata names the key type; the live answer disagrees with it where it can, so
+    a decision taken from the cache comes out wrong."""
     cache = MemoryCache()
     _warm(cache, httpx_mock, key_type)
-    # No further AUTH response is registered: needing one would raise here.
-    assert make(cache=cache).can_write is expected
+    httpx_mock.add_response(url=AUTH, json=auth(key_type, write_enabled=answer))
+    assert make(cache=cache).can_write is answer
 
 
-def test_GATE8_ip_write_pays_a_live_authorize_on_a_warm_cache(httpx_mock):
-    """`ip_write` is address-dependent, so warm metadata cannot answer it and the
-    fallback must never fire for it."""
+def test_GATE8_a_session_holding_only_cached_payloads_registers_once_the_api_says_yes(httpx_mock):
+    """A cached write key decides nothing: while the API cannot answer, the miss is held (GATE-2),
+    and it registers once the API answers true."""
     cache = MemoryCache()
-    _warm(cache, httpx_mock, "ip_write")
+    _warm(cache, httpx_mock, "write")
+    httpx_mock.add_exception(httpx.ConnectError("refused"), url=AUTH)
+    client = make(cache=cache)
+    queue_one(client)  # the catalog is the cached one: no answer arrives with it
+    held = client.flush_pending()
+    assert held["reason"] == "capability-unknown", held
+    assert _posts(httpx_mock) == [], "the cached key type decided"
+    assert client.has_pending, "the miss was not held"
 
-    httpx_mock.add_response(url=AUTH, json=auth("ip_write", write_enabled=False))
-    assert make(cache=cache).can_write is False
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True))
+    httpx_mock.add_response(url=ITEMS, json={"status": True})
+    assert client.flush_pending(force=True)["success"] is True
+    assert len(items_bodies(httpx_mock)) == 1
 
-    httpx_mock.add_response(url=AUTH, json=auth("ip_write", write_enabled=True))
-    assert make(cache=cache).can_write is True
 
-
-def test_GATE8_ip_write_on_a_warm_cache_is_false_when_the_server_omits_the_field(
-    httpx_mock,
-):
+def test_GATE8_a_warm_cache_answers_false_when_the_api_omits_the_field(httpx_mock):
     cache = MemoryCache()
-    _warm(cache, httpx_mock, "ip_write")
-    httpx_mock.add_response(url=AUTH, json=auth("ip_write", write_enabled=None))
+    _warm(cache, httpx_mock, "write")
+    httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=None))
     assert make(cache=cache).can_write is False
 
 
@@ -248,7 +290,7 @@ def test_GATE5_a_failed_registration_keeps_the_queue(httpx_mock):
     """The most important rule in the spec. A timeout or a 422 must not write a false
     'already registered' record — the phrases would stay suppressed and nothing logs."""
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, status_code=500, json={"error": "boom"}, is_reusable=True)
     client = make()
     queue_one(client)
@@ -259,7 +301,7 @@ def test_GATE5_a_failed_registration_keeps_the_queue(httpx_mock):
 
 def test_GATE5_the_queue_clears_only_after_the_server_accepts(httpx_mock):
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     queue_one(client)
@@ -273,7 +315,7 @@ def test_GATE5_no_persistent_registered_marker_is_written(httpx_mock):
     cannot reintroduce it silently."""
     cache = MemoryCache()
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make(cache=cache)
     queue_one(client)
@@ -289,7 +331,7 @@ def test_GATE5_no_persistent_registered_marker_is_written(httpx_mock):
 def test_CACHE1_every_key_is_namespaced_by_project(httpx_mock):
     cache = MemoryCache()
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {}}, is_reusable=True)
     client = make(cache=cache)
     client.authorize()
     client.get_translations("es-es")
@@ -342,7 +384,7 @@ def test_WIRE3_casing_variants_are_one_cache_entry_not_two(httpx_mock):
 
 def test_WIRE3_the_sentinel_is_never_sent_as_a_category(httpx_mock):
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     client.translate("Save", locale="en-us")  # no category
@@ -359,7 +401,7 @@ def test_REG9_content_blocks_are_batched_into_one_post(httpx_mock):
     blocking requests while the visitor waits."""
     pytest.importorskip("lxml")
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     for i in range(5):
@@ -390,7 +432,7 @@ def test_REG9_the_batch_limit_comes_from_the_server(httpx_mock):
 def test_REG10_a_skipped_write_is_not_reported_as_success(httpx_mock):
     """A caller that correctly checks the return value must not be told it worked."""
     httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": False, "data": {"UI": {}}}, is_reusable=True)
     client = make()
     queue_one(client)
     result = client.flush_pending()
@@ -405,7 +447,7 @@ def test_REG10_nothing_pending_is_an_honest_success(httpx_mock):
 
 def test_REG10_flush_does_not_throw_when_registration_fails(httpx_mock):
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_exception(httpx.ConnectError("refused"), url=ITEMS, is_reusable=True)
     client = make()
     queue_one(client)
@@ -420,12 +462,13 @@ def test_GRANT_no_write_grant_header_is_ever_sent(httpx_mock):
     """The server gate is `type-allows-write OR valid-grant`. This SDK holds a write
     key already and takes the first arm only.
 
-    THIS TEST GUARDS A PRECONDITION, NOT A PREFERENCE. If this SDK ever sends a
-    write grant, any short-circuit that assumes capability follows from key type
-    alone becomes unsound and must be removed at the same time.
+    THIS TEST GUARDS A PRECONDITION, NOT A PREFERENCE. With no grant, a session's
+    capability depends on the key and the caller's address only. A grant makes it per
+    user, and every place that holds a session's answer must then be checked against
+    GATE-3 again.
     """
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     client.authorize()
@@ -436,8 +479,8 @@ def test_GRANT_no_write_grant_header_is_ever_sent(httpx_mock):
     assert requests, "control failed: no requests were made"
     for request in requests:
         assert "x-write-grant" not in {k.lower() for k in request.headers}, (
-            "this SDK now sends a write grant — the read-key/key-type short-circuit "
-            "documented alongside GATE-1 is no longer sound and must be removed"
+            "this SDK now sends a write grant: capability is per user, so every place "
+            "that holds a session's answer must be checked against GATE-3 again"
         )
 
 
@@ -489,50 +532,23 @@ def test_PRECEDENCE_a_fresher_authorize_answer_beats_an_older_envelope_flag(http
     assert client.can_write is True, "a stale envelope flag outranked a fresher authorize"
 
 
-def test_PRECEDENCE_an_absent_envelope_flag_never_displaces_a_real_answer(httpx_mock):
-    """An empty slot is not an answer. A response that simply carries no flag must not
-    overwrite one that did — that is the 'stale-or-empty outranks live' shape."""
-    cache = MemoryCache()
-    client = _warm_plain_write(cache, httpx_mock)
-
+@pytest.mark.parametrize("answer", [True, False])
+def test_PRECEDENCE_a_cached_catalog_read_never_displaces_a_real_answer(httpx_mock, answer):
+    """A catalog served from the cache carries no answer, in either direction: it neither
+    withdraws a yes nor grants over a no. The key is a read key answered yes, so the key type
+    would say no; and a write key answered no, so it would say yes."""
+    key_type = "read" if answer else "write"
+    httpx_mock.add_response(url=AUTH, json=auth(key_type, write_enabled=not answer))
     httpx_mock.add_response(
-        url=TRANS, json={"status": True, "write_enabled": False, "data": {}}
+        url=TRANS, json={"status": True, "write_enabled": answer, "data": {}}
     )
-    client.get_translations("es-es")
-    assert client.can_write is False
-
-    # A catalog response with no write_enabled at all.
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
-    client.get_translations("fr-fr")
-    assert client.can_write is False, "an absent flag overwrote a real observed answer"
-
-
-def test_PRECEDENCE_an_absent_flag_never_strips_a_real_yes(httpx_mock):
-    """The mirror of the test above, and the direction that one cannot see.
-
-    "Absent must not displace a real answer" has two ways of being unsatisfied, and the
-    first test only covers one: its real answer is already `False`, so a mutation that
-    records absence *as* `False` displaces nothing visible. This is the fail-CLOSED
-    direction — a regression silently stripping write capability from a healthy
-    session, which registers nothing and logs nothing.
-
-    Built so the observed answer is the only thing holding the result up: the warm
-    cache carries a READ key, so the key_type fallback would say False, and a valid
-    write grant on a read key is exactly the shape GATE-1 exists for."""
-    cache = MemoryCache()
-    httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False))
-    client = make(cache=cache)
+    client = make()
     client.authorize()
-
-    httpx_mock.add_response(
-        url=TRANS, json={"status": True, "write_enabled": True, "data": {}}
-    )
     client.get_translations("es-es")
-    assert client.can_write is True  # control: the observed yes stands over key_type
+    assert client.can_write is answer  # control: the envelope's newer answer stands
 
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {}}, is_reusable=True)
-    client.get_translations("fr-fr")
-    assert client.can_write is True, "an absent flag stripped a real write capability"
+    client.get_translations("es-es")  # held in memory: no request, no answer
+    assert client.can_write is answer, "a cache read displaced the API's answer"
 
 
 # -- GATE-3: the request-boundary reset seam ---------------------------------
@@ -542,9 +558,8 @@ def test_GATE3_reset_write_decision_clears_an_observed_answer(httpx_mock):
     """A long-lived client outlives the request by construction, so the observed
     decision needs an explicit boundary. Without this seam a framework wrapper has no
     way to comply with GATE-3 at all."""
-    cache = MemoryCache()
     httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False))
-    client = make(cache=cache)
+    client = make()
     client.authorize()
 
     httpx_mock.add_response(
@@ -554,7 +569,8 @@ def test_GATE3_reset_write_decision_clears_an_observed_answer(httpx_mock):
     assert client.can_write is True  # control: an answer is being held
 
     client.reset_write_decision()
-    # Nothing observed any more, so the warm read-key fallback decides — no round-trip.
+    # Nothing held any more, so the API is asked again, and its answer decides.
+    httpx_mock.add_response(url=AUTH, json=auth("read", write_enabled=False))
     assert client.can_write is False, "the decision survived the request boundary"
 
 
@@ -599,7 +615,7 @@ def test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss(httpx_mock, c
     signal. Asserted on the emitted record rather than on the flag guarding it: a flag can be
     set by code that never logs."""
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=False), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": False, "data": {"UI": {}}}, is_reusable=True)
     client = make()
     with caplog.at_level("WARNING", logger="langsys"):
         for phrase in ("One", "Two", "Three"):
@@ -610,7 +626,7 @@ def test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss(httpx_mock, c
 
 def test_OBS1_control_a_write_enabled_session_is_not_reported_unusable(httpx_mock, caplog):
     httpx_mock.add_response(url=AUTH, json=auth("write", write_enabled=True), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_response(url=ITEMS, json={"status": True}, is_reusable=True)
     client = make()
     with caplog.at_level("WARNING", logger="langsys"):
@@ -640,7 +656,7 @@ def test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item
     httpx_mock.add_response(
         url=AUTH, json=auth("write", write_enabled=True, batch_limit=limit), is_reusable=True
     )
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}}, is_reusable=True)
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}}, is_reusable=True)
     httpx_mock.add_callback(translatable_items, url=ITEMS, is_reusable=True)
     client = make()
     phrases = [f"Phrase {i}" for i in range(5)]

@@ -56,7 +56,7 @@ def test_register_phrases_posts_items(httpx_mock):
 
 def test_flush_pending_registers_and_clears_on_write(httpx_mock):
     httpx_mock.add_response(url=AUTH, json=auth("write"), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}})
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {}}})
     httpx_mock.add_response(url=ITEMS, json={"status": True})
     client = make()
     assert client.translate("Save", category="UI", locale="en-US") == "Save"  # missing -> queued
@@ -69,7 +69,7 @@ def test_flush_pending_registers_and_clears_on_write(httpx_mock):
 
 def test_flush_pending_skips_on_read_key(httpx_mock):
     httpx_mock.add_response(url=AUTH, json=auth("read"), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {}}})
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": False, "data": {"UI": {}}})
     client = make()
     client.translate("Save", category="UI", locale="en-US")
     result = client.flush_pending()
@@ -79,10 +79,10 @@ def test_flush_pending_skips_on_read_key(httpx_mock):
 
 def test_sync_registers_only_new_phrases(httpx_mock):
     httpx_mock.add_response(url=AUTH, json=auth("write"), is_reusable=True)
-    httpx_mock.add_response(url=TRANS, json={"status": True, "data": {"UI": {"Existing": "E"}}})
+    httpx_mock.add_response(url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {"Existing": "E"}}})
     httpx_mock.add_response(url=ITEMS, json={"status": True})
     httpx_mock.add_response(
-        url=TRANS, json={"status": True, "data": {"UI": {"Existing": "E", "New": None}}}
+        url=TRANS, json={"status": True, "write_enabled": True, "data": {"UI": {"Existing": "E", "New": None}}}
     )
     client = make()
     result = client.sync(

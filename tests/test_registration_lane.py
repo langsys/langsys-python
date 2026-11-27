@@ -490,11 +490,16 @@ def test_REG7_declining_keeps_the_queue_for_the_next_flush(httpx_mock):
 # False and discarded the queue. The rule is live, and these are its tests.
 
 
-def _queued_client(httpx_mock, **kw):
-    httpx_mock.add_response(url=TRANS, json=catalog(), is_reusable=True)
-    client = make(**kw)
+def _queued_client(httpx_mock, cache=None, **kw):
+    """A session whose miss came from a catalog an earlier session cached. A cached read carries no
+    answer (GATE-8), so this session holds none and asks at the send site."""
+    cache = cache or MemoryCache()
+    httpx_mock.add_response(url=TRANS, json=catalog())
+    make(cache=cache).get_translations("en-us")
+    client = make(cache=cache, **kw)
     client.translate("Phrase", category="UI", locale="en-us")
     assert client.has_pending, "control failed: nothing queued"
+    assert client._observed_decision is None, "control failed: the session already holds an answer"
     return client
 
 
@@ -543,8 +548,8 @@ def test_GATE2_the_queue_survives_to_the_recovering_flush(httpx_mock):
 
 
 def test_GATE2_an_ip_write_session_does_not_lose_everything_on_a_blip(httpx_mock):
-    """`ip_write` pays a live authorize on every flush, so it is the key type most
-    exposed to this — and it is the 838 pilot type."""
+    """A session holding only cached metadata asks at the send site, and `ip_write` is the 838
+    pilot type: a blip there must not cost the queue."""
     cache = MemoryCache()
     httpx_mock.add_response(url=AUTH, json=auth("ip_write", write_enabled=True))
     make(cache=cache).authorize()

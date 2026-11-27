@@ -26,8 +26,8 @@ the rule: an unrelated test erroring would satisfy that, and has, in this reposi
     python3 _dev_/run_mutations.py --clone      # contract tests too, on the SDK test clone
 
 **Contract tests run only with `--clone`**, and the clone's environment set (README, "Contract
-tests"). Without it a mutation that names a contract test is reported as waiting on the clone, not
-judged. With it, the unmutated run is the unit suite and every contract test on run 0 of each seed
+tests"). Without it a mutation is judged on the unit tests it names, and one that names only contract
+tests is reported as waiting on the clone, not judged. With it, the unmutated run is the unit suite and every contract test on run 0 of each seed
 file, and each mutant runs the whole unit suite plus the contract tests it names, on a fresh run of
 each seed file those tests use (`LANGSYS_CONTRACT_RUN=slug=N,...`), since a world one run writes to
 is used up until the next reseed. The runner refuses to start when a seed file serves fewer runs
@@ -83,8 +83,8 @@ def m(rule: str, name: str, path: str, old: str, new: str, *expect: str) -> Muta
 MUTATIONS = [
     # -- GATE ---------------------------------------------------------------------------------
     m("GATE-1", "branch on key_type instead of the server's write_enabled", CLIENT,
-      '        if isinstance(flag, bool):\n            self._observe_decision(flag)',
-      '        if False:\n            self._observe_decision(flag)',
+      '        observed = self._observed_decision\n        if observed is not None:\n            if observed[1] is False:',
+      '        return self.authorize().key_type == "write"\n        observed = self._observed_decision\n        if observed is not None:\n            if observed[1] is False:',
       "test_GATE1_a_write_key_that_is_not_write_enabled_does_not_register",
       "test_GATE1_an_ip_write_key_that_is_write_enabled_does_register",
       "test_GATE1_an_allow_listed_ip_write_session_registers"),
@@ -133,15 +133,41 @@ MUTATIONS = [
       '        client._queue_content_block(inner, item_cat, custom_id, phrases)',
       '        pass',
       "test_SRV5_a_depth_3_nested_block_is_registered_exactly_once"),
-    m("GATE-8", "infer a write decision for ip_write from an absent flag", CLIENT,
-      '        if key_type == "write":\n            logger.debug(',
-      '        if key_type in ("write", "ip_write"):\n            logger.debug(',
-      "test_GATE8_absent_flag_is_never_inferred_for_a_non_plain_write_key",
-      "test_GATE8_absence_is_never_permission_for_ip_write"),
-    m("GATE-8", "apply the key_type fallback to ip_write on a warm cache", CLIENT,
-      '            return self._decide(data, allow_fallback=False)',
-      '            return self._decide(data, allow_fallback=True) or data.get("key_type") == "ip_write"',
-      "test_GATE8_ip_write_on_a_warm_cache_is_false_when_the_server_omits_the_field"),
+    m("GATE-8", "decide from key_type == 'write' when the authorization carries no flag", CLIENT,
+      '        decision = data.get("write_enabled") is True',
+      '        decision = data.get("write_enabled", data.get("key_type") == "write") is True',
+      "test_GATE8_an_authorization_without_the_flag_leaves_a_write_key_not_write_enabled",
+      "test_GATE8_a_missing_flag_is_not_write_enabled_for_any_key_type[write]",
+      "test_GATE8_a_warm_cache_answers_false_when_the_api_omits_the_field"),
+    m("GATE-8", "take any truthy flag for permission", CLIENT,
+      '        decision = data.get("write_enabled") is True',
+      '        decision = bool(data.get("write_enabled"))',
+      "test_GATE8_only_a_boolean_true_write_enables[true]",
+      "test_GATE8_only_a_boolean_true_write_enables[1]",
+      "test_GATE8_only_a_boolean_true_write_enables[yes]"),
+    m("GATE-8", "a newer authorization without the flag is taken as silence", CLIENT,
+      '        self._observe_decision(live.get("write_enabled") is True)',
+      '        flag = live.get("write_enabled")\n        self._observe_decision(flag if isinstance(flag, bool) else None)',
+      "test_GATE8_an_authorization_without_the_flag_withdraws_a_yes_held_from_an_envelope"),
+    m("GATE-8", "a catalog envelope without the flag is taken as silence", CATALOG,
+      '            write_enabled=response.get("write_enabled") is True,',
+      '            write_enabled=response.get("write_enabled") if isinstance(response.get("write_enabled"), bool) else None,',
+      "test_GATE8_a_catalog_envelope_without_the_flag_is_an_answer_of_false"),
+    m("GATE-8", "decide from the cached metadata's key type", CLIENT,
+      '        data = self._live_authorize_payload()\n        if data is None:\n            return None\n        return self._decide(data)',
+      '        warm = self._warm_authorize_payload()\n        if warm is not None and warm.get("key_type") in ("read", "write"):\n            return warm.get("key_type") == "write"\n        data = self._live_authorize_payload()\n        if data is None:\n            return None\n        return self._decide(data)',
+      "test_GATE8_a_warm_cache_decides_nothing_the_api_is_asked[write-False]",
+      "test_GATE8_a_warm_cache_decides_nothing_the_api_is_asked[read-True]",
+      "test_GATE8_a_session_holding_only_cached_payloads_registers_once_the_api_says_yes"),
+    # A cached catalog read carries no answer, in either direction.
+    m("GATE-8", "a cached catalog read answers no", CATALOG,
+      '            return CatalogFetch(cached, ok=True)\n        persisted',
+      '            return CatalogFetch(cached, ok=True, write_enabled=False)\n        persisted',
+      "test_PRECEDENCE_a_cached_catalog_read_never_displaces_a_real_answer[True]"),
+    m("GATE-8", "a cached catalog read answers yes", CATALOG,
+      '            return CatalogFetch(cached, ok=True)\n        persisted',
+      '            return CatalogFetch(cached, ok=True, write_enabled=True)\n        persisted',
+      "test_PRECEDENCE_a_cached_catalog_read_never_displaces_a_real_answer[False]"),
     # -- CAT ----------------------------------------------------------------------------------
     m("CAT-1", "decide a miss by truthiness instead of key presence", TRANSLATE,
       '    if phrase in cat:\n        raw = cat[phrase]',
@@ -713,6 +739,10 @@ MUTATIONS = [
       '        self._warned_unusable = True\n        logger.debug(',
       "test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss",
       "test_OBS1_an_unusable_capability_is_surfaced_once"),
+    m("OBS-1", "no diagnostic for a refusal that arrived on a catalog envelope", CLIENT,
+      '            if observed[1] is False:\n                self._notice_held_refusal()',
+      '            if observed[1] is False:\n                pass',
+      "test_OBS1_an_unusable_capability_is_surfaced_once_not_per_miss"),
     m("OBS-1", "emit the diagnostic on every resolution", CLIENT,
       '        if self._warned_unusable:\n            return\n        self._warned_unusable = True',
       '        self._warned_unusable = True',
@@ -1232,16 +1262,21 @@ def run_battery(selected: list[Mutation], workdir: Path, env: dict[str, str],
 
     uncaught = waiting = 0
     for mutation in selected:
-        if not on_clone and any(e.split("[")[0] in contract_names for e in mutation.expect):
-            waiting += 1
-            print(f"\n[{mutation.rule}] {mutation.name}  ({mutation.path})")
-            print("  waits on the clone - it names a contract test; run with --clone")
-            continue
+        expect = mutation.expect
+        deferred: list[str] = []
+        if not on_clone:
+            deferred = [e for e in expect if e.split("[")[0] in contract_names]
+            expect = [e for e in expect if e not in deferred]
+            if not expect:
+                waiting += 1
+                print(f"\n[{mutation.rule}] {mutation.name}  ({mutation.path})")
+                print("  waits on the clone - it names only contract tests; run with --clone")
+                continue
         failures, void = apply(mutation, workdir, env, clone if on_clone else None)
         if void:
             raise SystemExit(f"{mutation.rule} / {mutation.name}: its contract run met a world "
                              "that was used up or not landed - void; reseed and run again")
-        missing = [e for e in mutation.expect if not any(e in f for f in failures)]
+        missing = [e for e in expect if not any(e in f for f in failures)]
         caught = bool(failures) and not missing
         uncaught += 0 if caught else 1
         verdict = "caught" if caught else "NOT CAUGHT"
@@ -1251,12 +1286,14 @@ def run_battery(selected: list[Mutation], workdir: Path, env: dict[str, str],
             print(f"    {failure}")
         if missing:
             print(f"  named but not failing: {missing}")
+        if deferred:
+            print(f"  its contract tests wait on --clone: {', '.join(deferred)}")
     rules = sorted({m.rule for m in selected})
     judged = len(selected) - waiting
     print(f"\n{judged - uncaught}/{judged} mutations caught by their named tests, "
           f"across {len(rules)} rules: {', '.join(rules)}")
     if waiting:
-        print(f"{waiting} more name a contract test and wait on --clone")
+        print(f"{waiting} more name only contract tests and wait on --clone")
     return uncaught
 
 

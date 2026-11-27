@@ -255,9 +255,8 @@ class LangsysClient:
         # Observe BEFORE stripping. This response is the freshest answer the server
         # has given us, and dropping it on the floor here is the same latch-shaped
         # failure from the other end: a stale slot outranking a live answer because
-        # the live one was never recorded.
-        flag = live.get("write_enabled")
-        self._observe_decision(flag if isinstance(flag, bool) else None)
+        # the live one was never recorded. A missing flag is an answer of false (GATE-8).
+        self._observe_decision(live.get("write_enabled") is True)
 
         data = _without_write_decision(live)
         # Stripped before it reaches EITHER store. `Project` is held for the life of
@@ -269,6 +268,7 @@ class LangsysClient:
 
     def _observe_decision(self, value: Optional[bool]) -> None:
         """Record a server-computed ``write_enabled``, from **either** endpoint shape.
+        ``None`` is no answer at all (a catalog served from the cache) and changes nothing.
 
         Precedence is by **recency, not by source**. Both shapes are equally
         authoritative — they are the same server answering the same question — so the
@@ -302,7 +302,8 @@ class LangsysClient:
         self._warned_unusable = False
 
     def _warm_authorize_payload(self) -> Optional[dict[str, Any]]:
-        """Already-known project metadata, if any. Never carries ``write_enabled``."""
+        """Already-known project metadata, if any. Never carries ``write_enabled``, so it never
+        decides whether this session may write (GATE-8)."""
         if self._project is not None:
             return self._project.raw
         cached = self._cache.get(f"auth_{self._config.project_id}")
@@ -326,60 +327,29 @@ class LangsysClient:
         return self.authorize().key_type
 
     def _resolve_write_enabled(self) -> Optional[bool]:
-        """GATE-1 — the server decides, per response, whether this session may write.
+        """GATE-1 — the server decides whether this session may write: True, False, or None for
+        unknown, which the send site holds on (GATE-2).
 
-        Resolved fresh at the **send site** and returned, never stored: capability is
-        per-session and address-dependent, so the same key legitimately answers `true`
-        from an allow-listed address and `false` from another. A decision that outlives
-        the call would write-enable every anonymous visitor on the host (GATE-3), and
-        on a shared Redis, the fleet.
+        The decision is the API's newest answer in this session, from either place it arrives:
+        inside ``data`` on ``authorize-project``, or on the envelope of a live catalog read
+        (:meth:`_observe_decision`). With no answer held, the API is asked now. A failure to ask
+        is unknown, never permission.
 
-        GATE-8 — a response with no ``write_enabled`` predates the capability. Only
-        then may ``key_type`` stand in, and only for the plain ``write`` arm: for
-        ``ip_write`` the answer is address-dependent and the absence of a positive
-        signal *is* the answer.
-
-        The flag is read from the payload that is **in hand at that moment**, and the
-        fallback is reached only when *that* payload genuinely lacked it. Order is the
-        whole rule here: reading a decision slot before authorize has populated it
-        makes a live ``write_enabled: false`` look like absence, and the fallback then
-        answers ``true`` — a closed gate reported open, which is the precise inversion
-        this family exists to prevent. (Found by the Ruby lane; nothing about the code
-        read wrong, only the order, and only execution caught it.)
-
-        On a **cache hit** the payload lacks the flag by construction, because
-        :meth:`authorize` strips it (GATE-4). Absence from any source is treated the
-        same way for plain ``read``/``write`` keys — sound because the server
-        guarantees ``write_enabled ≡ key_type`` for them — and never for ``ip_write``,
-        whose answer is address-dependent and which therefore pays a live authorize
-        rather than being inferred.
+        GATE-8 — an answer without ``write_enabled`` is not write-enabled, exactly as if it said
+        false, whatever the key type: only a boolean ``true`` grants. A cached payload is not an
+        answer: GATE-4 strips the flag before anything is cached, so the cached metadata, and a
+        catalog served from the cache, decide nothing, and the decision stays unknown until the
+        API answers. ``key_type`` never stands in for the flag.
         """
-        warm = self._warm_authorize_payload()
-        if warm is None:
-            # First call: nothing warm exists, so this payload is live and carries
-            # the flag if the server sends one at all.
-            data = self._live_authorize_payload()
-            if data is None:
-                return None
-            return self._decide(data, allow_fallback=True)
-
-        key_type = warm.get("key_type")
-        if key_type == "ip_write":
-            # Never inferred. Warm metadata cannot answer an address-dependent
-            # question, so pay the round-trip.
-            data = self._live_authorize_payload()
-            if data is None:
-                return None
-            return self._decide(data, allow_fallback=False)
-
-        # Plain read/write on a warm cache. The payload lacks the flag by construction
-        # (our own GATE-4 strip), so the ruled key_type fallback applies — but a flag
-        # this session has actually *observed*, from either endpoint shape, is real
-        # evidence where key_type is only an inference, so it wins when we have one.
         observed = self._observed_decision
         if observed is not None:
+            if observed[1] is False:
+                self._notice_held_refusal()
             return observed[1]
-        return self._decide(warm, allow_fallback=True)
+        data = self._live_authorize_payload()
+        if data is None:
+            return None
+        return self._decide(data)
 
     def _live_authorize_payload(self) -> Optional[dict[str, Any]]:
         try:
@@ -389,34 +359,23 @@ class LangsysClient:
             logger.warning("langsys: could not resolve write capability (%s).", exc)
             return None
 
-    def _decide(self, data: dict[str, Any], *, allow_fallback: bool) -> bool:
-        flag = data.get("write_enabled")
-        key_type = data.get("key_type")
-        if isinstance(flag, bool):
-            self._observe_decision(flag)
-            self._notice_unusable_capability(flag, key_type)
-            return flag
+    def _decide(self, data: dict[str, Any]) -> bool:
+        """One live authorization answer's decision: only a boolean true is write-enabled."""
+        decision = data.get("write_enabled") is True
+        if "write_enabled" not in data:
+            logger.debug("langsys: the authorization carried no write_enabled; not write-enabled.")
+        self._observe_decision(decision)
+        self._notice_unusable_capability(decision, data.get("key_type"))
+        return decision
 
-        if not allow_fallback:
-            logger.debug(
-                "langsys: no write_enabled for key_type %r; the absence of a positive "
-                "signal is the answer.",
-                key_type,
-            )
-            return False
-
-        if key_type == "write":
-            logger.debug(
-                "langsys: no write_enabled in this payload; falling back to key_type "
-                "for the plain write arm only."
-            )
-            return True
-        logger.debug(
-            "langsys: no write_enabled in this payload and key_type is %r; treating as "
-            "not write-enabled.",
-            key_type,
-        )
-        return False
+    def _notice_held_refusal(self) -> None:
+        """OBS-1 for a "no" that arrived on a catalog envelope, which names no key type: the key
+        type comes from the project metadata, held, cached or asked for once."""
+        try:
+            key_type = self.authorize().key_type
+        except (NetworkError, ApiError, ConfigurationError):
+            return
+        self._notice_unusable_capability(False, key_type)
 
     def _notice_unusable_capability(self, write_enabled: bool, key_type: Any) -> None:
         """OBS-1 — a misconfigured integration is otherwise completely
@@ -436,7 +395,8 @@ class LangsysClient:
 
     @property
     def can_write(self) -> bool:
-        """Whether this session may write, resolved now. Not cached — see GATE-3.
+        """Whether this session may write: the API's newest answer in this session, asked for
+        now when none is held. Never cached; a request boundary clears it — see GATE-3.
 
         Collapses *unknown* to ``False``: never infer permission from a failure to ask.
         Callers that must distinguish "the server said no" from "we could not reach the
@@ -1049,8 +1009,8 @@ class LangsysClient:
         # told us we may not write is correct. Discarding it because we could not ASK
         # loses every phrase permanently, on a transient blip, with nothing logged that
         # names the real cause — the exact class of loss this spec exists to remove.
-        # An `ip_write` session pays a live authorize on every flush, so without this
-        # any network wobble discards everything.
+        # A session holding no answer asks at the send site, so without this any network
+        # wobble would discard everything.
         decision = self._resolve_write_enabled()
         if decision is None:
             delay = self._note_failure()

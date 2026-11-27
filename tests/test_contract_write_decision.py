@@ -16,6 +16,8 @@ from clone import World
 from clone import held_phrases as phrases
 from clone import sdk_client as client
 
+from langsys.cache import MemoryCache
+
 pytest.importorskip("lxml")
 pytestmark = pytest.mark.contract
 
@@ -67,9 +69,13 @@ def test_GATE1_a_session_told_no_sends_nothing_even_once_the_world_would_accept(
 
 
 def test_GATE2_an_unknown_answer_holds_the_queue_until_the_server_can_say_yes(clone):
+    """The session's catalog is one an earlier session cached, so it holds no answer (GATE-8) and
+    asks at the send site, where the authorization fails once."""
     world = clone.world("writer")
+    cache = MemoryCache()
+    client(clone, world, cache=cache).get_translations("it-it")
     clone.update(world, faults=[{"method": "GET", "path": authorize(world), "status": 500}])
-    c = client(clone, world)
+    c = client(clone, world, cache=cache)
     miss(c)
     assert c.flush_pending()["reason"] == "capability-unknown"
     assert phrases(clone, world) == []

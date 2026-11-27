@@ -39,9 +39,9 @@ class CatalogFetch:
         self.catalog = catalog
         #: False when the fetch failed. Never queue registrations off a False.
         self.ok = ok
-        #: GATE-1 — the envelope-level flag, when this response carried one.
-        #: ``None`` means the value was absent or this came from cache; it is a
-        #: per-response value and is deliberately never stored anywhere.
+        #: GATE-1 — the envelope's decision, when this came from the API: True only for a
+        #: boolean ``true``, False otherwise, absence included (GATE-8). ``None`` when this was
+        #: served from a cache, which holds no decision. Never stored anywhere.
         self.write_enabled = write_enabled
 
 
@@ -169,11 +169,12 @@ class CatalogStore:
             )
             return CatalogFetch({}, ok=False)
         data = response.get("data")
-        write_enabled = response.get("write_enabled")
+        # GATE-8 - a live answer without the flag is an answer of false. Only a read served from
+        # a cache carries no answer (None).
         return CatalogFetch(
             data if isinstance(data, dict) else {},
             ok=True,
-            write_enabled=write_enabled if isinstance(write_enabled, bool) else None,
+            write_enabled=response.get("write_enabled") is True,
         )
 
     def unavailable(self, locale: Optional[str] = None) -> bool:

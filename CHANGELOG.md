@@ -16,11 +16,13 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   Every entry point now degrades to source text and logs. Paired obligation: **a failed
   catalog fetch registers nothing** — without a catalog a miss is indistinguishable from a
   hit, so the intuitive "everything is unknown" turns each outage into a write storm.
-- **GATE-1/3/4/8 — the write decision now comes from the server's `write_enabled`**, read
-  per response from either endpoint shape (inside `data` on authorize, envelope-level on
-  translations), never from `key_type`. The decision is resolved at the send site and is
-  stripped before anything is cached or retained, so it cannot outlive the call. Absence
-  is treated as a version signal, never as permission, and never inferred for `ip_write`.
+- **GATE-1/3/4/8 — the write decision comes from the server's `write_enabled`**, read
+  from either place the API sends it (inside `data` on authorize, on the envelope of a live
+  catalog read), never from `key_type`. The session holds the API's newest answer and asks at
+  the send site when it holds none; the decision is stripped before anything is cached or
+  retained, and a request boundary clears it. An answer without the field is not
+  write-enabled, whatever the key type, and a cached payload decides nothing: until the API
+  answers, the decision is unknown and the queue is held.
 - **CID-1/2/3/4 — corrected the content-block `custom_id`.** It was
   `md5("|".join([category, *phrases]))`, which no other SDK computes, so blocks never
   resolved and re-registered on every render. Now the canonical
