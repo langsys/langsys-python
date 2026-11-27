@@ -43,14 +43,25 @@ Pass arguments or set environment variables:
 
 | Argument | Env var | Default |
 |---|---|---|
-| `api_key` | `LANGSYS_API_KEY` | — (required) |
-| `project_id` | `LANGSYS_PROJECT_ID` | — (required) |
+| `api_key` | `LANGSYS_API_KEY` | — |
+| `project_id` | `LANGSYS_PROJECT_ID` | — |
 | `api_url` | `LANGSYS_API_URL` | `https://api.langsys.dev/api` |
 | `base_locale` | `LANGSYS_BASE_LOCALE` | project's base locale |
 | `cache_ttl` | `LANGSYS_CACHE_TTL` | `3600` |
+| `require_credentials` | — | `False` |
 
 A **read** key fetches translations (safe to ship); a **write** key also auto-registers
 new phrases as they're rendered (later phase).
+
+**Without an API key or a project id the client is unconfigured, and building it does not raise.**
+A fresh clone, a CI job or a test suite can run without secrets: `translate()` returns the source
+text with its params filled, `translate_page()` and `translate_content_block()` return their HTML
+as given, nothing is fetched or queued, and one warning per process names the missing settings.
+`can_write` is `False`, and `flush_pending()` reports `{"skipped": True, "reason":
+"not-configured"}`. An explicit write (`register_phrases()`, `register_content_block()`, `sync()`,
+`register_templates()`) raises `NotConfiguredError`. `client.is_configured()` reports the state.
+For production, `require_credentials=True` makes the first use raise `NotConfiguredError` instead;
+construction still never raises.
 
 ### Interpolation
 
@@ -327,6 +338,7 @@ from langsys import (
     RateLimitError,        # 429 — throttled
     ApiError,              # any other non-2xx (has .status_code, .request_id)
     NetworkError,          # the request never reached the backend
+    NotConfiguredError,    # no API key or project id (a ConfigurationError)
     LangsysError,          # base class for all of the above
 )
 

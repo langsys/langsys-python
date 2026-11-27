@@ -23,6 +23,7 @@ from .exceptions import (
     ConfigurationError,
     LangsysError,
     NetworkError,
+    NotConfiguredError,
     PaymentRequiredError,
     RateLimitError,
     ValidationError,
@@ -71,6 +72,7 @@ __all__ = [
     # exceptions
     "LangsysError",
     "ConfigurationError",
+    "NotConfiguredError",
     "ApiError",
     "AuthenticationError",
     "AuthorizationError",

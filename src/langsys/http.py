@@ -23,6 +23,7 @@ from .exceptions import (
     AuthenticationError,
     AuthorizationError,
     NetworkError,
+    NotConfiguredError,
     PaymentRequiredError,
     RateLimitError,
     ValidationError,
@@ -32,8 +33,13 @@ _USER_AGENT = "langsys-python/0.1.0"
 
 
 class HttpClient:
-    def __init__(self, api_url: str, api_key: str, *, timeout: float = 30.0) -> None:
+    def __init__(
+        self, api_url: str, api_key: str, *, timeout: float = 30.0, refuse: Optional[str] = None
+    ) -> None:
         self._base = api_url.rstrip("/")
+        #: WIRE-4 - set when the client has no credentials: every request is refused before
+        #: anything is sent, whichever path makes it.
+        self._refuse = refuse
         self._client = httpx.Client(
             timeout=timeout,
             headers={
@@ -76,6 +82,8 @@ class HttpClient:
         params: Optional[dict[str, Any]] = None,
         json: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
+        if self._refuse is not None:
+            raise NotConfiguredError(self._refuse)
         try:
             response = self._client.request(method, self._url(path), params=params, json=json)
         except httpx.HTTPError as exc:  # DNS, connect, timeout, …

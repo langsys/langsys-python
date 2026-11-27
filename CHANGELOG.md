@@ -11,6 +11,10 @@ Brought the SDK in line with the SDK Behaviour Spec. Nothing here has ever been 
 so none of it is a breaking change for an installed user — see `CONFORMANCE.md` for the
 rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
 
+- **WIRE-4 — a client built without credentials does not throw.** With no API key or project
+  id it is unconfigured: reads render source text, nothing is fetched or queued, one warning per
+  process names the missing settings, explicit writes raise `NotConfiguredError`, and
+  `is_configured()` reports the state. `require_credentials=True` raises at first use instead.
 - **WIRE-4 — `translate()` no longer throws.** It fetched the catalog inline and did not
   catch, so an unreachable API served a 500 to every visitor on a page with a `t()` call.
   Every entry point now degrades to source text and logs. Paired obligation: **a failed

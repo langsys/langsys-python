@@ -23,6 +23,11 @@ class ConfigurationError(LangsysError):
     """Missing or invalid client configuration (e.g. no API key or project id)."""
 
 
+class NotConfiguredError(ConfigurationError):
+    """WIRE-4 - the client has no API key or project id, so nothing can be sent. An explicit write
+    raises it, and so does any use under ``require_credentials``; a read renders source instead."""
+
+
 class ApiError(LangsysError):
     """A non-2xx response that isn't covered by a more specific subclass."""
 

@@ -57,6 +57,8 @@ def test_REG10_a_skip_names_the_unavailable_catalog(clone):
                                            "times": 4}])
     result = client(clone, world).sync(["Brand new"], locale="it-it")
     assert (result["success"], result["skipped"], result["reason"]) == (False, True, "catalog-unavailable")
+    # Every fetch the SDK might make fails; what it left unconsumed must not fail the read-back.
+    clone.update(world, faults=[])
     assert phrases(clone, world) == []
 
 

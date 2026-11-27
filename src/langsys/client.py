@@ -12,7 +12,13 @@ from .cache.backend import CacheBackend
 from .cache.file import FileCache
 from .catalog import CatalogStore
 from .config import Config
-from .exceptions import ApiError, AuthorizationError, ConfigurationError, NetworkError
+from .exceptions import (
+    ApiError,
+    AuthorizationError,
+    ConfigurationError,
+    NetworkError,
+    NotConfiguredError,
+)
 from .html.attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES
 from .http import HttpClient, encode_segment
 from .interpolate import interpolate
@@ -42,6 +48,22 @@ from .utilities import Utilities
 #: every registration by up to its full period, and lazy-loaded/streamed content is the
 #: common case discovery targets.
 DEFAULT_DEBOUNCE_SECONDS = 0.4
+
+#: WIRE-4 - the unconfigured-client warnings this process has given, so each is given once.
+_UNCONFIGURED_NOTICE: set[str] = set()
+_UNCONFIGURED_GUARD = threading.Lock()
+
+
+def _notice_unconfigured(message: str) -> None:
+    with _UNCONFIGURED_GUARD:
+        if message in _UNCONFIGURED_NOTICE:
+            return
+        _UNCONFIGURED_NOTICE.add(message)
+    logger.warning(
+        "%s Phrases render as source text, and nothing is fetched or registered until the "
+        "client is configured.",
+        message,
+    )
 
 #: REG-8 — 3s, doubling, ceiling ~5min. Without backoff a failing endpoint gets a
 #: request every interval for as long as the process lives, and the payload *grows*,
@@ -83,6 +105,7 @@ class LangsysClient:
         debug: bool = False,
         message_category: str = DEFAULT_MESSAGE_CATEGORY,
         legacy_files: Optional[Sequence[Any]] = None,
+        require_credentials: bool = False,
     ) -> None:
         self._config = Config.resolve(
             api_key,
@@ -93,13 +116,26 @@ class LangsysClient:
             timeout=timeout,
             debug=debug,
         )
+        # WIRE-4 - constructing without credentials never throws. The client is unconfigured:
+        # reads render source, nothing is sent, an explicit write throws, and
+        # `require_credentials` makes the first use throw instead.
+        missing = self._config.missing()
+        self._not_configured: Optional[str] = (
+            "Langsys is not configured: it has no " + " and no ".join(missing) + "."
+            if missing else None
+        )
+        self._require_credentials = require_credentials
         self._http = HttpClient(
-            self._config.api_url, self._config.api_key, timeout=self._config.timeout
+            self._config.api_url, self._config.api_key, timeout=self._config.timeout,
+            refuse=self._not_configured,
         )
         self._cache: CacheBackend = cache if cache is not None else FileCache()
         self._catalog = CatalogStore(
-            self._http, self._config.project_id, self._cache, ttl=self._config.cache_ttl
+            self._http, self._config.project_id, self._cache, ttl=self._config.cache_ttl,
+            configured=self._not_configured is None,
         )
+        if self._not_configured is not None:
+            _notice_unconfigured(self._not_configured)
 
         # Locale: either the wrapper's source (read-only) or an internally owned signal.
         seed = canonicalize_locale(locale or self._config.base_locale or "")
@@ -233,6 +269,25 @@ class LangsysClient:
         except Exception as exc:  # a timer thread must never raise
             logger.warning("langsys: debounced flush failed: %s", exc)
 
+    # -- configuration (WIRE-4) -------------------------------------------------
+
+    def is_configured(self) -> bool:
+        """Whether the client has an API key and a project id. A configured client whose key the
+        server refuses is still configured; that is authorization's question."""
+        return self._not_configured is None
+
+    def _assert_usable(self) -> None:
+        """Under ``require_credentials``, an unconfigured client fails at its first use."""
+        if self._not_configured is not None and self._require_credentials:
+            raise NotConfiguredError(self._not_configured)
+
+    def _refuse_write(self) -> None:
+        """An explicit write from an unconfigured client throws rather than sending."""
+        if self._not_configured is not None:
+            raise NotConfiguredError(
+                f"{self._not_configured} Nothing was registered, since nothing can be sent."
+            )
+
     # -- authorization --------------------------------------------------------
 
     def authorize(self, force: bool = False) -> Project:
@@ -241,6 +296,8 @@ class LangsysClient:
         Project metadata is cacheable; the **write decision is not** and is never
         part of what this returns — see :meth:`_resolve_write_enabled`.
         """
+        if self._not_configured is not None:
+            raise NotConfiguredError(self._not_configured)
         if self._project is not None and not force:
             return self._project
 
@@ -341,6 +398,8 @@ class LangsysClient:
         catalog served from the cache, decide nothing, and the decision stays unknown until the
         API answers. ``key_type`` never stands in for the flag.
         """
+        if self._not_configured is not None:
+            return False  # settled: nothing can be sent, so nothing waits on the answer
         observed = self._observed_decision
         if observed is not None:
             if observed[1] is False:
@@ -422,8 +481,9 @@ class LangsysClient:
         self._owned_locale.set(canonicalize_locale(locale))
 
     def _effective_locale(self, explicit: Optional[str]) -> str:
+        self._assert_usable()
         loc = explicit or self._locale_source.get() or self._config.base_locale
-        if not loc:
+        if not loc and self._not_configured is None:
             try:
                 loc = self.authorize().base_locale
             except (NetworkError, ApiError, ConfigurationError) as exc:
@@ -536,7 +596,8 @@ class LangsysClient:
         Requires ``pip install langsys[html]``."""
         from .html.page import translate_fragment
 
-        if not html:
+        self._assert_usable()
+        if not html or self._not_configured is not None:
             return html
         return translate_fragment(self, html, category)
 
@@ -577,6 +638,9 @@ class LangsysClient:
         block as a phrase or a content block. Requires ``pip install langsys[html]``."""
         from .html.page import translate_page
 
+        self._assert_usable()
+        if self._not_configured is not None:
+            return html  # WIRE-4: the page as given, as when the catalog failed to load
         return translate_page(self, html, category, selector_categories)
 
     def _queue_content_block(
@@ -718,7 +782,8 @@ class LangsysClient:
             base = project.base_locale
             default_locales = dict(project.default_locales)
         except (NetworkError, ApiError, ConfigurationError) as exc:
-            logger.warning("langsys: could not read the project's locales (%s).", exc)
+            if self._not_configured is None:  # an unconfigured client has said so once already
+                logger.warning("langsys: could not read the project's locales (%s).", exc)
             if self._snapshot_locales is not None:
                 # A loaded snapshot vouches for the locales it holds and the project's base,
                 # until authorization answers and replaces them.
@@ -803,6 +868,7 @@ class LangsysClient:
     ) -> int:
         """MSG-7 - register every listed template the catalog does not hold yet, under the message
         category. Idempotent: a second run registers nothing. Returns how many were registered."""
+        self._refuse_write()
         category = category or self.message_category
         fetch = self._catalog.get(self._effective_locale(None), use_cache=False)
         if not fetch.ok:
@@ -926,6 +992,10 @@ class LangsysClient:
         happen**, a skipped write included. A caller that checks ``success`` is
         entitled to believe it.
         """
+        if self._not_configured is not None:
+            self.clear_pending()
+            return {"phrases": 0, "content_blocks": 0, "success": False, "skipped": True,
+                    "reason": "not-configured"}
         try:
             return self._flush_outer(force=force)
         finally:
@@ -1154,6 +1224,7 @@ class LangsysClient:
         self, local_phrases: Sequence[PhraseInput], locale: Optional[str] = None
     ) -> dict[str, Any]:
         """Register any of ``local_phrases`` not already in the catalog, then refetch."""
+        self._refuse_write()
         loc = self._effective_locale(locale)
         fetch = self._catalog.get(loc, use_cache=False)
         self._observe_decision(fetch.write_enabled)
@@ -1196,6 +1267,7 @@ class LangsysClient:
         differently by "the server says this session may not write" and "we could not
         reach the server to ask".
         """
+        self._refuse_write()
         decision = self._resolve_write_enabled()
         if decision is True:
             return

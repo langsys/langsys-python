@@ -6,8 +6,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .exceptions import ConfigurationError
-
 DEFAULT_API_URL = "https://api.langsys.dev/api"
 DEFAULT_CACHE_TTL = 3600
 
@@ -35,6 +33,15 @@ class Config:
     #: Extra transport options are kept for forward-compat; unused in phase 1.
     extra: dict[str, str] = field(default_factory=dict)
 
+    def missing(self) -> list[str]:
+        """The credentials this configuration lacks, named as a user sets them (WIRE-4)."""
+        names = []
+        if not self.api_key:
+            names.append("an API key (pass api_key= or set LANGSYS_API_KEY)")
+        if not self.project_id:
+            names.append("a project id (pass project_id= or set LANGSYS_PROJECT_ID)")
+        return names
+
     @classmethod
     def resolve(
         cls,
@@ -47,16 +54,9 @@ class Config:
         timeout: Optional[float] = None,
         debug: bool = False,
     ) -> Config:
-        api_key = api_key or _env("LANGSYS_API_KEY")
-        project_id = project_id or _env("LANGSYS_PROJECT_ID")
-        if not api_key:
-            raise ConfigurationError(
-                "Langsys: missing API key (pass api_key= or set LANGSYS_API_KEY)."
-            )
-        if not project_id:
-            raise ConfigurationError(
-                "Langsys: missing project id (pass project_id= or set LANGSYS_PROJECT_ID)."
-            )
+        # WIRE-4 - missing credentials leave the client unconfigured; they never throw here.
+        api_key = api_key or _env("LANGSYS_API_KEY") or ""
+        project_id = project_id or _env("LANGSYS_PROJECT_ID") or ""
 
         resolved_url = (api_url or _env("LANGSYS_API_URL", DEFAULT_API_URL)) or DEFAULT_API_URL
         if cache_ttl is not None:

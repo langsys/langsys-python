@@ -72,8 +72,12 @@ class CatalogStore:
         cache: CacheBackend,
         *,
         ttl: int = 3600,
+        configured: bool = True,
     ) -> None:
         self._http = http
+        #: WIRE-4 - without credentials every read is a catalog that failed to load: nothing is
+        #: fetched and no failure window is recorded.
+        self._configured = configured
         self._project_id = project_id
         self._cache = cache
         self._ttl = ttl
@@ -87,6 +91,8 @@ class CatalogStore:
         return f"translations_{self._project_id}_{normalize_locale(locale)}"
 
     def get(self, locale: str, *, use_cache: bool = True) -> CatalogFetch:
+        if not self._configured:
+            return CatalogFetch({}, ok=False)
         wire_locale = normalize_locale(locale)
         held = self._held(wire_locale) if use_cache else None
         if held is not None:
