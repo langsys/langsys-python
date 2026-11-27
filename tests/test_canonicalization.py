@@ -38,15 +38,12 @@ from langsys.html.parser import extract_phrases  # noqa: E402
 FIXTURE = Path(__file__).parent / "fixtures" / "canonicalization-reference.json"
 
 #: THE CHECK — content-addressed.
-SOURCE_BLOB_SHA = "34034931872b93e761faea49fb040f3fd8a6b9f5"
+SOURCE_BLOB_SHA = "ce5723f27ee9258fcbb5378ddd034ff0318b730c"
 #: THE PROVENANCE — a live ref.
-SOURCE_REF = "langsys-js-typescript a639ae8 tests/fixtures/canonicalization-reference.json"
-#: What the fixture was AUTHORED against (langsys2 f5568b88, specVersion 8.2.15).
-FIXTURE_SPEC_BASIS = "b9fd4b5b1c15f7ba29656d550dca1f06013327c0"
-#: What this SDK is FILED against (langsys2 234eab14, specVersion 8.2.20). The TOK sections are
-#: byte-identical between the two, and of MARK only MARK-3 differs, which no row exercises (no row
-#: carries a content-block marker), so every row binds the target unchanged.
-TARGET_SPEC_BLOB = "7eee2c10398a1032831837c310215f3b9f16d306"
+SOURCE_REF = "langsys-js-typescript v0.7.5 (df8624b5) tests/fixtures/canonicalization-reference.json"
+#: What the fixture was AUTHORED against, which is what this SDK is filed against: langsys2
+#: 79a215d4, specVersion 8.8.1.
+TARGET_SPEC_BLOB = "bdcc95b4afe0cc782c69d894f884bc02ffd85a72"
 
 _DOC = json.loads(FIXTURE.read_text(encoding="utf-8"))
 ROWS = _DOC["cases"]
@@ -70,11 +67,9 @@ def test_the_vendored_fixture_is_the_pinned_blob():
     )
 
 
-def test_the_fixture_declares_the_spec_it_was_authored_against():
-    """The fixture names its spec; where that is not this SDK's target the difference is recorded
-    here (with the TOK and MARK text checked identical), and the pin fails the day it changes."""
-    assert FIXTURE_SPEC_BASIS in _DOC["spec_blob"], _DOC["spec_blob"]
-    assert TARGET_SPEC_BLOB not in _DOC["spec_blob"], "the fixture now declares the target; update"
+def test_the_fixture_declares_the_spec_this_sdk_is_filed_against():
+    """The fixture names its spec; the pin fails the day it names another."""
+    assert _DOC["spec_blob"].startswith(TARGET_SPEC_BLOB), _DOC["spec_blob"]
 
 
 @pytest.mark.parametrize("row", ROWS, ids=lambda r: r["id"])
@@ -917,16 +912,28 @@ def test_TOK6_the_block_path_registers_the_fragment_in_its_shape(markup, shape, 
     assert _registered(client) == [(shape, tokens)]
 
 
+#: Rows whose units register less than the row's identity tokens on the page path, by rule. A
+#: unit made only of markers has no text of its own (VAR-3), and a unit holding a value its reader
+#: cannot name registers nothing (VAR-7); `var-marker-slot`'s two paragraphs are two units on a
+#: page, and the second is made only of a marker.
+PAGE_PATH_REGISTERS = {
+    "var-marker-only": [],
+    "var-attribute-bad-name": [],
+    "var-marker-slot": ["Order total"],
+}
+
+
 @pytest.mark.parametrize("row", ROWS, ids=lambda r: r["id"])
 def test_TOK6_every_fixture_row_tokenizes_identically_on_the_page_path(row):
-    """The block path runs every row above; this is the same 32 rows through translate_page,
+    """The block path runs every row above; this is the same rows through translate_page,
     reading what it actually registers."""
     client, patched = _client_with_catalog({})
     with patched:
         client.translate_page(f"<html><body>{row['html']}</body></html>", category=row["category"] or None)
     registered = [t for _, tokens in _registered(client) for t in tokens]
-    assert registered == row["expected_tokens"], (
-        f"\n  expected cps: {[cps(t) for t in row['expected_tokens']]}"
+    expected = PAGE_PATH_REGISTERS.get(row["id"], row["expected_tokens"])
+    assert registered == expected, (
+        f"\n  expected cps: {[cps(t) for t in expected]}"
         f"\n  page cps:     {[cps(t) for t in registered]}"
     )
 

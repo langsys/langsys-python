@@ -25,7 +25,9 @@ from ..registration import generate_custom_id
 from ..translate import lookup_block
 from ..types import UNCATEGORIZED
 from .attributes import marker_is_on
-from .markup import encode_phrase_host, render_phrase_host
+from .markers import ValueMarkers, active
+from .markup import _TOKEN as MARKUP_TOKEN
+from .markup import encode_phrase_host, phrase_values, render_phrase_host
 from .parser import (
     BLOCK_HOST_ATTRS,
     PHRASE_HOST_ATTRS,
@@ -34,6 +36,7 @@ from .parser import (
     apply_element,
     block_marker_kind,
     inner_html,
+    is_excluded,
     is_marked_host,
     is_phrase_host,
     is_phrase_unit,
@@ -86,7 +89,12 @@ def translate_page(
 
     body = doc.find("body")
     root = body if body is not None else doc
-    _walk(client, root, attrs, locale, default_category, inherited=None, selmap=selmap)
+    # VAR-3 - every marked value is its placeholder while the page is walked, and back in its
+    # marker once it has been rendered.
+    markers = ValueMarkers.read(root)
+    with markers.rendering():
+        _walk(client, root, attrs, locale, default_category, inherited=None, selmap=selmap)
+    markers.finish(root, locale)
     # After the walk: this render's own mark is output, and MARK-3 reads the page it was given.
     _mark_resolved(client, doc, locale)
 
@@ -202,11 +210,7 @@ def _walk(
 
 
 def _excluded(el: _Element) -> bool:
-    return (
-        el.tag.lower() in SKIP_ELEMENTS
-        or el.get("translate") == "no"
-        or bool(el.get("data-notrans"))
-    )
+    return el.tag.lower() in SKIP_ELEMENTS or is_excluded(el)
 
 
 def _process_unit(
@@ -220,8 +224,8 @@ def _process_unit(
 ) -> None:
     """One unit (TOK-6): a phrase written back into its one text node, or a content block."""
     tokens, text_nodes = unit_tokens(el, attrs)
-    if not tokens:
-        return
+    if not tokens or not active().registers(el, tokens):
+        return  # VAR-3/VAR-7: no text of its own, or a value it cannot name - as it was
     if not declared and is_phrase_unit(tokens, text_nodes):
         category = None if item_cat == UNCATEGORIZED else item_cat
         translated = client.translate(tokens[0], category=category, locale=locale)
@@ -260,9 +264,14 @@ def _process_host(
         # MARK-2 - the host's content is ONE phrase, kept whole: registered on a miss as the one
         # string the host defines, never re-split.
         text, slots = encode_phrase_host(el)
-        if text:
+        markers = active()
+        bare = MARKUP_TOKEN.sub("", text)
+        # TOK-1/VAR-3 - a phrase of only excluded content or markers has no text: nothing.
+        if bare.strip() and markers.registers(el, [bare]):
             category = None if item_cat == UNCATEGORIZED else item_cat
-            translated = client.translate(text, category=category, locale=locale)
+            values = phrase_values(markers, el)
+            params = markers.params(values, text) if values else None
+            translated = client.translate(text, category=category, params=params, locale=locale)
             if translated != text:
                 render_phrase_host(el, translated, slots)
         return
@@ -280,7 +289,7 @@ def _process_host(
             apply_element(el, entry, attrs)
         elif fetch.ok and not _in_resolved_scope(el):
             tokens, _ = unit_tokens(el, attrs)
-            if tokens:
+            if tokens and active().registers(el, tokens):
                 client._queue_content_block(
                     _registered_content(el, attrs), item_cat, custom_id, tokens
                 )
@@ -443,6 +452,20 @@ def translate_fragment(client: "LangsysClient", html: str, category: Optional[st
     attrs = client._translatable_attributes
     locale = client._effective_locale(None)
     root = parse_fragment(html)
+    markers = ValueMarkers.read(root)  # VAR-3
+    with markers.rendering():
+        return _translate_fragment_unit(client, html, root, markers, attrs, locale, category)
+
+
+def _translate_fragment_unit(
+    client: "LangsysClient",
+    html: str,
+    root: _Element,
+    markers: ValueMarkers,
+    attrs: list[str],
+    locale: str,
+    category: Optional[str],
+) -> str:
     elements = [c for c in root if isinstance(c.tag, str)]
     has_hosts = any(
         is_marked_host(e) for top in elements for e in top.iter() if isinstance(e.tag, str)
@@ -455,17 +478,21 @@ def translate_fragment(client: "LangsysClient", html: str, category: Optional[st
     )
     if lone_host:
         _process_host(client, elements[0], attrs, locale, None, category, {})
+        markers.finish(root, locale)
         return inner_html(root)
     if has_hosts:
         _process_nested_hosts(client, root, attrs, locale, None, category, {})
 
     tokens, text_nodes = unit_tokens(root, attrs)
-    if not tokens:
+    if not tokens or not markers.registers(root, tokens):
+        markers.finish(root, locale)
         return inner_html(root) if has_hosts else html
     if is_phrase_unit(tokens, text_nodes):
         translated = client.translate(tokens[0], category=category, locale=locale)
         if not has_hosts:
-            return apply_block_translations(html, {tokens[0]: translated}, attrs)
+            return apply_block_translations(html, {tokens[0]: translated}, attrs, locale=locale)
         apply_element(root, {tokens[0]: translated}, attrs)
+        markers.finish(root, locale)
         return inner_html(root)
+    markers.finish(root, locale)  # the hosts' renders kept, everything else as it was
     return client._render_block(inner_html(root) if has_hosts else html, category, tokens)

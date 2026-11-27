@@ -610,16 +610,17 @@ class LangsysClient:
 
     def _render_block(self, html: str, category: Optional[str], phrases: list[str]) -> str:
         """Look a content block up under its id, render it, and stamp it; queue it on a miss."""
-        from .html.parser import apply_block_translations, stamp_content_block
+        from .html.parser import apply_block_translations, placeholder_html, stamp_content_block
 
         loc = self._effective_locale(None)
+        attrs = self._translatable_attributes
         cat_name = category or UNCATEGORIZED
         # CID-2 — the hash takes the *raw* category, `''` when there is none.
         # `__uncategorized__` is a cache-lookup namespace and must never reach the id.
         custom_id = generate_custom_id(category, phrases)
         held, preloaded = self._preloaded_entry(loc, cat_name, custom_id)
         if held and isinstance(preloaded, dict):
-            translated = apply_block_translations(html, preloaded, self._translatable_attributes)
+            translated = apply_block_translations(html, preloaded, attrs, locale=loc)
             return stamp_content_block(translated, custom_id)
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
@@ -628,11 +629,12 @@ class LangsysClient:
         if not isinstance(block, dict):
             # WIRE-4 — see translate(): never queue off a catalog we could not read.
             if fetch.ok:
-                self._queue_content_block(html, cat_name, custom_id, phrases)
+                # VAR-3 - stored content holds each marked value as its placeholder.
+                self._queue_content_block(placeholder_html(html), cat_name, custom_id, phrases)
             # MARK-1 — the id is what the block IS, not what the catalog happened to
             # hold. An unstamped miss is the case you most need to inspect.
             return stamp_content_block(html, custom_id)
-        translated = apply_block_translations(html, block, self._translatable_attributes)
+        translated = apply_block_translations(html, block, attrs, locale=loc)
         return stamp_content_block(translated, custom_id)
 
     def translate_page(

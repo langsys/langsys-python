@@ -374,6 +374,16 @@ registers, so markup served by one and read by another resolves to one entry.
 - Text carrying control characters (U+0001–U+001F except tab, newline and carriage return) has
   them removed before it becomes a phrase, in markup and in `translate()` keys alike.
 
+
+**Values printed from variables.** A value your templates print from a variable should be marked,
+so it is a placeholder instead of part of the phrase: `<!--ls:name-->Ana<!--/ls-->`, or
+`<span data-ls-param="name">Ana</span>` where comments can't be written. Then
+`<p>Hello <!--ls:name-->Ana<!--/ls-->, welcome back</p>` registers one phrase for every user,
+`Hello {name}, welcome back`, and renders each user's value back in its marker wherever the
+translation puts it (as the raw value inside an ICU plural or select, so it can choose a form). A
+block stores its content with `{name}` in place of the value. A name must match `[a-z][a-z0-9_]*`;
+a marker with any other name is a value that can't be named, so the unit holding it registers
+nothing and renders as it was. Unmarked markup reads exactly as before.
 ### Errors
 
 Every failure raises a typed exception (subclass of `LangsysError`); HTTP status codes are

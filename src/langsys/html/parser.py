@@ -17,6 +17,7 @@ from typing import Optional, Sequence, cast
 from ..interpolate import percent_placeholders_to_braces
 from ..text import strip_c0
 from .attributes import DEFAULT_TRANSLATABLE_ATTRIBUTES, classify_block_attribute, marker_is_on
+from .markers import ValueMarkers, may_hold
 
 try:
     from lxml import html as lxml_html
@@ -152,7 +153,13 @@ def is_marked_host(el: _Element) -> bool:
 def _skip(el: _Element) -> bool:
     if _tag(el) in SKIP_TAGS:
         return True
-    return el.get("translate") == "no" or bool(el.get("data-notrans"))
+    return is_excluded(el)
+
+
+def is_excluded(el: _Element) -> bool:
+    """TOK-1 - an author's exclusion: `translate="no"`, or `data-notrans` present and not opted
+    out (`data-notrans="false"` makes the element an ordinary one again)."""
+    return el.get("translate") == "no" or marker_is_on(el.get("data-notrans"))
 
 
 def _tag(el: _Element) -> str:
@@ -178,7 +185,9 @@ def extract_phrases(html: str, attributes: Optional[Sequence[str]] = None) -> li
         return []
     attrs = tuple(attributes) if attributes is not None else DEFAULT_TRANSLATABLE_ATTRIBUTES
     phrases: list[str] = []
-    _walk_extract(_parse_fragment(html), attrs, phrases)
+    root = _parse_fragment(html)
+    ValueMarkers.read(root)  # VAR-3: a marked value is its placeholder
+    _walk_extract(root, attrs, phrases)
     return phrases
 
 
@@ -210,7 +219,19 @@ def fragment_unit(html: str, attributes: Optional[Sequence[str]] = None) -> tupl
     """TOK-6 - the unit an explicit block call wraps: the fragment's content."""
     if not html:
         return [], 0
-    return unit_tokens(_parse_fragment(html), attributes)
+    root = _parse_fragment(html)
+    ValueMarkers.read(root)
+    return unit_tokens(root, attributes)
+
+
+def placeholder_html(html: str) -> str:
+    """VAR-3 - the content a block registers with: every marked value as `{NAME}` text, the
+    marker and the value removed, wherever it sits. Unmarked content is returned as given."""
+    if not may_hold(html):
+        return html
+    root = _parse_fragment(html)
+    ValueMarkers.read(root)
+    return _inner_html(root)
 
 
 def is_phrase_unit(tokens: Sequence[str], text_nodes: int) -> bool:
@@ -311,14 +332,21 @@ def _attr_escape(value: str) -> str:
 
 
 def apply_block_translations(
-    html: str, translations: dict[str, Optional[str]], attributes: Optional[Sequence[str]] = None
+    html: str,
+    translations: dict[str, Optional[str]],
+    attributes: Optional[Sequence[str]] = None,
+    *,
+    locale: str = "en",
 ) -> str:
-    """Return ``html`` with translated text/attributes substituted from ``translations``."""
+    """Return ``html`` with translated text/attributes substituted from ``translations``. A marked
+    value is looked up as its placeholder and rendered back in its marker (VAR-3)."""
     if not html:
         return html
     attrs = tuple(attributes) if attributes is not None else DEFAULT_TRANSLATABLE_ATTRIBUTES
     root = _parse_fragment(html)
+    markers = ValueMarkers.read(root)
     _walk_apply(root, translations, attrs)
+    markers.finish(root, locale)
     return _inner_html(root)
 
 

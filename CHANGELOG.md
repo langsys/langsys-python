@@ -17,6 +17,13 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **VAR-1/3/7 — values marked in the HTML are placeholders.** `<!--ls:NAME-->VALUE<!--/ls-->` and
+  `<span data-ls-param="NAME">VALUE</span>` read as `{NAME}` on every HTML path, render back in
+  their markers, and store as `{NAME}` in a block's content; a unit made only of markers, or one
+  holding a value whose name is not valid, registers nothing.
+- **TOK-1 — `data-notrans` is an exclusion unless it says `false`**, on every path, and a rich
+  phrase keeps an excluded element whole, marker included; a phrase of only excluded content
+  registers nothing.
 - **MIG-9 — `import_legacy_translations()`.** A one-time import registers every legacy key's
   phrase together with each target locale's existing translation of it, which the API stores as
   human translations. Gettext plurals map to CLDR categories through each file's `Plural-Forms`,

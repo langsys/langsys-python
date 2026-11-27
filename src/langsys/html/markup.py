@@ -20,18 +20,29 @@ from typing import Optional
 
 from lxml.etree import _Element
 
-from .parser import SKIP_TAGS, is_marked_host, normalize_phrase
+from .markers import ValueMarkers
+from .parser import SKIP_TAGS, is_excluded, is_marked_host, normalize_phrase
 
-__all__ = ["encode_phrase_host", "render_phrase_host"]
+__all__ = ["encode_phrase_host", "opaque", "phrase_values", "render_phrase_host"]
 
 _TOKEN = re.compile(r"\{m(\d+)([oc])\}")
 
 
-def _opaque(el: _Element) -> bool:
+def opaque(el: _Element) -> bool:
+    """A subtree that is not this phrase's prose: kept whole as one empty token pair (TOK-1)."""
     tag = el.tag.lower() if isinstance(el.tag, str) else ""
-    if tag in SKIP_TAGS or el.get("translate") == "no" or el.get("data-notrans"):
+    if tag in SKIP_TAGS or is_excluded(el):
         return True
     return is_marked_host(el)
+
+
+_opaque = opaque
+
+
+def phrase_values(markers: ValueMarkers, host: _Element) -> dict[str, str]:
+    """VAR-3 - the marked values a phrase host passes as params: those of its prose, never of a
+    subtree it keeps opaque, whose content is not read (TOK-1)."""
+    return markers.values_within(host, lambda node: node is not host and opaque(node))
 
 
 def encode_phrase_host(el: _Element) -> tuple[str, list[_Element]]:
@@ -46,9 +57,9 @@ def _encode_children(node: _Element, slots: list[_Element]) -> str:
         if isinstance(child.tag, str):
             index = len(slots)
             if _opaque(child):
-                kept = copy.deepcopy(child)
-                kept.tail = None
-                slots.append(kept)
+                # The element itself, not a copy: a render puts it back as it is, so what it
+                # holds, a value's marker included, is the page's own (VAR-3).
+                slots.append(child)
                 out += f"{{m{index}o}}{{m{index}c}}"
             else:
                 attrib = {str(k): str(v) for k, v in child.attrib.items()}
@@ -92,6 +103,7 @@ def _rebuild(text: str, slots: list[_Element]) -> Optional[tuple[str, list[_Elem
     if root is None:
         return (_TOKEN.sub("", text), []) if _TOKEN.search(text) else (text, [])
     stack: list[tuple[int, _Element]] = []
+    placed: set[int] = set()
     offset = 0
     for match in _TOKEN.finditer(text):
         container = stack[-1][1] if stack else root
@@ -101,7 +113,12 @@ def _rebuild(text: str, slots: list[_Element]) -> Optional[tuple[str, list[_Elem
         if index >= len(slots):
             return None
         if kind == "o":
-            element = copy.deepcopy(slots[index])
+            if _opaque(slots[index]) and index not in placed:
+                element = slots[index]  # an opaque subtree moves back whole
+                element.tail = None
+            else:
+                element = copy.deepcopy(slots[index])
+            placed.add(index)
             container.append(element)
             stack.append((index, element))
         else:
