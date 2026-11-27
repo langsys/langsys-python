@@ -1,0 +1,678 @@
+{
+    "projects": [
+        {
+            "id": "82000400-0001-4000-8000-000000000000",
+            "title": "py cache translated#1 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171501|7664fc4828f049fb9035f5c5bbbca25655445d16",
+                "device_id": "py-cache-1"
+            }
+        },
+        {
+            "id": "82000400-0002-4000-8000-000000000000",
+            "title": "py cache translated#2 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171502|4a4679edef025c7a8603510f46d673983682706e",
+                "device_id": "py-cache-2"
+            }
+        },
+        {
+            "id": "82000400-0003-4000-8000-000000000000",
+            "title": "py cache translated#3 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171503|a61f5ac568e541bd1662f41f680c8a484ab805a8",
+                "device_id": "py-cache-3"
+            }
+        },
+        {
+            "id": "82000400-0004-4000-8000-000000000000",
+            "title": "py cache translated#4 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171504|751570095a8e6250e6331751869c646e15bda0d7",
+                "device_id": "py-cache-4"
+            }
+        },
+        {
+            "id": "82000400-0005-4000-8000-000000000000",
+            "title": "py cache translated#5 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171505|d03f9927783b84b32b8a631ceb8f44378e632e3d",
+                "device_id": "py-cache-5"
+            }
+        },
+        {
+            "id": "82000400-0006-4000-8000-000000000000",
+            "title": "py cache translated#6 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171506|244c7888d767a464c0769f3745d09be22e399289",
+                "device_id": "py-cache-6"
+            }
+        },
+        {
+            "id": "82000400-0007-4000-8000-000000000000",
+            "title": "py cache translated#7 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171507|8a571a9f1ff7df6fbf062dc94eba097d5cf3987d",
+                "device_id": "py-cache-7"
+            }
+        },
+        {
+            "id": "82000400-0008-4000-8000-000000000000",
+            "title": "py cache translated#8 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171508|787f0b8bf95f3e0801f9ccbd46dfffbd91741a95",
+                "device_id": "py-cache-8"
+            }
+        },
+        {
+            "id": "82000400-0009-4000-8000-000000000000",
+            "title": "py cache translated#9 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171509|6664178d7014989de2430fbf08cdb881f29bd42a",
+                "device_id": "py-cache-9"
+            }
+        },
+        {
+            "id": "82000400-000a-4000-8000-000000000000",
+            "title": "py cache translated#10 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171510|e6e58e8ab8733dd126d2d9def5cd0f81bc0c0b8c",
+                "device_id": "py-cache-10"
+            }
+        },
+        {
+            "id": "82000400-000b-4000-8000-000000000000",
+            "title": "py cache translated#11 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171511|44a0993ad94ddf5407636ea2ecf31a50c9253dc0",
+                "device_id": "py-cache-11"
+            }
+        },
+        {
+            "id": "82000400-000c-4000-8000-000000000000",
+            "title": "py cache translated#12 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171512|080f37f72d6e41878b9353f5db594358f192dc42",
+                "device_id": "py-cache-12"
+            }
+        },
+        {
+            "id": "82000400-000d-4000-8000-000000000000",
+            "title": "py cache translated#13 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171513|7540f0adb7636e9ba731a3320fb5d8276546db2b",
+                "device_id": "py-cache-13"
+            }
+        },
+        {
+            "id": "82000400-000e-4000-8000-000000000000",
+            "title": "py cache translated#14 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171514|0a2f75d71c0c92f1ecb48d1ecda06f525f83ad3a",
+                "device_id": "py-cache-14"
+            }
+        },
+        {
+            "id": "82000400-000f-4000-8000-000000000000",
+            "title": "py cache translated#15 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171515|cf5a9544d71bf5d0a17814f0dd6282eb6d1af590",
+                "device_id": "py-cache-15"
+            }
+        },
+        {
+            "id": "82000400-0010-4000-8000-000000000000",
+            "title": "py cache translated#16 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171516|39d4d444daecbb722f1e4e63a30213d7849b65a2",
+                "device_id": "py-cache-16"
+            }
+        },
+        {
+            "id": "82000400-0011-4000-8000-000000000000",
+            "title": "py cache translated#17 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171517|5ef0ccfe853c8aac5ceea3ac8d5ece932467b737",
+                "device_id": "py-cache-17"
+            }
+        },
+        {
+            "id": "82000400-0012-4000-8000-000000000000",
+            "title": "py cache translated#18 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171518|2d520e1ad4dafe9deee253cfa12122fd8ec1cc45",
+                "device_id": "py-cache-18"
+            }
+        },
+        {
+            "id": "82000400-0013-4000-8000-000000000000",
+            "title": "py cache translated#19 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171519|ac5d30e9492b0fde061e5f1c5d7c0f088897a791",
+                "device_id": "py-cache-19"
+            }
+        },
+        {
+            "id": "82000400-0014-4000-8000-000000000000",
+            "title": "py cache translated#20 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171520|467ec92b31b31e427f56e9dbf00df907c58d6c6d",
+                "device_id": "py-cache-20"
+            }
+        },
+        {
+            "id": "82000400-0015-4000-8000-000000000000",
+            "title": "py cache translated#21 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171521|6c15705a8547ddad9738b12b8b9895a03eb2685a",
+                "device_id": "py-cache-21"
+            }
+        },
+        {
+            "id": "82000400-0016-4000-8000-000000000000",
+            "title": "py cache translated#22 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171522|065827cda73ca82fd95d2e17b46bfa5f33766a93",
+                "device_id": "py-cache-22"
+            }
+        },
+        {
+            "id": "82000400-0017-4000-8000-000000000000",
+            "title": "py cache translated#23 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171523|f8a2b317c9d61cb064d428cb71abaa2139728886",
+                "device_id": "py-cache-23"
+            }
+        },
+        {
+            "id": "82000400-0018-4000-8000-000000000000",
+            "title": "py cache translated#24 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171524|2f76ed15e64d0702ffbe7b32bd9dbd8c38e6bb86",
+                "device_id": "py-cache-24"
+            }
+        }
+    ],
+    "keys": [
+        {
+            "id": "82000401-0001-4000-8000-000000000000",
+            "key": "py-cache-1-write",
+            "type": "write",
+            "project": "82000400-0001-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0002-4000-8000-000000000000",
+            "key": "py-cache-2-write",
+            "type": "write",
+            "project": "82000400-0002-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0003-4000-8000-000000000000",
+            "key": "py-cache-3-write",
+            "type": "write",
+            "project": "82000400-0003-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0004-4000-8000-000000000000",
+            "key": "py-cache-4-write",
+            "type": "write",
+            "project": "82000400-0004-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0005-4000-8000-000000000000",
+            "key": "py-cache-5-write",
+            "type": "write",
+            "project": "82000400-0005-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0006-4000-8000-000000000000",
+            "key": "py-cache-6-write",
+            "type": "write",
+            "project": "82000400-0006-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0007-4000-8000-000000000000",
+            "key": "py-cache-7-write",
+            "type": "write",
+            "project": "82000400-0007-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0008-4000-8000-000000000000",
+            "key": "py-cache-8-write",
+            "type": "write",
+            "project": "82000400-0008-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0009-4000-8000-000000000000",
+            "key": "py-cache-9-write",
+            "type": "write",
+            "project": "82000400-0009-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-000a-4000-8000-000000000000",
+            "key": "py-cache-10-write",
+            "type": "write",
+            "project": "82000400-000a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-000b-4000-8000-000000000000",
+            "key": "py-cache-11-write",
+            "type": "write",
+            "project": "82000400-000b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-000c-4000-8000-000000000000",
+            "key": "py-cache-12-write",
+            "type": "write",
+            "project": "82000400-000c-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-000d-4000-8000-000000000000",
+            "key": "py-cache-13-write",
+            "type": "write",
+            "project": "82000400-000d-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-000e-4000-8000-000000000000",
+            "key": "py-cache-14-write",
+            "type": "write",
+            "project": "82000400-000e-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-000f-4000-8000-000000000000",
+            "key": "py-cache-15-write",
+            "type": "write",
+            "project": "82000400-000f-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0010-4000-8000-000000000000",
+            "key": "py-cache-16-write",
+            "type": "write",
+            "project": "82000400-0010-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0011-4000-8000-000000000000",
+            "key": "py-cache-17-write",
+            "type": "write",
+            "project": "82000400-0011-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0012-4000-8000-000000000000",
+            "key": "py-cache-18-write",
+            "type": "write",
+            "project": "82000400-0012-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0013-4000-8000-000000000000",
+            "key": "py-cache-19-write",
+            "type": "write",
+            "project": "82000400-0013-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0014-4000-8000-000000000000",
+            "key": "py-cache-20-write",
+            "type": "write",
+            "project": "82000400-0014-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0015-4000-8000-000000000000",
+            "key": "py-cache-21-write",
+            "type": "write",
+            "project": "82000400-0015-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0016-4000-8000-000000000000",
+            "key": "py-cache-22-write",
+            "type": "write",
+            "project": "82000400-0016-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0017-4000-8000-000000000000",
+            "key": "py-cache-23-write",
+            "type": "write",
+            "project": "82000400-0017-4000-8000-000000000000"
+        },
+        {
+            "id": "82000401-0018-4000-8000-000000000000",
+            "key": "py-cache-24-write",
+            "type": "write",
+            "project": "82000400-0018-4000-8000-000000000000"
+        }
+    ]
+}

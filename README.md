@@ -350,9 +350,30 @@ A framework wrapper can drive the locale from its own request-scoped store by pa
 ```bash
 python -m virtualenv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest -m "not integration"     # unit tests
+pytest -m "not integration and not contract"     # unit tests
 ruff check . && mypy src
 ```
+
+### Contract tests
+
+The `contract` tests run against an SDK test clone: a real Langsys API, seeded before the run from
+the seed files in `tests/contract-seeds/` (langsys `docs/sdk-test-clone.md`). Each test file starts
+`tests/contract-fixture/forwarder.mjs` (Node 18 or later), which passes every request to the clone
+under the test case's own caller address. Name the clone, its langsys checkout and the certificate
+it serves with:
+
+```bash
+LANGSYS_CONTRACT_TARGET=https://api.langsys5.test \
+LANGSYS_CONTRACT_CLONE_ROOT=~/Documents/dev/langsys5 \
+NODE_EXTRA_CA_CERTS=~/.config/valet/CA/LaravelValetCASelfSigned.pem \
+pytest -m contract
+```
+
+Without them every contract test errors rather than skipping. A test's writes stay until the clone
+is reseeded, so each world module's `RUNS` sets how many runs one reseed serves, and
+`LANGSYS_CONTRACT_RUN` (from 0) picks the run. A world module (`tests/contract-seeds/<slug>.py`)
+renders its seed file (`<slug>.json`); write the files again after changing one with
+`LANGSYS_WRITE_SEEDS=1 pytest tests/test_clone_seed_files.py`.
 
 ## License
 

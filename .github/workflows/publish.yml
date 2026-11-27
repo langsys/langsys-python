@@ -22,7 +22,7 @@ jobs:
 
       - run: ruff check .
       - run: mypy src
-      - run: pytest -m "not integration"
+      - run: pytest -m "not integration and not contract"
 
       - run: python -m build
 

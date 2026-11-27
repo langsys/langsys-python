@@ -21,8 +21,18 @@ the file byte-for-byte whatever happens. A mutation counts as caught only when t
 red AND every test it names is among the failures. Reddening "something" proves nothing about
 the rule: an unrelated test erroring would satisfy that, and has, in this repository's history.
 
-    python3 _dev_/run_mutations.py              # every mutation
+    python3 _dev_/run_mutations.py              # every mutation, unit suite only
     python3 _dev_/run_mutations.py TOK-2 GATE-5 # some rules
+    python3 _dev_/run_mutations.py --clone      # contract tests too, on the SDK test clone
+
+**Contract tests run only with `--clone`**, and the clone's environment set (README, "Contract
+tests"). Without it a mutation that names a contract test is reported as waiting on the clone, not
+judged. With it, the unmutated run is the unit suite and every contract test on run 0 of each seed
+file, and each mutant runs the whole unit suite plus the contract tests it names, on a fresh run of
+each seed file those tests use (`LANGSYS_CONTRACT_RUN=slug=N,...`), since a world one run writes to
+is used up until the next reseed. The runner refuses to start when a seed file serves fewer runs
+than the battery needs, and voids a mutant whose contract tests ran out of worlds or met a world
+that had not landed, rather than counting their errors as a catch.
 
 Rows with nothing to run are not here: n/a rows, and the meta-rules CONF-2 and CONF-3 that are
 discharged by CONFORMANCE.md and `_dev_/conformance_counts.py`.
@@ -39,6 +49,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 FAILED_LINE = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.M)
@@ -193,7 +204,7 @@ MUTATIONS = [
       '        self.batch_limit = 200',
       "test_REG9_the_batch_limit_comes_from_the_server",
       "test_REG9_a_double_that_refuses_oversized_batches_ends_up_holding_every_item",
-      "test_REG9_the_double_enforces_the_limit_and_holds_every_item"),
+      "test_REG9_the_api_enforces_its_limit_and_holds_every_item"),
     m("REG-9", "one POST per content block", CLIENT,
       '                self._reg.register_content_blocks(blocks)',
       '                for block in blocks:\n                    self._reg.register_content_blocks([block])',
@@ -1092,18 +1103,66 @@ def isolated_copy(dest: Path, files: list[str]) -> dict[str, str]:
     return env
 
 
-def run_suite(workdir: Path, env: dict[str, str]) -> tuple[int, list[str]]:
+UNIT = ["-m", "not integration and not contract"]
+#: Output that means a contract run measured nothing about the mutant.
+VOID = ("seed not landed", "worlds a run and this is case", "run(s) a reseed and this is run")
+SEED_NAME = re.compile(r'^SEED = "([^"]+)"', re.M)
+
+
+def run_suite(workdir: Path, env: dict[str, str],
+              selection: Optional[list[str]] = None) -> tuple[int, list[str], str]:
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-m", "not integration", "-q", "-p", "no:cacheprovider"],
+        [sys.executable, "-m", "pytest", *(selection or UNIT), "-q", "-p", "no:cacheprovider"],
         cwd=workdir,
         env=env,
         capture_output=True,
         text=True,
     )
-    return proc.returncode, FAILED_LINE.findall(proc.stdout)
+    return proc.returncode, FAILED_LINE.findall(proc.stdout), proc.stdout
 
 
-def apply(mutation: Mutation, workdir: Path, env: dict[str, str]) -> list[str]:
+@dataclass
+class Clone:
+    """The contract tests of the isolated copy, and the run each seed file is on."""
+
+    nodes: list[str]
+    seeds: dict[str, str]  # test file -> seed slug
+    serves: dict[str, int]  # seed slug -> runs one reseed serves
+    runs: dict[str, int]
+
+    def named(self, mutation: Mutation) -> list[str]:
+        return [n for n in self.nodes
+                if any(n.split("::", 1)[1].split("[")[0] == e.split("[")[0] for e in mutation.expect)]
+
+    def next_runs(self, nodes: list[str]) -> str:
+        for slug in sorted({self.seeds[n.split("::", 1)[0]] for n in nodes}):
+            self.runs[slug] += 1
+        return ",".join(f"{slug}={run}" for slug, run in sorted(self.runs.items()))
+
+
+def discover_clone(workdir: Path, env: dict[str, str]) -> Clone:
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-m", "contract", "--collect-only", "-q",
+         "-p", "no:cacheprovider"],
+        cwd=workdir, env=env, capture_output=True, text=True,
+    )
+    nodes = [line.strip() for line in proc.stdout.splitlines() if "::" in line]
+    seeds: dict[str, str] = {}
+    for test_file in {n.split("::", 1)[0] for n in nodes}:
+        found = SEED_NAME.search((workdir / test_file).read_text(encoding="utf-8"))
+        if found is None:
+            raise SystemExit(f"{test_file} holds contract tests but names no SEED")
+        seeds[test_file] = found.group(1)
+    serves: dict[str, int] = {}
+    for slug in set(seeds.values()):
+        module = (workdir / "tests" / "contract-seeds" / f"{slug}.py").read_text(encoding="utf-8")
+        found = re.search(r"^RUNS = (\d+)", module, re.M)
+        serves[slug] = int(found.group(1)) if found else 1
+    return Clone(nodes, seeds, serves, dict.fromkeys(serves, 0))
+
+
+def apply(mutation: Mutation, workdir: Path, env: dict[str, str],
+          clone: Optional[Clone] = None) -> tuple[list[str], bool]:
     target = workdir / mutation.path
     original = target.read_bytes()
     text = original.decode("utf-8")
@@ -1112,18 +1171,26 @@ def apply(mutation: Mutation, workdir: Path, env: dict[str, str]) -> list[str]:
         raise SystemExit(
             f"{mutation.rule} / {mutation.name}: anchor matched {found}x in {mutation.path}"
         )
+    void = False
     try:
         target.write_text(text.replace(mutation.old, mutation.new), encoding="utf-8")
-        _, failures = run_suite(workdir, env)
+        _, failures, _ = run_suite(workdir, env)
+        named = clone.named(mutation) if clone else []
+        if clone and named:
+            run_env = {**env, "LANGSYS_CONTRACT_RUN": clone.next_runs(named)}
+            _, more, output = run_suite(workdir, run_env, named)
+            failures += more
+            void = any(marker in output for marker in VOID)
     finally:
         target.write_bytes(original)
     if target.read_bytes() != original:
         raise SystemExit(f"{mutation.path} was not restored byte-for-byte")
-    return failures
+    return failures, void
 
 
 def main(argv: list[str]) -> int:
-    wanted = set(argv[1:])
+    on_clone = "--clone" in argv
+    wanted = {a for a in argv[1:] if a != "--clone"}
     selected = [m for m in MUTATIONS if not wanted or m.rule in wanted]
     for mutation in selected:  # every anchor resolves before anything runs
         count = (ROOT / mutation.path).read_text(encoding="utf-8").count(mutation.old)
@@ -1135,20 +1202,45 @@ def main(argv: list[str]) -> int:
         workdir = Path(scratch)
         env = isolated_copy(workdir, files)
         print(f"mutating an isolated copy at {workdir}; this tree is not touched")
-        uncaught = run_battery(selected, workdir, env)
+        uncaught = run_battery(selected, workdir, env, on_clone)
     if tree_digest(files) != before:
         raise SystemExit("src/, tests/ or pyproject changed in this tree during the run - void")
     return 1 if uncaught else 0
 
 
-def run_battery(selected: list[Mutation], workdir: Path, env: dict[str, str]) -> int:
-    code, failures = run_suite(workdir, env)
+def run_battery(selected: list[Mutation], workdir: Path, env: dict[str, str],
+                on_clone: bool) -> int:
+    clone = discover_clone(workdir, env)
+    contract_names = {n.split("::", 1)[1].split("[")[0] for n in clone.nodes}
+    if on_clone:
+        needed = dict.fromkeys(clone.serves, 1)
+        for mutation in selected:
+            for slug in {clone.seeds[n.split("::", 1)[0]] for n in clone.named(mutation)}:
+                needed[slug] += 1
+        short = {s: (n, clone.serves[s]) for s, n in needed.items() if n > clone.serves[s]}
+        if short:
+            raise SystemExit("seed files serve too few runs for this battery (needed, served): "
+                             f"{short}; raise their RUNS, write the JSON again and reseed")
+    code, failures, _ = run_suite(workdir, env)
     if code != 0 or failures:
         raise SystemExit(f"unmutated suite is not green ({len(failures)} failing); fix that first")
+    if on_clone:
+        code, failures, _ = run_suite(workdir, {**env, "LANGSYS_CONTRACT_RUN": "0"},
+                                      ["-m", "contract"])
+        if code != 0 or failures:
+            raise SystemExit(f"unmutated contract tests are not green ({len(failures)} failing)")
 
-    uncaught = 0
+    uncaught = waiting = 0
     for mutation in selected:
-        failures = apply(mutation, workdir, env)
+        if not on_clone and any(e.split("[")[0] in contract_names for e in mutation.expect):
+            waiting += 1
+            print(f"\n[{mutation.rule}] {mutation.name}  ({mutation.path})")
+            print("  waits on the clone - it names a contract test; run with --clone")
+            continue
+        failures, void = apply(mutation, workdir, env, clone if on_clone else None)
+        if void:
+            raise SystemExit(f"{mutation.rule} / {mutation.name}: its contract run met a world "
+                             "that was used up or not landed - void; reseed and run again")
         missing = [e for e in mutation.expect if not any(e in f for f in failures)]
         caught = bool(failures) and not missing
         uncaught += 0 if caught else 1
@@ -1160,8 +1252,11 @@ def run_battery(selected: list[Mutation], workdir: Path, env: dict[str, str]) ->
         if missing:
             print(f"  named but not failing: {missing}")
     rules = sorted({m.rule for m in selected})
-    print(f"\n{len(selected) - uncaught}/{len(selected)} mutations caught by their named tests, "
+    judged = len(selected) - waiting
+    print(f"\n{judged - uncaught}/{judged} mutations caught by their named tests, "
           f"across {len(rules)} rules: {', '.join(rules)}")
+    if waiting:
+        print(f"{waiting} more name a contract test and wait on --clone")
     return uncaught
 
 

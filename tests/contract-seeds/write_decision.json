@@ -1,0 +1,1110 @@
+{
+    "projects": [
+        {
+            "id": "82000100-0001-4000-8000-000000000000",
+            "title": "py write_decision writer#1 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170001|d9f2dcf8809ccac8237438b803f20dfb9bc3cc19",
+                "device_id": "py-write_decision-1"
+            }
+        },
+        {
+            "id": "82000100-0002-4000-8000-000000000000",
+            "title": "py write_decision writer#2 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170002|61a50bb88786685a2ca48e7586780374437fc5b7",
+                "device_id": "py-write_decision-2"
+            }
+        },
+        {
+            "id": "82000100-0003-4000-8000-000000000000",
+            "title": "py write_decision writer#3 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170003|b787b8055540077b248f6b3a625d4e120d9a438d",
+                "device_id": "py-write_decision-3"
+            }
+        },
+        {
+            "id": "82000100-0004-4000-8000-000000000000",
+            "title": "py write_decision writer#4 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170004|ff66880b7a485ee36fae784ea8f0a7600f71cc04",
+                "device_id": "py-write_decision-4"
+            }
+        },
+        {
+            "id": "82000100-0005-4000-8000-000000000000",
+            "title": "py write_decision writer#5 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170005|496524d6835f3310cebd5d8093062531de033abc",
+                "device_id": "py-write_decision-5"
+            }
+        },
+        {
+            "id": "82000100-0006-4000-8000-000000000000",
+            "title": "py write_decision writer#6 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170006|2e804c74f7c5a8f99decc06c8cee95fce37aa492",
+                "device_id": "py-write_decision-6"
+            }
+        },
+        {
+            "id": "82000100-0007-4000-8000-000000000000",
+            "title": "py write_decision writer#7 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170007|8b8aa014e7703402c0edf731bf20711ae7e23e47",
+                "device_id": "py-write_decision-7"
+            }
+        },
+        {
+            "id": "82000100-0008-4000-8000-000000000000",
+            "title": "py write_decision writer#8 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170008|32c276fcfaed31d1dcc616be3955f33c48438e1b",
+                "device_id": "py-write_decision-8"
+            }
+        },
+        {
+            "id": "82000100-0009-4000-8000-000000000000",
+            "title": "py write_decision writer#9 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170009|969c05104fd98714cfc7af71c69fc8289cb3ec1f",
+                "device_id": "py-write_decision-9"
+            }
+        },
+        {
+            "id": "82000100-000a-4000-8000-000000000000",
+            "title": "py write_decision writer#10 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170010|84a39d980a0f8889a088c036b10050d79160eaa5",
+                "device_id": "py-write_decision-10"
+            }
+        },
+        {
+            "id": "82000100-000b-4000-8000-000000000000",
+            "title": "py write_decision writer#11 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170011|19e3d2c859225e4625c53fd0217bcc14931d5184",
+                "device_id": "py-write_decision-11"
+            }
+        },
+        {
+            "id": "82000100-000c-4000-8000-000000000000",
+            "title": "py write_decision writer#12 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170012|a91b780074deee7ede636db4918614e5575b3384",
+                "device_id": "py-write_decision-12"
+            }
+        },
+        {
+            "id": "82000100-000d-4000-8000-000000000000",
+            "title": "py write_decision writer#13 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170013|c5e8f8c7925b3d1bd3916c4d5a2861954fe210db",
+                "device_id": "py-write_decision-13"
+            }
+        },
+        {
+            "id": "82000100-000e-4000-8000-000000000000",
+            "title": "py write_decision writer#14 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170014|83111996255700edfa09364529618258bd5556b3",
+                "device_id": "py-write_decision-14"
+            }
+        },
+        {
+            "id": "82000100-000f-4000-8000-000000000000",
+            "title": "py write_decision writer#15 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170015|1a996ffb9088c3b1501a91e148987543e3041e73",
+                "device_id": "py-write_decision-15"
+            }
+        },
+        {
+            "id": "82000100-0010-4000-8000-000000000000",
+            "title": "py write_decision writer#16 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170016|35039a600fde367e80d1807953e880b6574ae93e",
+                "device_id": "py-write_decision-16"
+            }
+        },
+        {
+            "id": "82000100-0011-4000-8000-000000000000",
+            "title": "py write_decision writer#17 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170017|fe21e52e7a538ca572e6bad73467b48b640a503d",
+                "device_id": "py-write_decision-17"
+            }
+        },
+        {
+            "id": "82000100-0012-4000-8000-000000000000",
+            "title": "py write_decision writer#18 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170018|2b7707e048b7b2ba2e7ad713f367a0feaafc30db",
+                "device_id": "py-write_decision-18"
+            }
+        },
+        {
+            "id": "82000100-0013-4000-8000-000000000000",
+            "title": "py write_decision writer#19 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170019|3631b50c72caa75e125edb89c668010f57936f10",
+                "device_id": "py-write_decision-19"
+            }
+        },
+        {
+            "id": "82000100-0014-4000-8000-000000000000",
+            "title": "py write_decision writer#20 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170020|ed986c4e5be221d1a1371f765c201811381d6294",
+                "device_id": "py-write_decision-20"
+            }
+        },
+        {
+            "id": "82000100-0015-4000-8000-000000000000",
+            "title": "py write_decision writer#21 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170021|b85f4f2d11a2ee615e922b9f1aea9a211fbc0f91",
+                "device_id": "py-write_decision-21"
+            }
+        },
+        {
+            "id": "82000100-0016-4000-8000-000000000000",
+            "title": "py write_decision writer#22 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170022|15c3bfd58698f3a57b6b47798973a56995bc73e9",
+                "device_id": "py-write_decision-22"
+            }
+        },
+        {
+            "id": "82000100-0017-4000-8000-000000000000",
+            "title": "py write_decision writer#23 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170023|9923053b1df449bffb6ded607637e3f2d9f30f47",
+                "device_id": "py-write_decision-23"
+            }
+        },
+        {
+            "id": "82000100-0018-4000-8000-000000000000",
+            "title": "py write_decision writer#24 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170024|be744ba4c62cf4e7687cbd888ee744cf37cf6318",
+                "device_id": "py-write_decision-24"
+            }
+        },
+        {
+            "id": "82000100-0019-4000-8000-000000000000",
+            "title": "py write_decision listed#1 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170025|33cd488e5b84bdefb8e0e3e2114030ffd057fe90",
+                "device_id": "py-write_decision-25"
+            }
+        },
+        {
+            "id": "82000100-001a-4000-8000-000000000000",
+            "title": "py write_decision listed#2 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170026|b4baac1af2503fe0072d5bca58567e7df56bbb21",
+                "device_id": "py-write_decision-26"
+            }
+        },
+        {
+            "id": "82000100-001b-4000-8000-000000000000",
+            "title": "py write_decision listed#3 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170027|96f95d0fc5d1db004d0f8e462e02026338542d82",
+                "device_id": "py-write_decision-27"
+            }
+        },
+        {
+            "id": "82000100-001c-4000-8000-000000000000",
+            "title": "py write_decision listed#4 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170028|d9a58d53b6466c772c0b128dcb1dad07550f3f3a",
+                "device_id": "py-write_decision-28"
+            }
+        },
+        {
+            "id": "82000100-001d-4000-8000-000000000000",
+            "title": "py write_decision listed#5 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170029|b297a29ddf07045062e4faa0534b3cbb3a32bbc2",
+                "device_id": "py-write_decision-29"
+            }
+        },
+        {
+            "id": "82000100-001e-4000-8000-000000000000",
+            "title": "py write_decision listed#6 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170030|547f24bebb51fd3c2c22fb1924173fbd87d18b31",
+                "device_id": "py-write_decision-30"
+            }
+        },
+        {
+            "id": "82000100-001f-4000-8000-000000000000",
+            "title": "py write_decision listed#7 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170031|51739364b00004b0a257b8e6701353e43014e824",
+                "device_id": "py-write_decision-31"
+            }
+        },
+        {
+            "id": "82000100-0020-4000-8000-000000000000",
+            "title": "py write_decision listed#8 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170032|a4df393c8740bd137ec44b29a7e897649416f9f1",
+                "device_id": "py-write_decision-32"
+            }
+        },
+        {
+            "id": "82000100-0021-4000-8000-000000000000",
+            "title": "py write_decision listed#9 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170033|01d91d16095ab31d18a3eece579dff2bc1bd5c14",
+                "device_id": "py-write_decision-33"
+            }
+        },
+        {
+            "id": "82000100-0022-4000-8000-000000000000",
+            "title": "py write_decision listed#10 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170034|21c416f1e3813bbe09f0b3699b919f4f94172517",
+                "device_id": "py-write_decision-34"
+            }
+        },
+        {
+            "id": "82000100-0023-4000-8000-000000000000",
+            "title": "py write_decision listed#11 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170035|ba4a070be1d49369d5cf6776cfd8487db0bbdc6a",
+                "device_id": "py-write_decision-35"
+            }
+        },
+        {
+            "id": "82000100-0024-4000-8000-000000000000",
+            "title": "py write_decision listed#12 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170036|8e53fbe621ec62ca4d7abfa59dd2d6a517819f4f",
+                "device_id": "py-write_decision-36"
+            }
+        },
+        {
+            "id": "82000100-0025-4000-8000-000000000000",
+            "title": "py write_decision listed#13 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170037|bbfbcdde67180ea5aa5fcba5f29cb83760c5f908",
+                "device_id": "py-write_decision-37"
+            }
+        },
+        {
+            "id": "82000100-0026-4000-8000-000000000000",
+            "title": "py write_decision listed#14 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170038|ee056f5bf452127beaa1d838ae84bc5f32d38d85",
+                "device_id": "py-write_decision-38"
+            }
+        },
+        {
+            "id": "82000100-0027-4000-8000-000000000000",
+            "title": "py write_decision listed#15 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170039|e3ac6e876501915ea92cc98b8e8d58a603e66332",
+                "device_id": "py-write_decision-39"
+            }
+        },
+        {
+            "id": "82000100-0028-4000-8000-000000000000",
+            "title": "py write_decision listed#16 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170040|4d48281e9f6efe41e5bd2045dcc86eadf7e48c4f",
+                "device_id": "py-write_decision-40"
+            }
+        },
+        {
+            "id": "82000100-0029-4000-8000-000000000000",
+            "title": "py write_decision off-list#1 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170041|eb38c40e6c493d8b44f641fe085e0151790736a0",
+                "device_id": "py-write_decision-41"
+            }
+        },
+        {
+            "id": "82000100-002a-4000-8000-000000000000",
+            "title": "py write_decision off-list#2 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170042|f4abd7828abd5557e436b089dbef2588b54bcde1",
+                "device_id": "py-write_decision-42"
+            }
+        },
+        {
+            "id": "82000100-002b-4000-8000-000000000000",
+            "title": "py write_decision off-list#3 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170043|54546370efb89cc27261ca2d58ed1148ead4ae16",
+                "device_id": "py-write_decision-43"
+            }
+        },
+        {
+            "id": "82000100-002c-4000-8000-000000000000",
+            "title": "py write_decision off-list#4 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170044|35e8fe8ea95cbbcb885e49c436eba5ef9fd3f344",
+                "device_id": "py-write_decision-44"
+            }
+        },
+        {
+            "id": "82000100-002d-4000-8000-000000000000",
+            "title": "py write_decision off-list#5 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170045|f0a249e4f927685d27ec06fd53d69606077583b5",
+                "device_id": "py-write_decision-45"
+            }
+        },
+        {
+            "id": "82000100-002e-4000-8000-000000000000",
+            "title": "py write_decision off-list#6 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170046|8203fa4a9f5b6ebc93d21ef91c10f61733135aca",
+                "device_id": "py-write_decision-46"
+            }
+        },
+        {
+            "id": "82000100-002f-4000-8000-000000000000",
+            "title": "py write_decision off-list#7 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170047|a75810efa332fa333c281e7ae5c439ee9fbdbe28",
+                "device_id": "py-write_decision-47"
+            }
+        },
+        {
+            "id": "82000100-0030-4000-8000-000000000000",
+            "title": "py write_decision off-list#8 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170048|f65b26541491e02cb95e62c58f8390b42307fe78",
+                "device_id": "py-write_decision-48"
+            }
+        },
+        {
+            "id": "82000100-0031-4000-8000-000000000000",
+            "title": "py write_decision off-list#9 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170049|b4ed43c05e2cdfb6aaeae7acb7c0f3c14465e215",
+                "device_id": "py-write_decision-49"
+            }
+        },
+        {
+            "id": "82000100-0032-4000-8000-000000000000",
+            "title": "py write_decision off-list#10 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170050|a6698cf83da2346c416174bcc15d7842377fe464",
+                "device_id": "py-write_decision-50"
+            }
+        },
+        {
+            "id": "82000100-0033-4000-8000-000000000000",
+            "title": "py write_decision off-list#11 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170051|98768ae659aaf755afbbd6e0e622a1a8a41bc054",
+                "device_id": "py-write_decision-51"
+            }
+        },
+        {
+            "id": "82000100-0034-4000-8000-000000000000",
+            "title": "py write_decision off-list#12 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170052|f326f01b946302ed3917041b51ff7bb8d81673e6",
+                "device_id": "py-write_decision-52"
+            }
+        },
+        {
+            "id": "82000100-0035-4000-8000-000000000000",
+            "title": "py write_decision off-list#13 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170053|b2b27ad20c042d4766fc40fe80ea16bb8954503e",
+                "device_id": "py-write_decision-53"
+            }
+        },
+        {
+            "id": "82000100-0036-4000-8000-000000000000",
+            "title": "py write_decision off-list#14 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170054|020296e32b7a1fc2739bcbcb5bc2106a2c1e3759",
+                "device_id": "py-write_decision-54"
+            }
+        },
+        {
+            "id": "82000100-0037-4000-8000-000000000000",
+            "title": "py write_decision off-list#15 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170055|7186d9810e1d1ee767523e4215cf8b42821e729e",
+                "device_id": "py-write_decision-55"
+            }
+        },
+        {
+            "id": "82000100-0038-4000-8000-000000000000",
+            "title": "py write_decision off-list#16 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "170056|76bbf56d0a4a22ae1517aa0d064bbd908772c159",
+                "device_id": "py-write_decision-56"
+            }
+        }
+    ],
+    "keys": [
+        {
+            "id": "82000101-0001-4000-8000-000000000000",
+            "key": "py-write_decision-1-write",
+            "type": "write",
+            "project": "82000100-0001-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0002-4000-8000-000000000000",
+            "key": "py-write_decision-2-write",
+            "type": "write",
+            "project": "82000100-0002-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0003-4000-8000-000000000000",
+            "key": "py-write_decision-3-write",
+            "type": "write",
+            "project": "82000100-0003-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0004-4000-8000-000000000000",
+            "key": "py-write_decision-4-write",
+            "type": "write",
+            "project": "82000100-0004-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0005-4000-8000-000000000000",
+            "key": "py-write_decision-5-write",
+            "type": "write",
+            "project": "82000100-0005-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0006-4000-8000-000000000000",
+            "key": "py-write_decision-6-write",
+            "type": "write",
+            "project": "82000100-0006-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0007-4000-8000-000000000000",
+            "key": "py-write_decision-7-write",
+            "type": "write",
+            "project": "82000100-0007-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0008-4000-8000-000000000000",
+            "key": "py-write_decision-8-write",
+            "type": "write",
+            "project": "82000100-0008-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0009-4000-8000-000000000000",
+            "key": "py-write_decision-9-write",
+            "type": "write",
+            "project": "82000100-0009-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-000a-4000-8000-000000000000",
+            "key": "py-write_decision-10-write",
+            "type": "write",
+            "project": "82000100-000a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-000b-4000-8000-000000000000",
+            "key": "py-write_decision-11-write",
+            "type": "write",
+            "project": "82000100-000b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-000c-4000-8000-000000000000",
+            "key": "py-write_decision-12-write",
+            "type": "write",
+            "project": "82000100-000c-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-000d-4000-8000-000000000000",
+            "key": "py-write_decision-13-write",
+            "type": "write",
+            "project": "82000100-000d-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-000e-4000-8000-000000000000",
+            "key": "py-write_decision-14-write",
+            "type": "write",
+            "project": "82000100-000e-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-000f-4000-8000-000000000000",
+            "key": "py-write_decision-15-write",
+            "type": "write",
+            "project": "82000100-000f-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0010-4000-8000-000000000000",
+            "key": "py-write_decision-16-write",
+            "type": "write",
+            "project": "82000100-0010-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0011-4000-8000-000000000000",
+            "key": "py-write_decision-17-write",
+            "type": "write",
+            "project": "82000100-0011-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0012-4000-8000-000000000000",
+            "key": "py-write_decision-18-write",
+            "type": "write",
+            "project": "82000100-0012-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0013-4000-8000-000000000000",
+            "key": "py-write_decision-19-write",
+            "type": "write",
+            "project": "82000100-0013-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0014-4000-8000-000000000000",
+            "key": "py-write_decision-20-write",
+            "type": "write",
+            "project": "82000100-0014-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0015-4000-8000-000000000000",
+            "key": "py-write_decision-21-write",
+            "type": "write",
+            "project": "82000100-0015-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0016-4000-8000-000000000000",
+            "key": "py-write_decision-22-write",
+            "type": "write",
+            "project": "82000100-0016-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0017-4000-8000-000000000000",
+            "key": "py-write_decision-23-write",
+            "type": "write",
+            "project": "82000100-0017-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0018-4000-8000-000000000000",
+            "key": "py-write_decision-24-write",
+            "type": "write",
+            "project": "82000100-0018-4000-8000-000000000000"
+        },
+        {
+            "id": "82000101-0019-4000-8000-000000000000",
+            "key": "py-write_decision-25-ip",
+            "type": "ip_write",
+            "project": "82000100-0019-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.25"
+            ]
+        },
+        {
+            "id": "82000101-001a-4000-8000-000000000000",
+            "key": "py-write_decision-26-ip",
+            "type": "ip_write",
+            "project": "82000100-001a-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.26"
+            ]
+        },
+        {
+            "id": "82000101-001b-4000-8000-000000000000",
+            "key": "py-write_decision-27-ip",
+            "type": "ip_write",
+            "project": "82000100-001b-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.27"
+            ]
+        },
+        {
+            "id": "82000101-001c-4000-8000-000000000000",
+            "key": "py-write_decision-28-ip",
+            "type": "ip_write",
+            "project": "82000100-001c-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.28"
+            ]
+        },
+        {
+            "id": "82000101-001d-4000-8000-000000000000",
+            "key": "py-write_decision-29-ip",
+            "type": "ip_write",
+            "project": "82000100-001d-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.29"
+            ]
+        },
+        {
+            "id": "82000101-001e-4000-8000-000000000000",
+            "key": "py-write_decision-30-ip",
+            "type": "ip_write",
+            "project": "82000100-001e-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.30"
+            ]
+        },
+        {
+            "id": "82000101-001f-4000-8000-000000000000",
+            "key": "py-write_decision-31-ip",
+            "type": "ip_write",
+            "project": "82000100-001f-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.31"
+            ]
+        },
+        {
+            "id": "82000101-0020-4000-8000-000000000000",
+            "key": "py-write_decision-32-ip",
+            "type": "ip_write",
+            "project": "82000100-0020-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.32"
+            ]
+        },
+        {
+            "id": "82000101-0021-4000-8000-000000000000",
+            "key": "py-write_decision-33-ip",
+            "type": "ip_write",
+            "project": "82000100-0021-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.33"
+            ]
+        },
+        {
+            "id": "82000101-0022-4000-8000-000000000000",
+            "key": "py-write_decision-34-ip",
+            "type": "ip_write",
+            "project": "82000100-0022-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.34"
+            ]
+        },
+        {
+            "id": "82000101-0023-4000-8000-000000000000",
+            "key": "py-write_decision-35-ip",
+            "type": "ip_write",
+            "project": "82000100-0023-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.35"
+            ]
+        },
+        {
+            "id": "82000101-0024-4000-8000-000000000000",
+            "key": "py-write_decision-36-ip",
+            "type": "ip_write",
+            "project": "82000100-0024-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.36"
+            ]
+        },
+        {
+            "id": "82000101-0025-4000-8000-000000000000",
+            "key": "py-write_decision-37-ip",
+            "type": "ip_write",
+            "project": "82000100-0025-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.37"
+            ]
+        },
+        {
+            "id": "82000101-0026-4000-8000-000000000000",
+            "key": "py-write_decision-38-ip",
+            "type": "ip_write",
+            "project": "82000100-0026-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.38"
+            ]
+        },
+        {
+            "id": "82000101-0027-4000-8000-000000000000",
+            "key": "py-write_decision-39-ip",
+            "type": "ip_write",
+            "project": "82000100-0027-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.39"
+            ]
+        },
+        {
+            "id": "82000101-0028-4000-8000-000000000000",
+            "key": "py-write_decision-40-ip",
+            "type": "ip_write",
+            "project": "82000100-0028-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.2.40"
+            ]
+        },
+        {
+            "id": "82000101-0029-4000-8000-000000000000",
+            "key": "py-write_decision-41-ip",
+            "type": "ip_write",
+            "project": "82000100-0029-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.41"
+            ]
+        },
+        {
+            "id": "82000101-002a-4000-8000-000000000000",
+            "key": "py-write_decision-42-ip",
+            "type": "ip_write",
+            "project": "82000100-002a-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.42"
+            ]
+        },
+        {
+            "id": "82000101-002b-4000-8000-000000000000",
+            "key": "py-write_decision-43-ip",
+            "type": "ip_write",
+            "project": "82000100-002b-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.43"
+            ]
+        },
+        {
+            "id": "82000101-002c-4000-8000-000000000000",
+            "key": "py-write_decision-44-ip",
+            "type": "ip_write",
+            "project": "82000100-002c-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.44"
+            ]
+        },
+        {
+            "id": "82000101-002d-4000-8000-000000000000",
+            "key": "py-write_decision-45-ip",
+            "type": "ip_write",
+            "project": "82000100-002d-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.45"
+            ]
+        },
+        {
+            "id": "82000101-002e-4000-8000-000000000000",
+            "key": "py-write_decision-46-ip",
+            "type": "ip_write",
+            "project": "82000100-002e-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.46"
+            ]
+        },
+        {
+            "id": "82000101-002f-4000-8000-000000000000",
+            "key": "py-write_decision-47-ip",
+            "type": "ip_write",
+            "project": "82000100-002f-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.47"
+            ]
+        },
+        {
+            "id": "82000101-0030-4000-8000-000000000000",
+            "key": "py-write_decision-48-ip",
+            "type": "ip_write",
+            "project": "82000100-0030-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.48"
+            ]
+        },
+        {
+            "id": "82000101-0031-4000-8000-000000000000",
+            "key": "py-write_decision-49-ip",
+            "type": "ip_write",
+            "project": "82000100-0031-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.49"
+            ]
+        },
+        {
+            "id": "82000101-0032-4000-8000-000000000000",
+            "key": "py-write_decision-50-ip",
+            "type": "ip_write",
+            "project": "82000100-0032-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.50"
+            ]
+        },
+        {
+            "id": "82000101-0033-4000-8000-000000000000",
+            "key": "py-write_decision-51-ip",
+            "type": "ip_write",
+            "project": "82000100-0033-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.51"
+            ]
+        },
+        {
+            "id": "82000101-0034-4000-8000-000000000000",
+            "key": "py-write_decision-52-ip",
+            "type": "ip_write",
+            "project": "82000100-0034-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.52"
+            ]
+        },
+        {
+            "id": "82000101-0035-4000-8000-000000000000",
+            "key": "py-write_decision-53-ip",
+            "type": "ip_write",
+            "project": "82000100-0035-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.53"
+            ]
+        },
+        {
+            "id": "82000101-0036-4000-8000-000000000000",
+            "key": "py-write_decision-54-ip",
+            "type": "ip_write",
+            "project": "82000100-0036-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.54"
+            ]
+        },
+        {
+            "id": "82000101-0037-4000-8000-000000000000",
+            "key": "py-write_decision-55-ip",
+            "type": "ip_write",
+            "project": "82000100-0037-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.55"
+            ]
+        },
+        {
+            "id": "82000101-0038-4000-8000-000000000000",
+            "key": "py-write_decision-56-ip",
+            "type": "ip_write",
+            "project": "82000100-0038-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.102.56"
+            ]
+        }
+    ]
+}

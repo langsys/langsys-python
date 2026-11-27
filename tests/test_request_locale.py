@@ -1,7 +1,7 @@
 """SRV-6 - the request's locale, and GATE-10's producing half - the page it was rendered into.
 
 SRV-6 is decided in-process from what the request carries and the project's locales, so it is
-graded `n/a (pure)`; the client-level test reads those locales from the contract double.
+graded `n/a (pure)`; the client-level tests read those locales from the SDK test clone.
 """
 
 from __future__ import annotations
@@ -10,12 +10,13 @@ import re
 from unittest.mock import patch
 
 import pytest
-from contract import PROJECT, WRITE_KEY, world
+from clone import Clone, World
 
 from langsys import LangsysClient, resolve_request_locale
 from langsys.cache import MemoryCache
 from langsys.catalog import CatalogFetch
 
+SEED = "request_locale"
 SUPPORTED = ["en-us", "it-it", "es-es"]
 
 
@@ -107,10 +108,14 @@ def test_SRV6_control_with_nothing_from_the_framework_the_sdk_negotiates_and_var
         assert "Accept-Language" in choice.vary
 
 
-def test_SRV6_the_client_maps_a_bare_framework_language_through_the_project(double):
-    double.seed(world(target_locales=["it-it", "es-es"]))
-    c = LangsysClient(WRITE_KEY, PROJECT, api_url=double.base_url, cache=MemoryCache(),
-                      debounce=0, auto_flush=False)
+def _client(clone: Clone, world: World) -> LangsysClient:
+    return LangsysClient(world.key("read"), world.project(), api_url=clone.base_url,
+                         cache=MemoryCache(), debounce=0, auto_flush=False)
+
+
+@pytest.mark.contract
+def test_SRV6_the_client_maps_a_bare_framework_language_through_the_project(clone):
+    c = _client(clone, clone.world("es-and-it"))
     choice = c.resolve_request_locale(framework="es", accept_language="it")
     assert (choice.locale, choice.source, choice.vary) == ("es-es", "framework", ())
 
@@ -118,10 +123,9 @@ def test_SRV6_the_client_maps_a_bare_framework_language_through_the_project(doub
 # -- the client reads the project's locales -------------------------------------------------------
 
 
-def test_SRV6_the_client_validates_against_the_projects_own_locales(double):
-    double.seed(world(target_locales=["it-it"]))
-    c = LangsysClient(WRITE_KEY, PROJECT, api_url=double.base_url, cache=MemoryCache(),
-                      debounce=0, auto_flush=False)
+@pytest.mark.contract
+def test_SRV6_the_client_validates_against_the_projects_own_locales(clone):
+    c = _client(clone, clone.world("it-only"))
     assert c.resolve_request_locale(url="it-it").locale.lower() == "it-it"
     served = c.resolve_request_locale(url="es-es", accept_language="es")
     assert (served.locale.lower(), served.source) == ("en-us", "base"), "es-es is not a project locale"

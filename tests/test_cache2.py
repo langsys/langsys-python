@@ -1,8 +1,8 @@
 """CACHE-2 - a failed catalog fetch is remembered for a bounded window; REG-13 - a miss is decided
 only against a catalog that has loaded.
 
-CACHE-2's degradation and window run against the contract double: a lookup inside the window
-renders source, which it could not if the SDK had fetched again, because the double's fault is
+CACHE-2's degradation and window run against the SDK test clone (spec CONF-2): a lookup inside the
+window renders source, which it could not if the SDK had fetched again, because the case's fault is
 consumed and a second fetch would return the catalog. The window's growth and the sharing of
 concurrent fetches are proven at the SDK's own seam.
 """
@@ -14,13 +14,13 @@ import time
 from unittest.mock import patch
 
 import pytest
-from contract import PROJECT, WRITE_KEY, world
+from clone import Clone, World
 
 from langsys import LangsysClient
 from langsys.cache import MemoryCache
 from langsys.catalog import CatalogFetch, CatalogStore
 
-CATALOG = [{"category": "UI", "phrase": "Checkout", "translations": {"it-it": "Cassa"}}]
+SEED = "cache"
 FAIL_ONCE = [{"method": "GET", "path": "/translations", "status": 500}]
 
 
@@ -41,46 +41,47 @@ def clock():
         yield c
 
 
-def client(double, **kw) -> LangsysClient:
-    return LangsysClient(WRITE_KEY, PROJECT, api_url=double.base_url, cache=MemoryCache(),
-                         base_locale="en-us", debounce=0, auto_flush=False, **kw)
+def client(clone: Clone, world: World, **kw) -> LangsysClient:
+    return LangsysClient(world.key("write"), world.project(), api_url=clone.base_url,
+                         cache=MemoryCache(), base_locale="en-us", debounce=0, auto_flush=False, **kw)
 
 
 def t(c: LangsysClient) -> str:
     return c.translate("Checkout", category="UI", locale="it-it")
 
 
-# -- against the contract double -------------------------------------------------------------------
+# -- on the SDK test clone --------------------------------------------------------------------------
 
 
-def test_CACHE2_a_lookup_inside_the_window_renders_source_without_fetching_again(double, clock):
-    double.seed(world(phrases=CATALOG, faults=FAIL_ONCE))
-    c = client(double)
+@pytest.mark.contract
+def test_CACHE2_a_lookup_inside_the_window_renders_source_without_fetching_again(clone, clock):
+    world = clone.world("translated", faults=FAIL_ONCE)
+    c = client(clone, world)
     assert t(c) == "Checkout", "control: the first fetch fails and degrades"
     clock.now += 1.0
-    assert t(c) == "Checkout", "fetched again inside the window (the double would have answered)"
+    assert t(c) == "Checkout", "fetched again inside the window (the API would have answered)"
     assert not c.has_pending, "WIRE-4: nothing is queued inside the window"
 
 
-def test_CACHE2_after_the_window_the_translation_renders(double, clock):
-    double.seed(world(phrases=CATALOG, faults=FAIL_ONCE))
-    c = client(double)
+@pytest.mark.contract
+def test_CACHE2_after_the_window_the_translation_renders(clone, clock):
+    world = clone.world("translated", faults=FAIL_ONCE)
+    c = client(clone, world)
     t(c)
     clock.now += 3.5
     assert t(c) == "Cassa"
 
 
-def test_CACHE2_control_a_successful_first_fetch_renders_at_once(double, clock):
-    double.seed(world(phrases=CATALOG))
-    assert t(client(double)) == "Cassa"
+@pytest.mark.contract
+def test_CACHE2_control_a_successful_first_fetch_renders_at_once(clone, clock):
+    world = clone.world("translated")
+    assert t(client(clone, world)) == "Cassa"
 
 
-def test_CACHE2_the_window_is_per_locale(double, clock):
-    double.seed(world(
-        phrases=[{"category": "UI", "phrase": "Checkout", "translations": {"it-it": "Cassa", "es-es": "Caja"}}],
-        faults=FAIL_ONCE,
-    ))
-    c = client(double)
+@pytest.mark.contract
+def test_CACHE2_the_window_is_per_locale(clone, clock):
+    world = clone.world("translated", faults=FAIL_ONCE)
+    c = client(clone, world)
     assert t(c) == "Checkout"
     assert c.translate("Checkout", category="UI", locale="es-es") == "Caja"
 

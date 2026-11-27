@@ -1,0 +1,678 @@
+{
+    "projects": [
+        {
+            "id": "82000200-0001-4000-8000-000000000000",
+            "title": "py messages writer#1 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170501|e220718af29ed28ecf32ed2a1b8f0e4f82294cfd",
+                "device_id": "py-messages-1"
+            }
+        },
+        {
+            "id": "82000200-0002-4000-8000-000000000000",
+            "title": "py messages writer#2 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170502|1ed8e6216b7b3520ca8b0c3e69f70787d70a5174",
+                "device_id": "py-messages-2"
+            }
+        },
+        {
+            "id": "82000200-0003-4000-8000-000000000000",
+            "title": "py messages writer#3 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170503|d3d9ab89ce3278c760d3be61a206f1b5046e8bc2",
+                "device_id": "py-messages-3"
+            }
+        },
+        {
+            "id": "82000200-0004-4000-8000-000000000000",
+            "title": "py messages writer#4 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170504|3b5c0d35c4977a57d434fadc3b410627b8caf995",
+                "device_id": "py-messages-4"
+            }
+        },
+        {
+            "id": "82000200-0005-4000-8000-000000000000",
+            "title": "py messages writer#5 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170505|947aed0dbacd9f06db308fccfc0257bcf252af93",
+                "device_id": "py-messages-5"
+            }
+        },
+        {
+            "id": "82000200-0006-4000-8000-000000000000",
+            "title": "py messages writer#6 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170506|984c3583ec78dc72d608e998ba24a506343e6c20",
+                "device_id": "py-messages-6"
+            }
+        },
+        {
+            "id": "82000200-0007-4000-8000-000000000000",
+            "title": "py messages writer#7 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170507|fad41087596592c8399a7b53d8e1cfd8ac2d28fa",
+                "device_id": "py-messages-7"
+            }
+        },
+        {
+            "id": "82000200-0008-4000-8000-000000000000",
+            "title": "py messages writer#8 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170508|0b3bcecdf437bc934767edc9eedde6e2eb8fdc9e",
+                "device_id": "py-messages-8"
+            }
+        },
+        {
+            "id": "82000200-0009-4000-8000-000000000000",
+            "title": "py messages writer#9 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170509|0a100199fb5244d130b96b8b7a250f213ab77e87",
+                "device_id": "py-messages-9"
+            }
+        },
+        {
+            "id": "82000200-000a-4000-8000-000000000000",
+            "title": "py messages writer#10 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170510|85d36242330f0511135d3f3f792ffb30a888acb0",
+                "device_id": "py-messages-10"
+            }
+        },
+        {
+            "id": "82000200-000b-4000-8000-000000000000",
+            "title": "py messages writer#11 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170511|78a1c0a041aa1dc7b4d78903c0b4fdb46e48c161",
+                "device_id": "py-messages-11"
+            }
+        },
+        {
+            "id": "82000200-000c-4000-8000-000000000000",
+            "title": "py messages writer#12 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170512|ca2df49533464253d68b6361f03674f3791e5d6c",
+                "device_id": "py-messages-12"
+            }
+        },
+        {
+            "id": "82000200-000d-4000-8000-000000000000",
+            "title": "py messages writer#13 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170513|e46be371db6e8a36a3116660a9d1f1aa0d0509c3",
+                "device_id": "py-messages-13"
+            }
+        },
+        {
+            "id": "82000200-000e-4000-8000-000000000000",
+            "title": "py messages writer#14 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170514|3d0d65a8edb743635432f98bdbdd85b2b0612a22",
+                "device_id": "py-messages-14"
+            }
+        },
+        {
+            "id": "82000200-000f-4000-8000-000000000000",
+            "title": "py messages writer#15 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170515|95be093e804aa65e14d682392609facaded0da23",
+                "device_id": "py-messages-15"
+            }
+        },
+        {
+            "id": "82000200-0010-4000-8000-000000000000",
+            "title": "py messages writer#16 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170516|6a3067b11e826dca92a6d9dec16dfc906825fd3a",
+                "device_id": "py-messages-16"
+            }
+        },
+        {
+            "id": "82000200-0011-4000-8000-000000000000",
+            "title": "py messages writer#17 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170517|852e6e370ec1709dbfacaf57641d5fe6851d586f",
+                "device_id": "py-messages-17"
+            }
+        },
+        {
+            "id": "82000200-0012-4000-8000-000000000000",
+            "title": "py messages writer#18 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170518|9aaa4de4b04443a80be795edf8dd6da21ea039f8",
+                "device_id": "py-messages-18"
+            }
+        },
+        {
+            "id": "82000200-0013-4000-8000-000000000000",
+            "title": "py messages listed#1 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "Errors",
+                    "phrase": "The name field is required."
+                }
+            ],
+            "user": {
+                "token": "170519|5d47f348f10afd764c6faee98473b8ca6f0e8466",
+                "device_id": "py-messages-19"
+            }
+        },
+        {
+            "id": "82000200-0014-4000-8000-000000000000",
+            "title": "py messages listed#2 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "Errors",
+                    "phrase": "The name field is required."
+                }
+            ],
+            "user": {
+                "token": "170520|620990ab52a1e41acae7ed49c19c0d53b8e56643",
+                "device_id": "py-messages-20"
+            }
+        },
+        {
+            "id": "82000200-0015-4000-8000-000000000000",
+            "title": "py messages listed#3 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "Errors",
+                    "phrase": "The name field is required."
+                }
+            ],
+            "user": {
+                "token": "170521|526f175608002c9102b7982a73955a6be5334e14",
+                "device_id": "py-messages-21"
+            }
+        },
+        {
+            "id": "82000200-0016-4000-8000-000000000000",
+            "title": "py messages listed#4 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "Errors",
+                    "phrase": "The name field is required."
+                }
+            ],
+            "user": {
+                "token": "170522|69ed1fe1e35a13a5a0b29955bfcaf288927b6b0e",
+                "device_id": "py-messages-22"
+            }
+        },
+        {
+            "id": "82000200-0017-4000-8000-000000000000",
+            "title": "py messages listed#5 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "Errors",
+                    "phrase": "The name field is required."
+                }
+            ],
+            "user": {
+                "token": "170523|5affbdda0f942de3f6c635bcafd83c2197a2a806",
+                "device_id": "py-messages-23"
+            }
+        },
+        {
+            "id": "82000200-0018-4000-8000-000000000000",
+            "title": "py messages listed#6 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "Errors",
+                    "phrase": "The name field is required."
+                }
+            ],
+            "user": {
+                "token": "170524|d55524fa5d429a813d36cf1c333f5eae6b42052d",
+                "device_id": "py-messages-24"
+            }
+        },
+        {
+            "id": "82000200-0019-4000-8000-000000000000",
+            "title": "py messages off-list#1 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170525|afb1757a28d6d3f339d2c7f3446bbbf522891693",
+                "device_id": "py-messages-25"
+            }
+        },
+        {
+            "id": "82000200-001a-4000-8000-000000000000",
+            "title": "py messages off-list#2 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170526|0885d0db36c344d07c19db3cd5fb3d29d1c6662c",
+                "device_id": "py-messages-26"
+            }
+        },
+        {
+            "id": "82000200-001b-4000-8000-000000000000",
+            "title": "py messages off-list#3 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170527|c23db13d4ba9c3904716151a361318d8d51c5827",
+                "device_id": "py-messages-27"
+            }
+        },
+        {
+            "id": "82000200-001c-4000-8000-000000000000",
+            "title": "py messages off-list#4 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170528|084c68964605a7030720f1568ba88c681c7d8a33",
+                "device_id": "py-messages-28"
+            }
+        },
+        {
+            "id": "82000200-001d-4000-8000-000000000000",
+            "title": "py messages off-list#5 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170529|6abc714a5b8fca02ea07a832c9063ffb712e7100",
+                "device_id": "py-messages-29"
+            }
+        },
+        {
+            "id": "82000200-001e-4000-8000-000000000000",
+            "title": "py messages off-list#6 p1",
+            "target_locales": [
+                "es-es"
+            ],
+            "user": {
+                "token": "170530|de3dfe065ce12e526ad1a5224063cbc697b49a2e",
+                "device_id": "py-messages-30"
+            }
+        }
+    ],
+    "keys": [
+        {
+            "id": "82000201-0001-4000-8000-000000000000",
+            "key": "py-messages-1-write",
+            "type": "write",
+            "project": "82000200-0001-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0002-4000-8000-000000000000",
+            "key": "py-messages-1-read",
+            "type": "read",
+            "project": "82000200-0001-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0003-4000-8000-000000000000",
+            "key": "py-messages-2-write",
+            "type": "write",
+            "project": "82000200-0002-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0004-4000-8000-000000000000",
+            "key": "py-messages-2-read",
+            "type": "read",
+            "project": "82000200-0002-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0005-4000-8000-000000000000",
+            "key": "py-messages-3-write",
+            "type": "write",
+            "project": "82000200-0003-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0006-4000-8000-000000000000",
+            "key": "py-messages-3-read",
+            "type": "read",
+            "project": "82000200-0003-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0007-4000-8000-000000000000",
+            "key": "py-messages-4-write",
+            "type": "write",
+            "project": "82000200-0004-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0008-4000-8000-000000000000",
+            "key": "py-messages-4-read",
+            "type": "read",
+            "project": "82000200-0004-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0009-4000-8000-000000000000",
+            "key": "py-messages-5-write",
+            "type": "write",
+            "project": "82000200-0005-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-000a-4000-8000-000000000000",
+            "key": "py-messages-5-read",
+            "type": "read",
+            "project": "82000200-0005-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-000b-4000-8000-000000000000",
+            "key": "py-messages-6-write",
+            "type": "write",
+            "project": "82000200-0006-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-000c-4000-8000-000000000000",
+            "key": "py-messages-6-read",
+            "type": "read",
+            "project": "82000200-0006-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-000d-4000-8000-000000000000",
+            "key": "py-messages-7-write",
+            "type": "write",
+            "project": "82000200-0007-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-000e-4000-8000-000000000000",
+            "key": "py-messages-7-read",
+            "type": "read",
+            "project": "82000200-0007-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-000f-4000-8000-000000000000",
+            "key": "py-messages-8-write",
+            "type": "write",
+            "project": "82000200-0008-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0010-4000-8000-000000000000",
+            "key": "py-messages-8-read",
+            "type": "read",
+            "project": "82000200-0008-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0011-4000-8000-000000000000",
+            "key": "py-messages-9-write",
+            "type": "write",
+            "project": "82000200-0009-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0012-4000-8000-000000000000",
+            "key": "py-messages-9-read",
+            "type": "read",
+            "project": "82000200-0009-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0013-4000-8000-000000000000",
+            "key": "py-messages-10-write",
+            "type": "write",
+            "project": "82000200-000a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0014-4000-8000-000000000000",
+            "key": "py-messages-10-read",
+            "type": "read",
+            "project": "82000200-000a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0015-4000-8000-000000000000",
+            "key": "py-messages-11-write",
+            "type": "write",
+            "project": "82000200-000b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0016-4000-8000-000000000000",
+            "key": "py-messages-11-read",
+            "type": "read",
+            "project": "82000200-000b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0017-4000-8000-000000000000",
+            "key": "py-messages-12-write",
+            "type": "write",
+            "project": "82000200-000c-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0018-4000-8000-000000000000",
+            "key": "py-messages-12-read",
+            "type": "read",
+            "project": "82000200-000c-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0019-4000-8000-000000000000",
+            "key": "py-messages-13-write",
+            "type": "write",
+            "project": "82000200-000d-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-001a-4000-8000-000000000000",
+            "key": "py-messages-13-read",
+            "type": "read",
+            "project": "82000200-000d-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-001b-4000-8000-000000000000",
+            "key": "py-messages-14-write",
+            "type": "write",
+            "project": "82000200-000e-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-001c-4000-8000-000000000000",
+            "key": "py-messages-14-read",
+            "type": "read",
+            "project": "82000200-000e-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-001d-4000-8000-000000000000",
+            "key": "py-messages-15-write",
+            "type": "write",
+            "project": "82000200-000f-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-001e-4000-8000-000000000000",
+            "key": "py-messages-15-read",
+            "type": "read",
+            "project": "82000200-000f-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-001f-4000-8000-000000000000",
+            "key": "py-messages-16-write",
+            "type": "write",
+            "project": "82000200-0010-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0020-4000-8000-000000000000",
+            "key": "py-messages-16-read",
+            "type": "read",
+            "project": "82000200-0010-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0021-4000-8000-000000000000",
+            "key": "py-messages-17-write",
+            "type": "write",
+            "project": "82000200-0011-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0022-4000-8000-000000000000",
+            "key": "py-messages-17-read",
+            "type": "read",
+            "project": "82000200-0011-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0023-4000-8000-000000000000",
+            "key": "py-messages-18-write",
+            "type": "write",
+            "project": "82000200-0012-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0024-4000-8000-000000000000",
+            "key": "py-messages-18-read",
+            "type": "read",
+            "project": "82000200-0012-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0025-4000-8000-000000000000",
+            "key": "py-messages-19-write",
+            "type": "write",
+            "project": "82000200-0013-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0026-4000-8000-000000000000",
+            "key": "py-messages-20-write",
+            "type": "write",
+            "project": "82000200-0014-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0027-4000-8000-000000000000",
+            "key": "py-messages-21-write",
+            "type": "write",
+            "project": "82000200-0015-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0028-4000-8000-000000000000",
+            "key": "py-messages-22-write",
+            "type": "write",
+            "project": "82000200-0016-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-0029-4000-8000-000000000000",
+            "key": "py-messages-23-write",
+            "type": "write",
+            "project": "82000200-0017-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-002a-4000-8000-000000000000",
+            "key": "py-messages-24-write",
+            "type": "write",
+            "project": "82000200-0018-4000-8000-000000000000"
+        },
+        {
+            "id": "82000201-002b-4000-8000-000000000000",
+            "key": "py-messages-25-ip",
+            "type": "ip_write",
+            "project": "82000200-0019-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.104.25"
+            ]
+        },
+        {
+            "id": "82000201-002c-4000-8000-000000000000",
+            "key": "py-messages-26-ip",
+            "type": "ip_write",
+            "project": "82000200-001a-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.104.26"
+            ]
+        },
+        {
+            "id": "82000201-002d-4000-8000-000000000000",
+            "key": "py-messages-27-ip",
+            "type": "ip_write",
+            "project": "82000200-001b-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.104.27"
+            ]
+        },
+        {
+            "id": "82000201-002e-4000-8000-000000000000",
+            "key": "py-messages-28-ip",
+            "type": "ip_write",
+            "project": "82000200-001c-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.104.28"
+            ]
+        },
+        {
+            "id": "82000201-002f-4000-8000-000000000000",
+            "key": "py-messages-29-ip",
+            "type": "ip_write",
+            "project": "82000200-001d-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.104.29"
+            ]
+        },
+        {
+            "id": "82000201-0030-4000-8000-000000000000",
+            "key": "py-messages-30-ip",
+            "type": "ip_write",
+            "project": "82000200-001e-4000-8000-000000000000",
+            "ip_allowlist": [
+                "10.82.104.30"
+            ]
+        }
+    ]
+}

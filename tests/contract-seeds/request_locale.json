@@ -1,0 +1,216 @@
+{
+    "projects": [
+        {
+            "id": "82000500-0001-4000-8000-000000000000",
+            "title": "py request_locale es-and-it#1 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "172001|79a8416db597bc9c25d173539e9c2ca999921d65",
+                "device_id": "py-request_locale-1"
+            }
+        },
+        {
+            "id": "82000500-0002-4000-8000-000000000000",
+            "title": "py request_locale es-and-it#2 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "172002|3ed3c4d7868ab07e4a6f9edd5f9d50abdc6c3672",
+                "device_id": "py-request_locale-2"
+            }
+        },
+        {
+            "id": "82000500-0003-4000-8000-000000000000",
+            "title": "py request_locale es-and-it#3 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "172003|b4e2b0e1d518c3bc372ddf4c3710ad6995330011",
+                "device_id": "py-request_locale-3"
+            }
+        },
+        {
+            "id": "82000500-0004-4000-8000-000000000000",
+            "title": "py request_locale es-and-it#4 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "172004|5200279ba6e232eab56c4d5a41a781d9ad623ebf",
+                "device_id": "py-request_locale-4"
+            }
+        },
+        {
+            "id": "82000500-0005-4000-8000-000000000000",
+            "title": "py request_locale es-and-it#5 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "172005|8959f56255b72f2101e979e0441826f187942030",
+                "device_id": "py-request_locale-5"
+            }
+        },
+        {
+            "id": "82000500-0006-4000-8000-000000000000",
+            "title": "py request_locale es-and-it#6 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "user": {
+                "token": "172006|4dc5ff65b85ad7294384f0d06afb9b6e3e904e27",
+                "device_id": "py-request_locale-6"
+            }
+        },
+        {
+            "id": "82000500-0007-4000-8000-000000000000",
+            "title": "py request_locale it-only#1 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "172007|fc66ba2c295332495c3a6d2884068e5efa55ad27",
+                "device_id": "py-request_locale-7"
+            }
+        },
+        {
+            "id": "82000500-0008-4000-8000-000000000000",
+            "title": "py request_locale it-only#2 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "172008|93c451b89e4906bbc272e147f2d6ef2a45ed46d6",
+                "device_id": "py-request_locale-8"
+            }
+        },
+        {
+            "id": "82000500-0009-4000-8000-000000000000",
+            "title": "py request_locale it-only#3 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "172009|49be02facedeffc312a60fe7b9e9325e1f697545",
+                "device_id": "py-request_locale-9"
+            }
+        },
+        {
+            "id": "82000500-000a-4000-8000-000000000000",
+            "title": "py request_locale it-only#4 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "172010|80289efdf30fab38209f0019f60489753499196d",
+                "device_id": "py-request_locale-10"
+            }
+        },
+        {
+            "id": "82000500-000b-4000-8000-000000000000",
+            "title": "py request_locale it-only#5 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "172011|f43845ff1b753ece606864ea4d0b2b641126df23",
+                "device_id": "py-request_locale-11"
+            }
+        },
+        {
+            "id": "82000500-000c-4000-8000-000000000000",
+            "title": "py request_locale it-only#6 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "172012|7d28d56fd9af7da4207ce66c2e942d0d9aed5fc8",
+                "device_id": "py-request_locale-12"
+            }
+        }
+    ],
+    "keys": [
+        {
+            "id": "82000501-0001-4000-8000-000000000000",
+            "key": "py-request_locale-1-read",
+            "type": "read",
+            "project": "82000500-0001-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0002-4000-8000-000000000000",
+            "key": "py-request_locale-2-read",
+            "type": "read",
+            "project": "82000500-0002-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0003-4000-8000-000000000000",
+            "key": "py-request_locale-3-read",
+            "type": "read",
+            "project": "82000500-0003-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0004-4000-8000-000000000000",
+            "key": "py-request_locale-4-read",
+            "type": "read",
+            "project": "82000500-0004-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0005-4000-8000-000000000000",
+            "key": "py-request_locale-5-read",
+            "type": "read",
+            "project": "82000500-0005-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0006-4000-8000-000000000000",
+            "key": "py-request_locale-6-read",
+            "type": "read",
+            "project": "82000500-0006-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0007-4000-8000-000000000000",
+            "key": "py-request_locale-7-read",
+            "type": "read",
+            "project": "82000500-0007-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0008-4000-8000-000000000000",
+            "key": "py-request_locale-8-read",
+            "type": "read",
+            "project": "82000500-0008-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-0009-4000-8000-000000000000",
+            "key": "py-request_locale-9-read",
+            "type": "read",
+            "project": "82000500-0009-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-000a-4000-8000-000000000000",
+            "key": "py-request_locale-10-read",
+            "type": "read",
+            "project": "82000500-000a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-000b-4000-8000-000000000000",
+            "key": "py-request_locale-11-read",
+            "type": "read",
+            "project": "82000500-000b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000501-000c-4000-8000-000000000000",
+            "key": "py-request_locale-12-read",
+            "type": "read",
+            "project": "82000500-000c-4000-8000-000000000000"
+        }
+    ]
+}

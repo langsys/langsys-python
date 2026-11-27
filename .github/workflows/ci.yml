@@ -26,5 +26,6 @@ jobs:
 
       - run: mypy src
 
-      # Unit tests only; integration tests need a live nova and are opt-in.
-      - run: pytest -m "not integration"
+      # Unit tests only. Contract tests need an SDK test clone (README, "Contract tests") and
+      # integration tests a live nova; both are run where those exist.
+      - run: pytest -m "not integration and not contract"

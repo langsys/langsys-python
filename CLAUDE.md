@@ -55,7 +55,16 @@ and re-pin.
 
 ## Local test stack
 
-Unit tests: `pytest -m "not integration"`. Live tests need a local nova and are opt-in:
+Unit tests: `pytest -m "not integration and not contract"`. Contract tests run on the SDK test
+clone through `tests/contract-fixture/forwarder.mjs`, vendored from langsys-js-typescript and pinned
+by tree; the README's "Contract tests" names the environment they need, and without it they error
+rather than skip. Ask the SDK API lane for the clone before every run and tell it when you are done:
+one suite at a time, and a run's writes use its worlds up until the next reseed. Seed files live in
+`tests/contract-seeds/`, rendered from the world module beside each, inside Python's ranges on the
+clone (ids `8200xxxx-…`, raw keys `py-…`, token ids 170000–179999, addresses 10.82.0.0/16); a
+changed seed world goes to SDK API for a dry run before any reseed.
+
+Live tests need a local nova and are opt-in:
 
 ```bash
 LANGSYS_API_URL=http://langsys2.test/api LANGSYS_PROJECT_ID=… \
@@ -70,7 +79,7 @@ only; asserting catalog contents afterwards fails for reasons unrelated to this 
 ## Gate before pushing
 
 ```bash
-ruff check . && mypy src && pytest -m "not integration"
+ruff check . && mypy src && pytest -m "not integration and not contract"
 ```
 
 Python 3.9 is the floor and CI's lowest matrix entry: no `match`, no PEP 604 unions in

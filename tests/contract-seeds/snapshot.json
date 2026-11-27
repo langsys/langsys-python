@@ -1,0 +1,1644 @@
+{
+    "projects": [
+        {
+            "id": "82000300-0001-4000-8000-000000000000",
+            "title": "py snapshot catalog#1 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171001|c17014f2eea47f181af8aa089d89267481f00f2e",
+                "device_id": "py-snapshot-1"
+            }
+        },
+        {
+            "id": "82000300-0002-4000-8000-000000000000",
+            "title": "py snapshot catalog#2 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171002|a5712cfd29724c26daf4228ffcae15050b53d1ba",
+                "device_id": "py-snapshot-2"
+            }
+        },
+        {
+            "id": "82000300-0003-4000-8000-000000000000",
+            "title": "py snapshot catalog#3 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171003|b220ede814765c3cce21f9fd1ecc4e6b7dcca323",
+                "device_id": "py-snapshot-3"
+            }
+        },
+        {
+            "id": "82000300-0004-4000-8000-000000000000",
+            "title": "py snapshot catalog#4 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171004|4df8885971621972937098883b0da91cf7e41027",
+                "device_id": "py-snapshot-4"
+            }
+        },
+        {
+            "id": "82000300-0005-4000-8000-000000000000",
+            "title": "py snapshot catalog#5 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171005|a5d8350c26446e0ef7a2b4369511413556086f2a",
+                "device_id": "py-snapshot-5"
+            }
+        },
+        {
+            "id": "82000300-0006-4000-8000-000000000000",
+            "title": "py snapshot catalog#6 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171006|7f24f0cf321e0af3b541464db05086fce9ab9f2a",
+                "device_id": "py-snapshot-6"
+            }
+        },
+        {
+            "id": "82000300-0007-4000-8000-000000000000",
+            "title": "py snapshot catalog#7 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171007|77f4494a203b187de2349e37ef9f1ba0425e2f5b",
+                "device_id": "py-snapshot-7"
+            }
+        },
+        {
+            "id": "82000300-0008-4000-8000-000000000000",
+            "title": "py snapshot catalog#8 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171008|28269dccaf3cb32f1e1522c6f4a010e260a3da37",
+                "device_id": "py-snapshot-8"
+            }
+        },
+        {
+            "id": "82000300-0009-4000-8000-000000000000",
+            "title": "py snapshot catalog#9 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171009|52492945f4c0dd2b07f01107a913afe9bee4d538",
+                "device_id": "py-snapshot-9"
+            }
+        },
+        {
+            "id": "82000300-000a-4000-8000-000000000000",
+            "title": "py snapshot catalog#10 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171010|4d35095ced9000247ff40c40f3289c83d4554cb4",
+                "device_id": "py-snapshot-10"
+            }
+        },
+        {
+            "id": "82000300-000b-4000-8000-000000000000",
+            "title": "py snapshot catalog#11 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171011|60617c5582f1499959f91d18b7f15f4128e70585",
+                "device_id": "py-snapshot-11"
+            }
+        },
+        {
+            "id": "82000300-000c-4000-8000-000000000000",
+            "title": "py snapshot catalog#12 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171012|86487f4628e5b379a603d3f5391052913d4359a4",
+                "device_id": "py-snapshot-12"
+            }
+        },
+        {
+            "id": "82000300-000d-4000-8000-000000000000",
+            "title": "py snapshot catalog#13 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171013|f7c870747947976b8b423d3f940d7122c7cfce92",
+                "device_id": "py-snapshot-13"
+            }
+        },
+        {
+            "id": "82000300-000e-4000-8000-000000000000",
+            "title": "py snapshot catalog#14 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171014|f57bf1452112f669564d6db038fdd4d0e1683392",
+                "device_id": "py-snapshot-14"
+            }
+        },
+        {
+            "id": "82000300-000f-4000-8000-000000000000",
+            "title": "py snapshot catalog#15 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171015|007d3aa96f8e5040de3171530abfd9b03037c031",
+                "device_id": "py-snapshot-15"
+            }
+        },
+        {
+            "id": "82000300-0010-4000-8000-000000000000",
+            "title": "py snapshot catalog#16 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171016|25cca1e6588f78fc04d5102996be55221a832edc",
+                "device_id": "py-snapshot-16"
+            }
+        },
+        {
+            "id": "82000300-0011-4000-8000-000000000000",
+            "title": "py snapshot catalog#17 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171017|84a1bf3dd02c8cf03095d1cbd823600a7da2ac07",
+                "device_id": "py-snapshot-17"
+            }
+        },
+        {
+            "id": "82000300-0012-4000-8000-000000000000",
+            "title": "py snapshot catalog#18 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171018|27202f8cd118cfb411d54da9d6dca4d2f767a72b",
+                "device_id": "py-snapshot-18"
+            }
+        },
+        {
+            "id": "82000300-0013-4000-8000-000000000000",
+            "title": "py snapshot catalog#19 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171019|e36687f029bb8f739a1d00c89bce6ce73eb3056a",
+                "device_id": "py-snapshot-19"
+            }
+        },
+        {
+            "id": "82000300-0014-4000-8000-000000000000",
+            "title": "py snapshot catalog#20 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171020|d5145ef37ac665895f24389399da64267b77c6c4",
+                "device_id": "py-snapshot-20"
+            }
+        },
+        {
+            "id": "82000300-0015-4000-8000-000000000000",
+            "title": "py snapshot catalog#21 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171021|76fe5b89d379fc8e743d808524eb50bb52c7e0b1",
+                "device_id": "py-snapshot-21"
+            }
+        },
+        {
+            "id": "82000300-0016-4000-8000-000000000000",
+            "title": "py snapshot catalog#22 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171022|bd86956a9b326be27fe772cb2eb2de93203fc648",
+                "device_id": "py-snapshot-22"
+            }
+        },
+        {
+            "id": "82000300-0017-4000-8000-000000000000",
+            "title": "py snapshot catalog#23 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171023|8af3deda5c7165fe2bbc30393a131303feb5b19d",
+                "device_id": "py-snapshot-23"
+            }
+        },
+        {
+            "id": "82000300-0018-4000-8000-000000000000",
+            "title": "py snapshot catalog#24 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171024|370693831f96a4563dd090d48d0b288f541cab94",
+                "device_id": "py-snapshot-24"
+            }
+        },
+        {
+            "id": "82000300-0019-4000-8000-000000000000",
+            "title": "py snapshot catalog#25 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171025|cf69f67e51dd155063908a17340da908b2c94749",
+                "device_id": "py-snapshot-25"
+            }
+        },
+        {
+            "id": "82000300-001a-4000-8000-000000000000",
+            "title": "py snapshot catalog#26 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171026|e123dfb588cad251a950c2e0ac54fc615f6d5521",
+                "device_id": "py-snapshot-26"
+            }
+        },
+        {
+            "id": "82000300-001b-4000-8000-000000000000",
+            "title": "py snapshot catalog#27 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171027|7e3e697c3c7250a61d114231eb456c6d619567aa",
+                "device_id": "py-snapshot-27"
+            }
+        },
+        {
+            "id": "82000300-001c-4000-8000-000000000000",
+            "title": "py snapshot catalog#28 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171028|a3c5589b60d31154ea18c6d855dbb0319b5df66d",
+                "device_id": "py-snapshot-28"
+            }
+        },
+        {
+            "id": "82000300-001d-4000-8000-000000000000",
+            "title": "py snapshot catalog#29 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171029|f15959d9054dda22c8b11953a8266470378c1759",
+                "device_id": "py-snapshot-29"
+            }
+        },
+        {
+            "id": "82000300-001e-4000-8000-000000000000",
+            "title": "py snapshot catalog#30 p1",
+            "target_locales": [
+                "it-it",
+                "es-es"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Cassa",
+                        "es-es": "Caja"
+                    }
+                },
+                {
+                    "category": "UI",
+                    "phrase": "Untranslated"
+                },
+                {
+                    "category": "Errors",
+                    "phrase": "The name is required.",
+                    "translations": {
+                        "it-it": "Il nome è obbligatorio."
+                    }
+                },
+                {
+                    "category": "Marketing",
+                    "phrase": "Buy now",
+                    "translations": {
+                        "it-it": "Compra ora"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171030|ec0b67357260dd2061e24528060de342453067b0",
+                "device_id": "py-snapshot-30"
+            }
+        },
+        {
+            "id": "82000300-001f-4000-8000-000000000000",
+            "title": "py snapshot outranked#1 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Alla cassa"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171031|eccdeb0076cc8288f11942a279566479e69356d3",
+                "device_id": "py-snapshot-31"
+            }
+        },
+        {
+            "id": "82000300-0020-4000-8000-000000000000",
+            "title": "py snapshot outranked#2 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Alla cassa"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171032|6b19b8bcd1e5f5a50d816f41d69c3477a601cb27",
+                "device_id": "py-snapshot-32"
+            }
+        },
+        {
+            "id": "82000300-0021-4000-8000-000000000000",
+            "title": "py snapshot outranked#3 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Alla cassa"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171033|ccd240ec817f0deaecdc6611e934172380dc1627",
+                "device_id": "py-snapshot-33"
+            }
+        },
+        {
+            "id": "82000300-0022-4000-8000-000000000000",
+            "title": "py snapshot outranked#4 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Alla cassa"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171034|a8cb47312dcdd69aea0609b229847eb4b57d2505",
+                "device_id": "py-snapshot-34"
+            }
+        },
+        {
+            "id": "82000300-0023-4000-8000-000000000000",
+            "title": "py snapshot outranked#5 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Alla cassa"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171035|3750c417f03d4b81cb8ccf9749221d0f851654ce",
+                "device_id": "py-snapshot-35"
+            }
+        },
+        {
+            "id": "82000300-0024-4000-8000-000000000000",
+            "title": "py snapshot outranked#6 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "phrases": [
+                {
+                    "category": "UI",
+                    "phrase": "Checkout",
+                    "translations": {
+                        "it-it": "Alla cassa"
+                    }
+                }
+            ],
+            "user": {
+                "token": "171036|72a28f6caff54393e13f9b9a8d924218aff19310",
+                "device_id": "py-snapshot-36"
+            }
+        },
+        {
+            "id": "82000300-0025-4000-8000-000000000000",
+            "title": "py snapshot empty#1 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "171037|de94d54f5c27c858a3a8ff3aa256b8857fde414a",
+                "device_id": "py-snapshot-37"
+            }
+        },
+        {
+            "id": "82000300-0026-4000-8000-000000000000",
+            "title": "py snapshot empty#2 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "171038|20dbddaba086fe0701f8762680adefa9784200ae",
+                "device_id": "py-snapshot-38"
+            }
+        },
+        {
+            "id": "82000300-0027-4000-8000-000000000000",
+            "title": "py snapshot empty#3 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "171039|39c0db2b6ce78e102b87417507d92ae29c84b8c2",
+                "device_id": "py-snapshot-39"
+            }
+        },
+        {
+            "id": "82000300-0028-4000-8000-000000000000",
+            "title": "py snapshot empty#4 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "171040|4fcaa61daf3e7e7ac09a2ae753a21430422ed085",
+                "device_id": "py-snapshot-40"
+            }
+        },
+        {
+            "id": "82000300-0029-4000-8000-000000000000",
+            "title": "py snapshot empty#5 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "171041|544d7ed584398121b5a42420b8c3fed32d8f3a93",
+                "device_id": "py-snapshot-41"
+            }
+        },
+        {
+            "id": "82000300-002a-4000-8000-000000000000",
+            "title": "py snapshot empty#6 p1",
+            "target_locales": [
+                "it-it"
+            ],
+            "user": {
+                "token": "171042|ccb98e4396a37810d0e617d40149fcb5592b8edb",
+                "device_id": "py-snapshot-42"
+            }
+        }
+    ],
+    "keys": [
+        {
+            "id": "82000301-0001-4000-8000-000000000000",
+            "key": "py-snapshot-1-write",
+            "type": "write",
+            "project": "82000300-0001-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0002-4000-8000-000000000000",
+            "key": "py-snapshot-2-write",
+            "type": "write",
+            "project": "82000300-0002-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0003-4000-8000-000000000000",
+            "key": "py-snapshot-3-write",
+            "type": "write",
+            "project": "82000300-0003-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0004-4000-8000-000000000000",
+            "key": "py-snapshot-4-write",
+            "type": "write",
+            "project": "82000300-0004-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0005-4000-8000-000000000000",
+            "key": "py-snapshot-5-write",
+            "type": "write",
+            "project": "82000300-0005-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0006-4000-8000-000000000000",
+            "key": "py-snapshot-6-write",
+            "type": "write",
+            "project": "82000300-0006-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0007-4000-8000-000000000000",
+            "key": "py-snapshot-7-write",
+            "type": "write",
+            "project": "82000300-0007-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0008-4000-8000-000000000000",
+            "key": "py-snapshot-8-write",
+            "type": "write",
+            "project": "82000300-0008-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0009-4000-8000-000000000000",
+            "key": "py-snapshot-9-write",
+            "type": "write",
+            "project": "82000300-0009-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-000a-4000-8000-000000000000",
+            "key": "py-snapshot-10-write",
+            "type": "write",
+            "project": "82000300-000a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-000b-4000-8000-000000000000",
+            "key": "py-snapshot-11-write",
+            "type": "write",
+            "project": "82000300-000b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-000c-4000-8000-000000000000",
+            "key": "py-snapshot-12-write",
+            "type": "write",
+            "project": "82000300-000c-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-000d-4000-8000-000000000000",
+            "key": "py-snapshot-13-write",
+            "type": "write",
+            "project": "82000300-000d-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-000e-4000-8000-000000000000",
+            "key": "py-snapshot-14-write",
+            "type": "write",
+            "project": "82000300-000e-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-000f-4000-8000-000000000000",
+            "key": "py-snapshot-15-write",
+            "type": "write",
+            "project": "82000300-000f-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0010-4000-8000-000000000000",
+            "key": "py-snapshot-16-write",
+            "type": "write",
+            "project": "82000300-0010-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0011-4000-8000-000000000000",
+            "key": "py-snapshot-17-write",
+            "type": "write",
+            "project": "82000300-0011-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0012-4000-8000-000000000000",
+            "key": "py-snapshot-18-write",
+            "type": "write",
+            "project": "82000300-0012-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0013-4000-8000-000000000000",
+            "key": "py-snapshot-19-write",
+            "type": "write",
+            "project": "82000300-0013-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0014-4000-8000-000000000000",
+            "key": "py-snapshot-20-write",
+            "type": "write",
+            "project": "82000300-0014-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0015-4000-8000-000000000000",
+            "key": "py-snapshot-21-write",
+            "type": "write",
+            "project": "82000300-0015-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0016-4000-8000-000000000000",
+            "key": "py-snapshot-22-write",
+            "type": "write",
+            "project": "82000300-0016-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0017-4000-8000-000000000000",
+            "key": "py-snapshot-23-write",
+            "type": "write",
+            "project": "82000300-0017-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0018-4000-8000-000000000000",
+            "key": "py-snapshot-24-write",
+            "type": "write",
+            "project": "82000300-0018-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0019-4000-8000-000000000000",
+            "key": "py-snapshot-25-write",
+            "type": "write",
+            "project": "82000300-0019-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-001a-4000-8000-000000000000",
+            "key": "py-snapshot-26-write",
+            "type": "write",
+            "project": "82000300-001a-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-001b-4000-8000-000000000000",
+            "key": "py-snapshot-27-write",
+            "type": "write",
+            "project": "82000300-001b-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-001c-4000-8000-000000000000",
+            "key": "py-snapshot-28-write",
+            "type": "write",
+            "project": "82000300-001c-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-001d-4000-8000-000000000000",
+            "key": "py-snapshot-29-write",
+            "type": "write",
+            "project": "82000300-001d-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-001e-4000-8000-000000000000",
+            "key": "py-snapshot-30-write",
+            "type": "write",
+            "project": "82000300-001e-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-001f-4000-8000-000000000000",
+            "key": "py-snapshot-31-write",
+            "type": "write",
+            "project": "82000300-001f-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0020-4000-8000-000000000000",
+            "key": "py-snapshot-32-write",
+            "type": "write",
+            "project": "82000300-0020-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0021-4000-8000-000000000000",
+            "key": "py-snapshot-33-write",
+            "type": "write",
+            "project": "82000300-0021-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0022-4000-8000-000000000000",
+            "key": "py-snapshot-34-write",
+            "type": "write",
+            "project": "82000300-0022-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0023-4000-8000-000000000000",
+            "key": "py-snapshot-35-write",
+            "type": "write",
+            "project": "82000300-0023-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0024-4000-8000-000000000000",
+            "key": "py-snapshot-36-write",
+            "type": "write",
+            "project": "82000300-0024-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0025-4000-8000-000000000000",
+            "key": "py-snapshot-37-write",
+            "type": "write",
+            "project": "82000300-0025-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0026-4000-8000-000000000000",
+            "key": "py-snapshot-38-write",
+            "type": "write",
+            "project": "82000300-0026-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0027-4000-8000-000000000000",
+            "key": "py-snapshot-39-write",
+            "type": "write",
+            "project": "82000300-0027-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0028-4000-8000-000000000000",
+            "key": "py-snapshot-40-write",
+            "type": "write",
+            "project": "82000300-0028-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-0029-4000-8000-000000000000",
+            "key": "py-snapshot-41-write",
+            "type": "write",
+            "project": "82000300-0029-4000-8000-000000000000"
+        },
+        {
+            "id": "82000301-002a-4000-8000-000000000000",
+            "key": "py-snapshot-42-write",
+            "type": "write",
+            "project": "82000300-002a-4000-8000-000000000000"
+        }
+    ]
+}

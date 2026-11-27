@@ -4,7 +4,7 @@ The SDK follows the framework's conventions: an entry needs only the framework's
 (`template`) and its `params`; its `field` and `code` are the framework's own, passed through; the
 framework's error body is left as it is, with the entries attached beside it. The shared vectors
 (`server-message-vectors.json`) pin marker extraction, fill, entry resolution and rendering with
-every other SDK. Registration rows run against the contract double.
+every other SDK. Registration rows run against the SDK test clone (spec CONF-2).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from contract import IP_WRITE_KEY, PROJECT, READ_KEY, WRITE_KEY, ContractDouble, world
+from clone import Clone, World
 
 from langsys import LangsysClient
 from langsys.cache import MemoryCache
@@ -37,6 +37,8 @@ from langsys.messages import (
     template_markers,
 )
 from langsys.scope import request_scope
+
+SEED = "messages"
 
 VECTORS_FILE = Path(__file__).parent / "fixtures" / "server-message-vectors.json"
 #: THE CHECK: the blob. THE PROVENANCE: the ref.
@@ -295,12 +297,18 @@ def test_MSG6_the_category_defaults_to_errors_and_is_configurable():
     assert c.pending_phrases == [{"phrase": "The name field is required.", "category": "Validation"}]
 
 
-# -- MSG-7 / MSG-8 against the contract double -----------------------------------------------------
+# -- MSG-7 / MSG-8 on the SDK test clone ----------------------------------------------------------
 
 
-def _client(double: ContractDouble, key: str = WRITE_KEY) -> LangsysClient:
-    return LangsysClient(key, PROJECT, api_url=double.base_url, cache=MemoryCache(),
-                         base_locale="en-us", debounce=0, auto_flush=False)
+def _client(clone: Clone, world: World, role: str = "write") -> LangsysClient:
+    return LangsysClient(world.key(role), world.project(), api_url=clone.base_url,
+                         cache=MemoryCache(), base_locale="en-us", debounce=0, auto_flush=False)
+
+
+def _held(clone: Clone, world: World, role: str = "write") -> list[tuple[str, str]]:
+    """What the API holds, as (category, phrase), read from the catalog at the base locale."""
+    held = clone.held(world.key(role), world.project(), "en-us")
+    return sorted((c, p) for c, texts in held["phrases"].items() for p in texts)
 
 
 def _provider():
@@ -308,13 +316,14 @@ def _provider():
             "Ensure this value has at least {limit_value} characters."]
 
 
-def test_MSG7_the_listing_registers_every_template_and_a_second_run_nothing_new(double):
-    double.seed(world())
+@pytest.mark.contract
+def test_MSG7_the_listing_registers_every_template_and_a_second_run_nothing_new(clone):
+    world = clone.world("writer")
     out = io.StringIO()
-    assert run_listing([_provider], client=_client(double), register=True, out=out) == 0
-    assert double.phrases() == sorted(("Errors", t) for t in _provider())
+    assert run_listing([_provider], client=_client(clone, world), register=True, out=out) == 0
+    assert _held(clone, world) == sorted(("Errors", t) for t in _provider())
     again = io.StringIO()
-    assert run_listing([_provider], client=_client(double), register=True, out=again) == 0
+    assert run_listing([_provider], client=_client(clone, world), register=True, out=again) == 0
     assert "0 newly registered" in again.getvalue()
 
 
@@ -360,41 +369,46 @@ def test_MSG7_the_command_line_entry_point_lists_and_gates(capsys, monkeypatch):
     assert main(["--provider", "msg_provider_bad:templates", "--strict"]) == 1
 
 
-def test_MSG8_an_unlisted_template_is_registered_after_the_response_not_before(double):
-    double.seed(world())
-    c = _client(double)
+@pytest.mark.contract
+def test_MSG8_an_unlisted_template_is_registered_after_the_response_not_before(clone):
+    world = clone.world("writer")
+    c = _client(clone, world)
     with request_scope():
         c.server_message("Archived is not a valid status.", field="status")
         c.flush_pending()
-        assert double.phrases() == [], "registered on the request path"
+        assert _held(clone, world) == [], "registered on the request path"
     assert c.flush_pending()["success"] is True
-    assert double.phrases() == [("Errors", "Archived is not a valid status.")]
+    assert _held(clone, world) == [("Errors", "Archived is not a valid status.")]
 
 
-def test_MSG8_a_listed_template_is_not_registered_again(double):
-    double.seed(world(phrases=[{"category": "Errors", "phrase": "The name field is required."}]))
-    c = _client(double)
+@pytest.mark.contract
+def test_MSG8_a_listed_template_is_not_registered_again(clone):
+    world = clone.world("listed")
+    c = _client(clone, world)
     c.server_message("The name field is required.", field="name")
     assert not c.has_pending
 
 
-def test_MSG8_a_session_that_cannot_write_registers_nothing_even_once_it_could(double):
-    """Drift: told no, the allow-list widens, and still nothing lands. Control acts in the new world."""
-    double.seed(world())
-    c = _client(double, IP_WRITE_KEY)
+@pytest.mark.contract
+def test_MSG8_a_session_that_cannot_write_registers_nothing_even_once_it_could(clone):
+    """Drift: told no, the case moves to an allow-listed address, and still nothing lands. The
+    control acts in the new world."""
+    world = clone.world("off-list")
+    c = _client(clone, world, "ip")
     c.server_message("Something failed.")
     c.flush_pending()
-    double.seed(world(ip_allowlist=["127.0.0.1"]))
+    clone.update(world, caller=world.moved)
     c.flush_pending(force=True)
-    assert double.phrases() == []
-    control = _client(double, IP_WRITE_KEY)
+    assert _held(clone, world, "ip") == []
+    control = _client(clone, world, "ip")
     control.server_message("Something failed.")
     assert control.flush_pending()["success"] is True
-    assert double.phrases() == [("Errors", "Something failed.")]
+    assert _held(clone, world, "ip") == [("Errors", "Something failed.")]
 
 
-def test_MSG8_a_read_key_reports_the_skip(double):
-    double.seed(world())
-    c = _client(double, READ_KEY)
+@pytest.mark.contract
+def test_MSG8_a_read_key_reports_the_skip(clone):
+    world = clone.world("writer")
+    c = _client(clone, world, "read")
     c.server_message("Something failed.")
     assert c.flush_pending()["success"] is False
