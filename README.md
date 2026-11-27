@@ -160,6 +160,31 @@ and a client built part-way through a request joins it. A scope that is never en
 its misses until the process-exit flush. `end_request_scope` takes the handle explicitly,
 so it can be called from a different task than the one that began the scope.
 
+### Falling back to your framework's own translations
+
+A framework integration hands the core its own language files through the miss fallback, so a
+phrase Langsys doesn't translate yet renders your existing translation rather than the source:
+
+```python
+from typing import Optional
+
+from langsys import Miss
+
+def from_my_files(miss: Miss) -> Optional[str]:   # miss.phrase, .locale, .category, .argument
+    return my_catalog.get(miss.locale, {}).get(miss.argument)
+
+client = LangsysClient(..., miss_fallback=from_my_files)
+client.resolve("Welcome back")   # Resolved(text="Bienvenido", origin="catalog")
+```
+
+A call renders the catalog's translation; failing that, the fallback's line, filled with the call's
+params; failing that, the source, filled. `miss.argument` is what the call was given, so for a
+key-style call it is the key. The fallback's answer is never registered or cached, and a fallback
+that raises renders the source. Without a catalog (no key, the API unreachable) every call still
+returns what your app would show without Langsys, and the cause is logged once, at debug.
+`resolve()` returns the text with who wrote it, `"catalog"`, `"fallback"` or `"source"`, so a
+framework that prints translations without escaping can escape the catalog's text and only that.
+
 ### Moving content to another category
 
 When you move a phrase or a block to another category, name the category it was registered

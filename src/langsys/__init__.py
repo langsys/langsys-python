@@ -39,6 +39,7 @@ from .observable import LocaleSource, Signal
 from .registration import generate_custom_id
 from .request_locale import LocaleChoice, resolve_request_locale
 from .scope import RequestScope, begin_request_scope, end_request_scope, request_scope
+from .translate import Miss, Resolved
 from .types import Country, Currency, DialCode, LocaleFlat, LocaleInfo, Project
 
 __version__ = "0.1.0"
@@ -51,6 +52,8 @@ __all__ = [
     "end_request_scope",
     "request_scope",
     "LangsysClient",
+    "Miss",
+    "Resolved",
     "Project",
     "Country",
     "Currency",

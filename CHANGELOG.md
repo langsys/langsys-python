@@ -17,6 +17,9 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **FRM-3 — the miss fallback and `resolve()`.** `miss_fallback=` (or `use_miss_fallback()`)
+  answers a phrase the catalog does not translate from the framework's own language files, before
+  the source; `resolve()` returns the text with its origin, `catalog`, `fallback` or `source`.
 - **MOVE-1..5 — content moved between categories.** Every call that takes a category takes
   `previous_category` (`""` for none), as do `data-ls-previous-category`, selector configs and
   `register_phrases()`/`sync()` items; `previous_categories={current: previous}` and

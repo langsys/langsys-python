@@ -8,11 +8,43 @@ not translated yet, so it falls back to the base phrase *without* re-queuing.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, NamedTuple, Optional, Sequence
 
 from ._log import logger
 from .registration import legacy_custom_ids
 from .types import UNCATEGORIZED, Catalog
+
+
+@dataclass(frozen=True)
+class Miss:
+    """What a miss fallback is asked (FRM-3): the phrase looked up, the locale being rendered, the
+    category, and the argument as the call wrote it, which is the key for a key-style call."""
+
+    phrase: str
+    locale: str
+    category: Optional[str]
+    argument: str
+
+
+@dataclass(frozen=True)
+class Resolved:
+    """A translate call's text, and who wrote it (FRM-3, FRM-8): `"catalog"` (a translation from
+    Langsys), `"fallback"` (the framework's own language files, through the miss fallback) or
+    `"source"`. A binding's raw-printing paths escape catalog text and only catalog text."""
+
+    text: str
+    origin: str
+
+
+class Lookup(NamedTuple):
+    """One phrase lookup: its text, whether it is the current category's translation, the previous
+    category it came from instead (MOVE-5), and who wrote it."""
+
+    text: str
+    current: bool
+    prior: Optional[str]
+    origin: str
 
 
 class Resolution:

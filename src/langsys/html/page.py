@@ -235,10 +235,9 @@ def _process_unit(
         return  # VAR-3/VAR-7: no text of its own, or a value it cannot name - as it was
     if not declared and is_phrase_unit(tokens, text_nodes):
         category = None if item[0] == UNCATEGORIZED else item[0]
-        translated, current, prior = client._translate(tokens[0], category, None, locale, None,
-                                                       item[1])
-        apply_element(el, {tokens[0]: translated}, attrs)
-        _stamp_phrase(el, current, prior)
+        found = client._translate(tokens[0], category, None, locale, None, item[1])
+        apply_element(el, {tokens[0]: found.text}, attrs)
+        _stamp_phrase(el, found.current, found.prior)
         return
     _apply_or_queue_block(client, el, attrs, item, tokens, _registered_content(el, attrs))
 
@@ -282,11 +281,10 @@ def _process_host(
             category = None if item_cat == UNCATEGORIZED else item_cat
             values = phrase_values(markers, el)
             params = markers.params(values, text) if values else None
-            translated, current, prior = client._translate(text, category, params, locale, None,
-                                                           item[1])
-            if translated != text:
-                render_phrase_host(el, translated, slots)
-            _stamp_phrase(el, current, prior)
+            found = client._translate(text, category, params, locale, None, item[1])
+            if found.text != text:
+                render_phrase_host(el, found.text, slots)
+            _stamp_phrase(el, found.current, found.prior)
         return
     if block_marker_kind(el) == "identity":
         # MARK-3 - a stamped id is this host's custom_id: render the catalog entry under it.
@@ -595,7 +593,8 @@ def _translate_fragment_unit(
         markers.finish(root, locale)
         return inner_html(root) if has_hosts else html
     if is_phrase_unit(tokens, text_nodes):
-        translated, _, prior = client._translate(tokens[0], category, None, locale, None, previous)
+        found = client._translate(tokens[0], category, None, locale, None, previous)
+        translated, prior = found.text, found.prior
         if not has_hosts:
             rendered = apply_block_translations(html, {tokens[0]: translated}, attrs,
                                                 locale=locale)

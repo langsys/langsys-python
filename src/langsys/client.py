@@ -7,7 +7,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence, Union
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence, Union
 
 from ._log import logger
 from .cache.backend import CacheBackend
@@ -32,7 +32,16 @@ from .registration import PhraseInput, Registrar, generate_custom_id
 from .request_locale import LocaleChoice, resolve_request_locale
 from .scope import RequestScope, begin_request_scope, current_scope, end_request_scope
 from .text import strip_c0
-from .translate import block_translated, lookup_block, previous_block, previous_entry, resolve
+from .translate import (
+    Lookup,
+    Miss,
+    Resolved,
+    block_translated,
+    lookup_block,
+    previous_block,
+    previous_entry,
+    resolve,
+)
 from .translate import displayable as _displayable
 from .types import (
     UNCATEGORIZED,
@@ -114,6 +123,7 @@ class LangsysClient:
         previous_categories: Optional[Mapping[str, Optional[str]]] = None,
         legacy_files: Optional[Sequence[Any]] = None,
         require_credentials: bool = False,
+        miss_fallback: Optional[Callable[[Miss], Optional[str]]] = None,
     ) -> None:
         self._config = Config.resolve(
             api_key,
@@ -203,6 +213,10 @@ class LangsysClient:
         #: and no key lookup happens. Loaded here, so a file this SDK cannot read (a `.mo`, an
         #: unsupported format) fails at configuration, naming the file.
         self._legacy = LegacyKeys(legacy_files) if legacy_files else None
+        #: FRM-3 - the framework's own language-file line for a phrase the catalog does not
+        #: translate, asked after the catalog and before the source. Its answer is never registered
+        #: or cached.
+        self._miss_fallback = miss_fallback
         #: SNAP-2 - a loaded snapshot's catalogs, per wire locale. Consulted before the fetch;
         #: whatever it does not hold falls through to the normal catalog path.
         self._preloaded: dict[str, Catalog] = {}
@@ -545,7 +559,32 @@ class LangsysClient:
         (``""`` for none): its registration carries it, and until the new category has a
         translation the previous category's renders (MOVE-1, MOVE-4)."""
         return self._translate(phrase, category, params, locale, content_block_id,
-                               previous_category)[0]
+                               previous_category, fallback=True).text
+
+    def resolve(
+        self,
+        phrase: str,
+        *,
+        category: Optional[str] = None,
+        params: Optional[dict[str, Any]] = None,
+        locale: Optional[str] = None,
+        previous_category: Optional[str] = None,
+    ) -> Resolved:
+        """`translate()`, saying who wrote the text: `"catalog"`, `"fallback"` (the miss fallback's
+        language-file line) or `"source"` (FRM-3). A binding whose framework prints a translation
+        raw escapes catalog text only, and prints language-file text as the framework does (FRM-8).
+        Never raises for a catalog it cannot have."""
+        found = self._translate(phrase, category, params, locale, None, previous_category,
+                                fallback=True)
+        return Resolved(found.text, found.origin)
+
+    def use_miss_fallback(
+        self, fallback: Optional[Callable[[Miss], Optional[str]]]
+    ) -> "LangsysClient":
+        """Set the miss fallback (FRM-3): asked for the framework's own line when the catalog has
+        no translation, given the phrase, the locale, the category and the argument as written."""
+        self._miss_fallback = fallback
+        return self
 
     def _translate(
         self,
@@ -555,15 +594,19 @@ class LangsysClient:
         locale: Optional[str],
         content_block_id: Optional[str],
         previous_category: Optional[str],
-    ) -> tuple[str, bool, Optional[str]]:
-        """`translate()`, whether the text is the current category's translation, and the previous
-        category it came from instead, if it did (MOVE-5)."""
+        *,
+        fallback: bool = False,
+    ) -> Lookup:
+        """`translate()`, whether the text is the current category's translation, the previous
+        category it came from instead, if it did (MOVE-5), and who wrote it. With `fallback`, the
+        call is the translate function's, and a miss asks the miss fallback (FRM-3)."""
+        argument = phrase
         # MIG-2 - in legacy-key mode the argument is a key first: a hit becomes its source value
         # (never the key) under its namespace, a miss stays literal source text.
         if self._legacy is not None and content_block_id is None:
             phrase, category, _ = self._legacy.resolve(phrase, category)
         return self._resolve_phrase(phrase, category, params, locale, content_block_id,
-                                    previous_category)
+                                    previous_category, argument if fallback else None)
 
     #: Short alias mirroring ``t()`` across the other SDKs.
     t = translate
@@ -602,7 +645,8 @@ class LangsysClient:
             phrase = gettext_plural(text, plural, literal=True, passed=values)
         else:
             phrase = convert_literal(text, entry_point, values)
-        return self._resolve_phrase(phrase, category, params, locale, None, previous_category)[0]
+        return self._resolve_phrase(phrase, category, params, locale, None, previous_category,
+                                    text).text
 
     def _move_of(self, category: Optional[str], named: Optional[str]) -> Optional[str]:
         """MOVE-1 - the previous category an item under `category` carries: the one its call
@@ -625,7 +669,10 @@ class LangsysClient:
         locale: Optional[str],
         content_block_id: Optional[str],
         previous_category: Optional[str] = None,
-    ) -> tuple[str, bool, Optional[str]]:
+        argument: Optional[str] = None,
+    ) -> Lookup:
+        """One phrase lookup. `argument`, the call's argument as written, is given only on the
+        translate function's path, where a miss asks the miss fallback (FRM-3)."""
         # TOK-2 - a code-registered key is stripped of C0 controls on lookup and on register
         # alike, so a phrase carrying one resolves to the same entry as the markup that holds it.
         phrase = strip_c0(phrase)
@@ -642,7 +689,7 @@ class LangsysClient:
                     found, earlier = self._preloaded_entry(loc, moved or UNCATEGORIZED, phrase)
                     if found and _displayable(earlier):
                         text, prior = earlier, moved
-                return (interpolate(text, params, loc) if params else text), current, prior
+                return self._finish(text, current, prior, phrase, category, params, loc, argument)
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
         result = resolve(fetch.catalog, phrase, category, content_block_id)
@@ -659,9 +706,44 @@ class LangsysClient:
         if result.missing and content_block_id is None and fetch.ok:
             self._queue_missing(phrase, category, fetch.catalog.get(category or UNCATEGORIZED),
                                 previous_category=moved)
+        if not fetch.ok and argument is not None:
+            _notice_catalog_unavailable(self._not_configured)
+        return self._finish(text, result.translated, prior, phrase, category, params, loc,
+                            argument)
+
+    def _finish(
+        self,
+        text: str,
+        current: bool,
+        prior: Optional[str],
+        phrase: str,
+        category: Optional[str],
+        params: Optional[dict[str, Any]],
+        loc: str,
+        argument: Optional[str],
+    ) -> Lookup:
+        """FRM-3 - the catalog's translation; failing that, on the translate function's path, the
+        miss fallback's line; failing that, the source. Whichever it is, filled with the params."""
+        origin = "catalog" if current or prior is not None else "source"
+        if origin == "source" and argument is not None and self._miss_fallback is not None:
+            line = self._ask_fallback(Miss(phrase, loc, category, argument))
+            if line is not None:
+                text, origin = line, "fallback"
         if params:
-            return interpolate(text, params, loc), result.translated, prior
-        return text, result.translated, prior
+            text = interpolate(text, params, loc)
+        return Lookup(text, current, prior, origin)
+
+    def _ask_fallback(self, miss: Miss) -> Optional[str]:
+        """The miss fallback's line, or None. A fallback that throws answers nothing (FRM-3: the
+        chain never throws)."""
+        assert self._miss_fallback is not None
+        try:
+            line = self._miss_fallback(miss)
+        except Exception as exc:  # noqa: BLE001 - the chain never throws into a render
+            logger.debug("langsys: the miss fallback raised %r for %r; rendering the source.",
+                         exc, miss.argument)
+            return None
+        return line if isinstance(line, str) and line != "" else None
 
     def _note_use(self, phrase: str, category: Optional[str], moved: Optional[str]) -> None:
         """MOVE-1's SHOULD, with debug on: a phrase moved out of a category while another call
@@ -1724,6 +1806,21 @@ def _without_write_decision(data: dict[str, Any]) -> dict[str, Any]:
     TTL, and fleet-wide on a shared Redis.
     """
     return {k: v for k, v in data.items() if k != "write_enabled"}
+
+
+#: FRM-3 - why the translate function had no catalog, reported once per process, at debug.
+_CATALOG_NOTICE: set[str] = set()
+
+
+def _notice_catalog_unavailable(not_configured: Optional[str]) -> None:
+    cause = not_configured or "the catalog could not be loaded"
+    if _CATALOG_NOTICE:
+        return
+    _CATALOG_NOTICE.add(cause)
+    logger.debug(
+        "langsys: %s The translate function renders the miss fallback's line, or the source, "
+        "until a catalog can be read; this is reported once.", cause,
+    )
 
 
 def _queued_phrase(phrase: str, category: str, moved: Optional[str]) -> dict[str, Any]:
