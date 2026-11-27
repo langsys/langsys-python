@@ -288,8 +288,11 @@ from langsys.cache.redis import RedisCache            # pip install langsys[redi
 client = LangsysClient(..., cache=RedisCache(host="localhost"))
 ```
 
-When the catalog can't be fetched (the API is down, slow, or doesn't serve the locale), lookups
-render source text and nothing throws. The client then stops asking for that locale for a short
+When the catalog can't be fetched (the API is down, slow, refuses the key, or doesn't serve the
+locale), lookups render the catalog last held for that locale, or source text when none was, and
+nothing throws. A catalog dropped for a refetch (after a registration flush, `refresh()` or
+`clear_cache()`) keeps rendering until the next catalog arrives and replaces it; no miss is
+registered off it meanwhile. The client then stops asking for that locale for a short
 window: 3 seconds, doubling on each consecutive failure up to 5 minutes, and reset by the first
 success. An outage costs one request per window rather than one per `t()` call. The window is
 held in the client, never in the shared cache, and concurrent lookups for one locale share a

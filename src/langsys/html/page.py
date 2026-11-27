@@ -273,7 +273,8 @@ def _process_host(
         stamped = next((v for v in (el.get(a) for a in BLOCK_HOST_ATTRS) if v is not None), "")
         custom_id = stamped.strip()
         fetch = client._catalog.get(client._effective_locale(None))
-        block = fetch.catalog.get(item_cat, {}) if fetch.ok else {}
+        # CACHE-2 - a catalog that could not be refetched still renders what it last held.
+        block = fetch.catalog.get(item_cat, {})
         entry = block.get(custom_id) if isinstance(block, dict) else None
         if isinstance(entry, dict):
             apply_element(el, entry, attrs)

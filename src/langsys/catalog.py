@@ -82,6 +82,10 @@ class CatalogStore:
         self._cache = cache
         self._ttl = ttl
         self._memory: dict[str, Catalog] = {}
+        #: CACHE-2 - the last catalog that arrived for each locale. A clear drops the held catalog
+        #: for a refetch but keeps this, so a refused refetch keeps rendering it (as not ok: no
+        #: miss is decided against it) until the next catalog arrives and replaces it.
+        self._last: dict[str, Catalog] = {}
         #: Every locale this store has held, read or fetched: what `clear()` drops from a backend
         #: that other projects share.
         self._known: set[str] = set()
@@ -102,7 +106,7 @@ class CatalogStore:
         if held is not None:
             return held
         if self._in_failure_window(wire_locale):
-            return CatalogFetch({}, ok=False)
+            return self._unavailable(wire_locale)
 
         with self._fetch_lock(wire_locale):
             # Another request for this locale may have finished while this one waited.
@@ -110,15 +114,21 @@ class CatalogStore:
             if held is not None:
                 return held
             if self._in_failure_window(wire_locale):
-                return CatalogFetch({}, ok=False)
+                return self._unavailable(wire_locale)
             fetched = self._fetch(wire_locale)
             if not fetched.ok:
                 self._note_failure(wire_locale)
-                return fetched
+                return self._unavailable(wire_locale)
             self._failures.pop(wire_locale, None)
             self._memory[wire_locale] = fetched.catalog
+            self._last[wire_locale] = fetched.catalog
             self._cache.set(self._key(wire_locale), fetched.catalog, self._ttl)
             return fetched
+
+    def _unavailable(self, wire_locale: str) -> CatalogFetch:
+        """A fetch that failed or was held off: the last catalog that arrived, if any, still
+        renders, but is not ok, so nothing is registered off it (WIRE-4)."""
+        return CatalogFetch(self._last.get(wire_locale, {}), ok=False)
 
     def _held(self, wire_locale: str) -> Optional[CatalogFetch]:
         cached = self._memory.get(wire_locale)
@@ -127,6 +137,7 @@ class CatalogStore:
         persisted = self._cache.get(self._key(wire_locale))
         if isinstance(persisted, dict):
             self._memory[wire_locale] = persisted
+            self._last[wire_locale] = persisted
             return CatalogFetch(persisted, ok=True)
         return None
 
@@ -164,8 +175,8 @@ class CatalogStore:
             # WIRE-4 — we sit in the request path; our dependency being down must
             # not convert a working page into a 500.
             logger.warning(
-                "langsys: catalog fetch failed for %s (%s) — serving source text and "
-                "registering nothing this pass.",
+                "langsys: catalog fetch failed for %s (%s) — serving the catalog last held, or "
+                "source text, and registering nothing this pass.",
                 wire_locale,
                 exc,
             )
@@ -173,8 +184,8 @@ class CatalogStore:
 
         if response.get("status") is False:
             logger.warning(
-                "langsys: catalog fetch for %s answered status false - serving source text and "
-                "registering nothing this pass.",
+                "langsys: catalog fetch for %s answered status false - serving the catalog last "
+                "held, or source text, and registering nothing this pass.",
                 wire_locale,
             )
             return CatalogFetch({}, ok=False)

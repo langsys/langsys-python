@@ -17,6 +17,8 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **CACHE-2 — a held catalog keeps serving.** A catalog dropped for a refetch keeps rendering when
+  that refetch is refused, and only the next catalog to arrive replaces it.
 - **CACHE-1 — clearing a project's catalogs leaves other projects' entries.** A successful flush,
   `refresh()` and `clear_cache()` drop this project's catalog keys only, never the whole backend.
 - **WIRE-4 — a client built without credentials does not throw.** With no API key or project
