@@ -185,6 +185,44 @@ returns what your app would show without Langsys, and the cause is logged once, 
 `resolve()` returns the text with who wrote it, `"catalog"`, `"fallback"` or `"source"`, so a
 framework that prints translations without escaping can escape the catalog's text and only that.
 
+### Statuses and other values written into a sentence
+
+A sentence that names a translatable value is one phrase per value, so the translator sees the
+whole sentence: `The order is Shipped.`, not `The order is {status}.`. Declare the set and the
+placeholder it fills, and a call passing one of its values looks up that sentence:
+
+```python
+import enum
+from langsys import translates_as
+
+@translates_as("status")
+class Status(enum.Enum):
+    SHIPPED = "shipped"
+    DELIVERED = "delivered"
+
+    def label(self) -> str:          # the word readers see; without it, the value is used
+        return self.value.capitalize()
+
+class Colours:                        # any other set, read each time it is asked
+    @classmethod
+    def translatable_values(cls):
+        return {"colour": [c.name for c in Colour.objects.all()]}
+
+client = LangsysClient(..., value_sets=[Status, Colours])
+client.translate("The order is {status}.", params={"status": Status.SHIPPED})
+# looks up "The order is Shipped."
+```
+
+A value belongs to a set when it is a member, a member's value or a display word of the set
+declared for that placeholder. A placeholder is never matched to a set by name, and any other value
+(a user's name) is an ordinary placeholder.
+
+A framework integration that registers through its sync command passes
+`runtime_registration=False`: the translate function and server messages then register nothing
+while a request is served, and the page walk still collects. One sentence still registers: a
+declared value's sentence the catalog lacks while it holds another of the same template's
+sentences, which is a value added since the last sync. It goes out after the response.
+
 ### Moving content to another category
 
 When you move a phrase or a block to another category, name the category it was registered

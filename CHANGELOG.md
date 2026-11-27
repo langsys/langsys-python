@@ -17,6 +17,11 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **FRM-7 — declared value sets.** `value_sets=` takes `@translates_as` enums and
+  `translatable_values()` contracts; a call passing a declared value looks up the sentence with its
+  display word written in. **FRM-2's runtime switch:** `runtime_registration=False` stops the
+  translate function and message emission from registering, apart from a declared value added
+  since the last sync.
 - **FRM-3 — the miss fallback and `resolve()`.** `miss_fallback=` (or `use_miss_fallback()`)
   answers a phrase the catalog does not translate from the framework's own language files, before
   the source; `resolve()` returns the text with its origin, `catalog`, `fallback` or `source`.

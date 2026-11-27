@@ -55,6 +55,7 @@ from .types import (
     Project,
 )
 from .utilities import Utilities
+from .values import ValueSets
 
 #: REG-2 — a burst from one render becomes one request. An interval-only flush delays
 #: every registration by up to its full period, and lazy-loaded/streamed content is the
@@ -124,6 +125,8 @@ class LangsysClient:
         legacy_files: Optional[Sequence[Any]] = None,
         require_credentials: bool = False,
         miss_fallback: Optional[Callable[[Miss], Optional[str]]] = None,
+        value_sets: Optional[Iterable[Any]] = None,
+        runtime_registration: bool = True,
     ) -> None:
         self._config = Config.resolve(
             api_key,
@@ -217,6 +220,14 @@ class LangsysClient:
         #: translate, asked after the catalog and before the source. Its answer is never registered
         #: or cached.
         self._miss_fallback = miss_fallback
+        #: FRM-7 - the declared value sets: a call whose param is a declared value of its
+        #: placeholder looks up the sentence with that value written in.
+        self.value_sets = ValueSets(value_sets or ())
+        #: FRM-2 - off, the translate function and message emission register nothing at runtime;
+        #: a framework binding that registers through its sync command turns it off. FRM-7's
+        #: one exception still registers: a declared value whose sentence the catalog lacks while
+        #: it holds another of the template's sentences. The page walk still collects.
+        self.runtime_registration = runtime_registration
         #: SNAP-2 - a loaded snapshot's catalogs, per wire locale. Consulted before the fetch;
         #: whatever it does not hold falls through to the normal catalog path.
         self._preloaded: dict[str, Catalog] = {}
@@ -677,6 +688,15 @@ class LangsysClient:
         # alike, so a phrase carrying one resolves to the same entry as the markup that holds it.
         phrase = strip_c0(phrase)
         loc = self._effective_locale(locale)
+        call_params = params
+        written: Optional[tuple[str, list[str]]] = None
+        if argument is not None and params and self.value_sets:
+            # FRM-7 - a declared value is written into its placeholder, and the sentence it makes
+            # is the phrase; the template is never looked up for it.
+            filled = self.value_sets.write_in(phrase, params)
+            if filled is not None:
+                written = (phrase, filled[2])
+                phrase, params = filled[0], filled[1]
         moved = self._move_of(category, previous_category) if content_block_id is None else None
         self._note_use(phrase, category, moved)
         if content_block_id is None and self._preloaded:
@@ -689,7 +709,8 @@ class LangsysClient:
                     found, earlier = self._preloaded_entry(loc, moved or UNCATEGORIZED, phrase)
                     if found and _displayable(earlier):
                         text, prior = earlier, moved
-                return self._finish(text, current, prior, phrase, category, params, loc, argument)
+                return self._finish(text, current, prior, phrase, category, params, loc, argument,
+                                    call_params)
         fetch = self._catalog.get(loc)
         self._observe_decision(fetch.write_enabled)
         result = resolve(fetch.catalog, phrase, category, content_block_id)
@@ -703,13 +724,32 @@ class LangsysClient:
         # WIRE-4 — without a catalog a miss is indistinguishable from a hit, so an
         # outage would re-register everything that already exists. Record nothing.
         # CAT-1 - registration is decided under the current category alone.
-        if result.missing and content_block_id is None and fetch.ok:
-            self._queue_missing(phrase, category, fetch.catalog.get(category or UNCATEGORIZED),
-                                previous_category=moved)
+        entries = fetch.catalog.get(category or UNCATEGORIZED)
+        if (result.missing and content_block_id is None and fetch.ok
+                and self._registers_at_runtime(argument, phrase, written, entries)):
+            self._queue_missing(phrase, category, entries, previous_category=moved)
         if not fetch.ok and argument is not None:
             _notice_catalog_unavailable(self._not_configured)
         return self._finish(text, result.translated, prior, phrase, category, params, loc,
-                            argument)
+                            argument, call_params)
+
+    def _registers_at_runtime(
+        self,
+        argument: Optional[str],
+        sentence: str,
+        written: Optional[tuple[str, list[str]]],
+        entries: Any,
+    ) -> bool:
+        """FRM-2 - whether a miss on this path registers. The page walk always collects; the
+        translate function only with runtime registration on, or for FRM-7's one exception: a
+        declared value's sentence the catalog lacks while it holds another of the same template's
+        sentences, which marks the template as synced and the value as added since."""
+        if argument is None or self.runtime_registration:
+            return True
+        if written is None or not isinstance(entries, dict):
+            return False
+        siblings = self.value_sets.sentences(*written) or []
+        return any(other != sentence and other in entries for other in siblings)
 
     def _finish(
         self,
@@ -721,14 +761,16 @@ class LangsysClient:
         params: Optional[dict[str, Any]],
         loc: str,
         argument: Optional[str],
+        call_params: Optional[dict[str, Any]] = None,
     ) -> Lookup:
         """FRM-3 - the catalog's translation; failing that, on the translate function's path, the
-        miss fallback's line; failing that, the source. Whichever it is, filled with the params."""
+        miss fallback's line; failing that, the source. Whichever it is, filled with the params:
+        the fallback's line, being the framework's own template, with every param of the call."""
         origin = "catalog" if current or prior is not None else "source"
         if origin == "source" and argument is not None and self._miss_fallback is not None:
             line = self._ask_fallback(Miss(phrase, loc, category, argument))
             if line is not None:
-                text, origin = line, "fallback"
+                text, origin, params = line, "fallback", call_params
         if params:
             text = interpolate(text, params, loc)
         return Lookup(text, current, prior, origin)
@@ -1052,8 +1094,9 @@ class LangsysClient:
                 self._warned_marker_values.add(key)
                 warn_translatable_marker_value(template, marker, value)
         known = fetch.catalog.get(category)
-        # MSG-6 - registered or not is decided under the message category alone.
-        if not (isinstance(known, dict) and template in known):
+        # MSG-6 - registered or not is decided under the message category alone. FRM-2 - with
+        # runtime registration off, the sync command registers templates and emission does not.
+        if self.runtime_registration and not (isinstance(known, dict) and template in known):
             self._queue_missing(template, category, known,
                                 previous_category=self._move_of(category, None))
         return entry

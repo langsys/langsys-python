@@ -41,6 +41,7 @@ from .request_locale import LocaleChoice, resolve_request_locale
 from .scope import RequestScope, begin_request_scope, end_request_scope, request_scope
 from .translate import Miss, Resolved
 from .types import Country, Currency, DialCode, LocaleFlat, LocaleInfo, Project
+from .values import TranslatableValues, ValueSets, translates_as
 
 __version__ = "0.1.0"
 
@@ -54,6 +55,9 @@ __all__ = [
     "LangsysClient",
     "Miss",
     "Resolved",
+    "TranslatableValues",
+    "ValueSets",
+    "translates_as",
     "Project",
     "Country",
     "Currency",
