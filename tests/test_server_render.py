@@ -7,6 +7,7 @@ half and are recorded `n/a` in CONFORMANCE with that reason.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import threading
@@ -124,6 +125,77 @@ def test_SRV2_no_process_global_holds_per_request_translation_state():
         assert a.translate("P", category="UI", locale="it-it") == "IT"
     with patch.object(b._catalog, "get", return_value=CatalogFetch({"UI": {"P": "DE"}}, ok=True)):
         assert b.translate("P", category="UI", locale="de-de") == "DE"
+
+
+class Tenants:
+    """Two projects, each with its own key and catalog. Every request is recorded with the key and
+    the project it went out under; the catalog reads wait for each other, so the renders
+    interleave."""
+
+    def __init__(self, httpx_mock, *projects):
+        self.sent: list[tuple[str, str, str]] = []
+        self.barrier = threading.Barrier(len(projects), timeout=3)
+        httpx_mock.add_callback(self, url=re.compile(r"https://api\.test/api/.*"), is_reusable=True)
+
+    def __call__(self, request):
+        key = request.headers.get("X-Authorization", "")
+        path = request.url.path.split("/api/", 1)[1]
+        if path.startswith("authorize-project/"):
+            project = path.rsplit("/", 1)[1]
+        elif request.method == "GET":
+            project = request.url.params.get("project_id", "")
+        else:
+            project = json.loads(request.content)["project_id"]
+        self.sent.append((path.split("/", 1)[0], key, project))
+        if path.startswith("authorize-project/"):
+            body = auth("write", write_enabled=True)
+            body["data"]["id"] = project
+            return httpx.Response(200, json=body)
+        if path == "translations":
+            with contextlib.suppress(threading.BrokenBarrierError):
+                self.barrier.wait()
+            return httpx.Response(200, json={"status": True, "write_enabled": True, "data": {
+                "UI": {"Pricing": f"Pricing of {project}"}}})
+        return httpx.Response(200, json={"status": True, "data": [{"status": True}]})
+
+
+def test_SRV2_two_concurrent_renders_send_every_request_under_their_own_credentials(httpx_mock):
+    tenants = Tenants(httpx_mock, "proj-a", "proj-b")
+    shared = MemoryCache()
+    clients = {project: LangsysClient(key, project, api_url=API, cache=shared, base_locale="en-us",
+                                      debounce=0, auto_flush=False)
+               for key, project in (("key-a", "proj-a"), ("key-b", "proj-b"))}
+    rendered: dict[str, list[str]] = {}
+
+    def render(project):
+        client = clients[project]
+        rendered[project] = [client.translate("Pricing", category="UI", locale="it-it"),
+                             client.translate("Checkout", category="UI", locale="it-it")]
+        client.flush_pending()
+
+    threads = [threading.Thread(target=render, args=(p,)) for p in clients]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(5)
+    assert rendered == {"proj-a": ["Pricing of proj-a", "Checkout"],
+                        "proj-b": ["Pricing of proj-b", "Checkout"]}, rendered
+    pairs = {(key, project) for _, key, project in tenants.sent}
+    assert pairs == {("key-a", "proj-a"), ("key-b", "proj-b")}, tenants.sent
+    for project in clients:
+        routes = sorted({route for route, _, p in tenants.sent if p == project})
+        assert routes == ["authorize-project", "translatable-items", "translations"], \
+            (project, routes)
+
+
+def test_SRV2_a_client_given_no_credentials_sends_under_the_environments(httpx_mock, monkeypatch):
+    tenants = Tenants(httpx_mock, "proj-env")
+    monkeypatch.setenv("LANGSYS_API_KEY", "key-env")
+    monkeypatch.setenv("LANGSYS_PROJECT_ID", "proj-env")
+    client = LangsysClient(api_url=API, cache=MemoryCache(), base_locale="en-us", debounce=0,
+                           auto_flush=False)
+    assert client.translate("Pricing", category="UI", locale="it-it") == "Pricing of proj-env"
+    assert {(key, project) for _, key, project in tenants.sent} == {("key-env", "proj-env")}
 
 
 # -- SRV-3 --------------------------------------------------------------------
