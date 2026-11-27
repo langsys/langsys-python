@@ -117,6 +117,11 @@ you should not rely on the first two alone:
 Registration is resilient by design: a failed send keeps its queue and backs off
 exponentially rather than retrying into a failing endpoint, and a failure to reach the
 API at all is never treated as "you may not write" — the queue is held, not discarded.
+A content block has one registration request in flight per process, keyed by the API URL,
+key, project, category and id: a registration of a block whose request is still unanswered,
+from a flush or from `register_content_block()`, sends nothing and takes that request's answer,
+a refusal included. Once the answer arrives the next registration sends again; one under other
+credentials always sends its own.
 `flush_pending()` and `sync()` return a result whose `success` is only ever `True` for work
 that actually happened. A skipped write sets `skipped` and names its `reason`
 (`not-write-enabled`, `capability-unknown`, `catalog-unavailable`, …); a send the server

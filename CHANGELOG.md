@@ -17,6 +17,11 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **REG-7 — one registration request in flight per content block.** Keyed by credentials,
+  category and id across every client in the process: a registration of a block whose request is
+  unanswered, from a flush or a direct `register_content_block()`, sends nothing and takes that
+  request's answer; a refused answer lets the next registration send again; other credentials
+  send their own.
 - **CACHE-2 — a held catalog keeps serving.** A catalog dropped for a refetch keeps rendering when
   that refetch is refused, and only the next catalog to arrive replaces it.
 - **CACHE-1 — clearing a project's catalogs leaves other projects' entries.** A successful flush,

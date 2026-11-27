@@ -1292,7 +1292,8 @@ class LangsysClient:
     def _reg(self) -> Registrar:
         if self._registrar is None:
             self._registrar = Registrar(
-                self._http, self._config.project_id, batch_limit=self.authorize().batch_limit
+                self._http, self._config.project_id, batch_limit=self.authorize().batch_limit,
+                credentials=(self._config.api_url, self._config.api_key),
             )
         return self._registrar
 

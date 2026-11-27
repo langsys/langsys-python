@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from typing import Any, Optional, Sequence, Union
 
 from .http import HttpClient
@@ -239,13 +240,75 @@ def legacy_custom_ids(category: Optional[str], phrases: Sequence[str]) -> list[s
     return list(dict.fromkeys(ids))
 
 
+class _Flight:
+    """One content block's registration request, and the answer its waiters take."""
+
+    __slots__ = ("done", "result", "error")
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.result: Optional[dict[str, Any]] = None
+        self.error: Optional[BaseException] = None
+
+    def wait(self) -> dict[str, Any]:
+        self.done.wait()
+        if self.error is not None:
+            raise self.error
+        return self.result if self.result is not None else {"status": True}
+
+
+#: REG-7 - the content blocks with a registration request in flight in this process, keyed by
+#: credentials, category and id. A registration that finds its block here sends nothing and takes
+#: that request's answer; the entry goes as soon as the answer arrives, so once a request has been
+#: refused or has failed, the next registration sends again.
+_IN_FLIGHT: dict[tuple[str, ...], _Flight] = {}
+_FLIGHT_GUARD = threading.Lock()
+
+
+def _claim(key: tuple[str, ...]) -> tuple[_Flight, bool]:
+    """The flight for `key`, and whether this caller owns it (sends) or joins it (waits)."""
+    with _FLIGHT_GUARD:
+        flight = _IN_FLIGHT.get(key)
+        if flight is not None:
+            return flight, False
+        flight = _IN_FLIGHT[key] = _Flight()
+        return flight, True
+
+
+def _land(
+    key: tuple[str, ...],
+    flight: _Flight,
+    result: Optional[dict[str, Any]] = None,
+    error: Optional[BaseException] = None,
+) -> None:
+    with _FLIGHT_GUARD:
+        if _IN_FLIGHT.get(key) is flight:
+            del _IN_FLIGHT[key]
+    flight.result, flight.error = result, error
+    flight.done.set()
+
+
 class Registrar:
     """Posts translatable items to nova. Caller is responsible for write-key gating."""
 
-    def __init__(self, http: HttpClient, project_id: str, *, batch_limit: int = 200) -> None:
+    def __init__(
+        self,
+        http: HttpClient,
+        project_id: str,
+        *,
+        batch_limit: int = 200,
+        credentials: Sequence[str] = (),
+    ) -> None:
         self._http = http
         self._project_id = project_id
         self.batch_limit = batch_limit if batch_limit > 0 else 200
+        #: What a request is sent under (the API URL and key); with the project id, the
+        #: credentials part of a block's in-flight key (REG-7).
+        self._credentials = tuple(credentials)
+
+    def _flight_key(self, item: dict[str, Any]) -> tuple[str, ...]:
+        return (*self._credentials, self._project_id, str(item.get("category") or ""),
+                str(item["custom_id"]))
 
     def register_phrases(self, phrases: Sequence[PhraseInput]) -> list[dict[str, Any]]:
         items = [self._phrase_item(p) for p in phrases]
@@ -263,8 +326,18 @@ class Registrar:
         item = self._content_block_item(
             content, phrases, category=category, custom_id=custom_id, label=label
         )
-        responses = self._post_items([item])
-        return responses[0] if responses else {"status": True}
+        key = self._flight_key(item)
+        flight, owner = _claim(key)
+        if not owner:
+            return flight.wait()  # REG-7: the request in flight answers for this one too
+        try:
+            responses = self._post_items([item])
+        except BaseException as exc:
+            _land(key, flight, error=exc)
+            raise
+        result = responses[0] if responses else {"status": True}
+        _land(key, flight, result=result)
+        return result
 
     def register_content_blocks(
         self, blocks: Sequence[dict[str, Any]]
@@ -284,7 +357,28 @@ class Registrar:
             )
             for block in blocks
         ]
-        return self._post_items(items)
+        # REG-7 - send only the blocks no other request has in flight; for the rest, take the
+        # answer of the request that does, after this one's own blocks have been answered.
+        owned: list[tuple[tuple[str, ...], _Flight, dict[str, Any]]] = []
+        joined: list[_Flight] = []
+        for item in items:
+            key = self._flight_key(item)
+            flight, owner = _claim(key)
+            if owner:
+                owned.append((key, flight, item))
+            else:
+                joined.append(flight)
+        try:
+            responses = self._post_items([item for _, _, item in owned]) if owned else []
+        except BaseException as exc:
+            for key, flight, _ in owned:
+                _land(key, flight, error=exc)
+            raise
+        for index, (key, flight, _) in enumerate(owned):
+            _land(key, flight, result=responses[index // self.batch_limit] if responses else None)
+        for flight in joined:
+            flight.wait()
+        return responses
 
     # -- internals ------------------------------------------------------------
 
