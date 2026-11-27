@@ -77,9 +77,23 @@ placeholder is left visible (`{name}`) rather than blanked.
 client.countries("es-ES")            # -> [Country(code="DE", label="Alemania"), ...]
 client.currencies("es-ES")           # -> [Currency(code="USD", name="dólar estadounidense", ...)]
 client.dial_codes("es-ES")
+client.locales_flat()                # in the current locale: [LocaleFlat(code="es-cr", ...), ...]
+client.locales_data("es-ES")         # code, locale_name, lang_name
+client.locales("es-ES")              # grouped by language name
 client.locale_name("es-ES", in_locale="en-US")   # -> "Spanish (Spain)"
 client.detect_preferred_locale("fr,es;q=0.8", ["en-US", "es-ES"])  # -> "es-ES" (or None)
 ```
+
+Each list is named in a display locale: the one given, else the client's current locale,
+normalised the same way, so `"iw-IL"` given and `"iw-IL"` set ask for one list. A value that is
+not shaped as a locale (`"../projects"`) is never sent; the call answers empty and warns. Locale
+codes come back lowercase and hyphenated (`es-cr`) whatever form the organisation writes them in.
+
+A list is held per display locale, in memory and in the cache backend, so a client built for a
+later request answers it without a request; `client.refresh()` reads it again. No call raises: a
+failed read answers the list empty (`{}` for `locales()`), logs why, and is not retried for a
+window that starts at 3s and doubles to 5 minutes. Unconfigured, every list is empty and nothing
+is sent; under `require_credentials` the call raises `NotConfiguredError`.
 
 ### Registering phrases (write key)
 

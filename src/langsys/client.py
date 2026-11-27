@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import re
 import threading
 import time
 from typing import Any, Iterable, Optional, Sequence
@@ -48,6 +49,9 @@ from .utilities import Utilities
 #: every registration by up to its full period, and lazy-loaded/streamed content is the
 #: common case discovery targets.
 DEFAULT_DEBOUNCE_SECONDS = 0.4
+
+#: REF-1 - a display locale, in wire form, that may be written into a request path.
+_LOCALE_SHAPE = re.compile(r"^[a-z]{2,8}(-[a-z0-9]{1,8})*$")
 
 #: WIRE-4 - the unconfigured-client warnings this process has given, so each is given once.
 _UNCONFIGURED_NOTICE: set[str] = set()
@@ -189,7 +193,9 @@ class LangsysClient:
         self._snapshot_locales: Optional[tuple[str, list[str]]] = None
         #: MSG-11 - one warning per (template, marker) whose value is a catalogued phrase.
         self._warned_marker_values: set[tuple[str, str]] = set()
-        self._utils = Utilities(self._http, self._config.project_id)
+        self._utils = Utilities(
+            self._http, self._config.project_id, self._cache, ttl=self._config.cache_ttl
+        )
         self._registrar: Optional[Registrar] = None
 
         if auto_flush:
@@ -1290,36 +1296,59 @@ class LangsysClient:
             )
         return self._registrar
 
-    # -- reference data (utilities) -------------------------------------------
+    # -- reference lists (REF-1) ------------------------------------------------
+
+    def _display_locale(self, in_locale: Optional[str]) -> Optional[str]:
+        """The display locale a reference list is named in: the one given, else the current one,
+        normalised as the current locale is, in wire form. None when the core is unconfigured or
+        the result is not shaped as a locale, which is then never written into a request path."""
+        self._assert_usable()
+        if self._not_configured is not None:
+            return None
+        display = normalize_locale(self._effective_locale(in_locale))
+        if not _LOCALE_SHAPE.match(display):
+            logger.warning(
+                "langsys: %r is not shaped as a locale, so it was not sent as a display locale; "
+                "answering the list empty.",
+                in_locale if in_locale is not None else display,
+            )
+            return None
+        return display
 
     def countries(self, in_locale: Optional[str] = None) -> list[Country]:
-        return self._utils.countries(self._effective_locale(in_locale))
+        """The countries, named in the display locale (`code`, `label`)."""
+        return self._utils.countries(self._display_locale(in_locale))
 
     def dial_codes(self, in_locale: Optional[str] = None) -> list[DialCode]:
-        return self._utils.dial_codes(self._effective_locale(in_locale))
+        """The countries' dial codes, named in the display locale."""
+        return self._utils.dial_codes(self._display_locale(in_locale))
 
     def currencies(self, in_locale: Optional[str] = None) -> list[Currency]:
-        return self._utils.currencies(self._effective_locale(in_locale))
+        """The currencies, named in the display locale."""
+        return self._utils.currencies(self._display_locale(in_locale))
 
     def country_name(self, code: str, in_locale: Optional[str] = None) -> str:
-        return self._utils.country_name(code, self._effective_locale(in_locale))
+        return self._utils.country_name(code, self._display_locale(in_locale))
 
     def currency_name(self, code: str, in_locale: Optional[str] = None) -> str:
-        return self._utils.currency_name(code, self._effective_locale(in_locale))
+        return self._utils.currency_name(code, self._display_locale(in_locale))
 
     def locales(self, in_locale: Optional[str] = None) -> dict[str, list[LocaleFlat]]:
-        return self._utils.locales(self._effective_locale(in_locale))
+        """The locales grouped by language name, named in the display locale."""
+        return self._utils.locales(self._display_locale(in_locale))
 
     def locales_flat(self, in_locale: Optional[str] = None) -> list[LocaleFlat]:
-        return self._utils.locales_flat(self._effective_locale(in_locale))
+        """The locales as `code` and `name`, named in the display locale."""
+        return self._utils.locales_flat(self._display_locale(in_locale))
 
     def locales_data(self, in_locale: Optional[str] = None) -> list[LocaleInfo]:
-        return self._utils.locales_data(self._effective_locale(in_locale))
+        """The locales as `code`, `locale_name` and `lang_name`, named in the display locale."""
+        return self._utils.locales_data(self._display_locale(in_locale))
 
     def locale_name(
         self, for_locale: str, short: bool = False, in_locale: Optional[str] = None
     ) -> str:
-        return self._utils.locale_name(for_locale, short, self._effective_locale(in_locale))
+        return self._utils.locale_name(for_locale, short, self._display_locale(in_locale))
 
     #: Alias for parity with the JS SDK naming.
     locale_name_with_lookup = locale_name

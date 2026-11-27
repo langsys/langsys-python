@@ -11,6 +11,14 @@ Brought the SDK in line with the SDK Behaviour Spec. Nothing here has ever been 
 so none of it is a breaking change for an installed user — see `CONFORMANCE.md` for the
 rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
 
+- **REF-1 — reference lists named in a display locale.** `countries()`, `dial_codes()`,
+  `currencies()`, `locales()`, `locales_flat()` and `locales_data()` take an optional display
+  locale (else the current one), normalised and validated before it reaches a request path, and
+  hold each list per display locale in memory and in the cache backend. A locale list asks for its
+  one locale with no target locales appended and answers codes in lowercase hyphenated form. No
+  call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **CACHE-1 — clearing a project's catalogs leaves other projects' entries.** A successful flush,
+  `refresh()` and `clear_cache()` drop this project's catalog keys only, never the whole backend.
 - **WIRE-4 — a client built without credentials does not throw.** With no API key or project
   id it is unconfigured: reads render source text, nothing is fetched or queued, one warning per
   process names the missing settings, explicit writes raise `NotConfiguredError`, and
