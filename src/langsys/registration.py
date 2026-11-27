@@ -392,6 +392,13 @@ class Registrar:
             "category": phrase.get("category"),
             "translatable": phrase.get("translatable", True),
         }
+        # MIG-9 - a phrase's existing translations, one {locale, translation} entry per locale,
+        # stored by the API as human translations.
+        if phrase.get("translations"):
+            item["translations"] = [
+                {"locale": locale, "translation": text}
+                for locale, text in phrase["translations"].items()
+            ]
         return item
 
     @staticmethod

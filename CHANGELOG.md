@@ -17,6 +17,10 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **MIG-9 — `import_legacy_translations()`.** A one-time import registers every legacy key's
+  phrase together with each target locale's existing translation of it, which the API stores as
+  human translations. Gettext plurals map to CLDR categories through each file's `Plural-Forms`,
+  and a plural that cannot be mapped without guessing is left for machine translation and counted.
 - **REG-7 — one registration request in flight per content block.** Keyed by credentials,
   category and id across every client in the process: a registration of a block whose request is
   unanswered, from a flush or a direct `register_content_block()`, sends nothing and takes that

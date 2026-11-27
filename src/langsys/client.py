@@ -6,7 +6,8 @@ import atexit
 import re
 import threading
 import time
-from typing import Any, Iterable, Optional, Sequence
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Optional, Sequence, Union
 
 from ._log import logger
 from .cache.backend import CacheBackend
@@ -25,7 +26,7 @@ from .http import HttpClient, encode_segment
 from .interpolate import interpolate
 from .locale import canonicalize_locale, detect_preferred_locale, normalize_locale
 from .messages import DEFAULT_MESSAGE_CATEGORY, Entry, fill_template
-from .migrate import LegacyKeys
+from .migrate import SKIP_PLURAL_FORMS, LegacyFile, LegacyKeys, LegacyTranslations
 from .observable import LocaleSource, Signal
 from .registration import PhraseInput, Registrar, generate_custom_id
 from .request_locale import LocaleChoice, resolve_request_locale
@@ -868,6 +869,105 @@ class LangsysClient:
             return fill_template(template, entry.get("params")) if isinstance(template, str) else ""
         params = entry.get("params") or {}
         return interpolate(value, params, self._effective_locale(locale)) if params else value
+
+    def import_legacy_translations(
+        self, targets: Mapping[str, Sequence[Union[str, Path, LegacyFile]]]
+    ) -> dict[str, Any]:
+        """Import the translations an app's legacy files already hold (MIG-9), once, before its
+        target-language files are deleted.
+
+        `targets` maps each target locale to its files, given as `legacy_files` gives the source
+        language's. Every key of the source files registers its phrase as a lookup of that key
+        would, together with each locale's value for the same key, converted the same way; the
+        API stores those as human translations, so work already done shows at once and is not
+        machine translated again. A value that is missing, empty, fuzzy, does not convert, or is
+        a gettext plural whose forms cannot be mapped to CLDR categories is not a translation:
+        the phrase still registers, that locale is left for machine translation, and the key is
+        listed in `not_imported` with its reason; `plural_entries_unmapped` counts the plurals.
+        A session that may not write imports nothing and says why (`skipped`, `reason`), and a
+        refused send is `reason: "registration-failed"`, never success.
+
+        Raises `ConfigurationError` when no source files are configured or a locale is not a
+        target of the project, before anything is read or sent.
+        """
+        self._refuse_write()
+        if self._legacy is None:
+            raise ConfigurationError(
+                "Langsys: nothing to import: no source-language files are configured "
+                "(pass legacy_files=)."
+            )
+        result: dict[str, Any] = {
+            "success": False, "reason": None, "phrases": 0, "translations": 0,
+            "human_translations_saved": 0, "human_translations_skipped": 0,
+            "plural_entries_unmapped": 0, "not_imported": [],
+        }
+        decision = self._resolve_write_enabled()
+        if decision is not True:
+            result.update(skipped=True, reason="not-write-enabled" if decision is False
+                          else "capability-unknown")
+            return result
+        project = self.authorize()
+        targeted = {normalize_locale(t) for t in project.target_locales}
+        base = normalize_locale(project.base_locale) if project.base_locale else None
+        for locale in targets:
+            wire = normalize_locale(locale)
+            if wire not in targeted or wire == base:
+                raise ConfigurationError(
+                    f"Langsys: {locale} is not a target locale of this project, so its "
+                    f"translations cannot be imported (targets: {', '.join(sorted(targeted))})."
+                )
+        readers = [LegacyTranslations(normalize_locale(locale), files)
+                   for locale, files in targets.items()]
+
+        items: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, entry in self._legacy.entries.items():
+            phrase = strip_c0(entry.phrase)
+            if not phrase.strip():
+                continue
+            category = entry.category or UNCATEGORIZED
+            item = items.setdefault((category, phrase), {
+                "phrase": phrase, "category": None if category == UNCATEGORIZED else category,
+                "translations": {}})
+            for reader in readers:
+                value = reader.get(key)
+                if value.translation is None:
+                    listed = {"key": key[1], "context": key[0], "locale": reader.locale,
+                              "reason": value.reason}
+                    if value.detail:
+                        listed["detail"] = value.detail
+                    result["not_imported"].append(listed)
+                    if value.reason == SKIP_PLURAL_FORMS:
+                        result["plural_entries_unmapped"] += 1
+                    continue
+                item["translations"].setdefault(reader.locale, value.translation)
+        for reader in readers:
+            for key in reader.values:
+                if key not in self._legacy.entries:
+                    result["not_imported"].append({"key": key[1], "context": key[0],
+                                                   "locale": reader.locale,
+                                                   "reason": "no-source-key"})
+
+        try:
+            responses = self._reg.register_phrases(list(items.values()))
+        except (NetworkError, ApiError) as exc:
+            logger.warning("langsys: the import was refused (%s); nothing is marked imported.",
+                           exc)
+            result.update(reason="registration-failed", error=str(exc))
+            return result
+        for response in responses:
+            data = response.get("data") if isinstance(response, dict) else None
+            for field_name in ("human_translations_saved", "human_translations_skipped"):
+                count = data.get(field_name) if isinstance(data, dict) else None
+                result[field_name] += count if isinstance(count, int) else 0
+        result.update(success=True, phrases=len(items),
+                      translations=sum(len(i["translations"]) for i in items.values()))
+        self._catalog.clear()  # the next read serves what was imported
+        logger.info("langsys: imported %d phrase(s) with %d translation(s): %d saved as human "
+                    "translations, %d left for machine translation by the plan's quota, %d "
+                    "plural entr(ies) whose forms could not be mapped.", result["phrases"],
+                    result["translations"], result["human_translations_saved"],
+                    result["human_translations_skipped"], result["plural_entries_unmapped"])
+        return result
 
     def register_templates(
         self, templates: Iterable[str], *, category: Optional[str] = None

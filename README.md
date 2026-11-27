@@ -282,6 +282,34 @@ is treated as ordinary source text. Placeholders are converted to `{name}`: `{{n
 FILE ...` lists keys defined twice and values kept verbatim because they can't be converted.
 Leave `legacy_files` unset once you've migrated; no file is read and no lookup runs.
 
+**Importing the translations you already have.** Before deleting your target-language files, run
+the import once with a write key, so the translations already done show in the Translation
+Manager as human translations and are not machine translated again:
+
+```python
+result = client.import_legacy_translations({
+    "fr-FR": ["locale/fr/LC_MESSAGES/django.po"],
+    "it-IT": ["i18n/it.json"],
+})
+result["human_translations_saved"], result["not_imported"]
+```
+
+Every key of the `legacy_files` registers its source phrase, exactly as a lookup of that key
+would, with each locale's value for the same key converted the same way. A value that is
+missing, empty, fuzzy, or can't be converted isn't a translation: the phrase still registers,
+that locale is left for machine translation, and the key is listed in `not_imported` with its
+reason. A locale the project doesn't target, or its base locale, raises `ConfigurationError`
+before anything is read or sent. Past the plan's human-translation word limit the API keeps the
+rest for machine translation, and `human_translations_skipped` counts them.
+
+A `.po` plural's `msgstr[n]` are numbered by that file's `Plural-Forms`, so the import gives each
+CLDR plural category the form its whole-number counts select: French `one` takes `msgstr[0]`,
+and `many` and `other` both take `msgstr[1]`. A plural whose forms can't be mapped this way
+without guessing is left for machine translation, with a warning, and counted in
+`plural_entries_unmapped`. That happens when one category's counts select different forms, when
+no category selects a form, or when a category has no whole-number count at all, like Russian
+`other` or Czech `many`, which only fractions reach. Those locales' other entries still import.
+
 ### Caching
 
 The catalog is cached (in-memory + a persistent tier). Choose the persistent backend:
