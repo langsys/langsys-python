@@ -69,3 +69,50 @@ def test_malformed_icu_degrades_without_raising():
     # Looks like ICU (matches detector) but is unbalanced -> falls back to simple.
     out = interpolate("{n, plural, one {oops", {"n": 1}, "en")
     assert isinstance(out, str)
+
+
+# -- a missing ICU argument (same recovery as langsys-js-typescript 0.6.4 and langsys-php 1.3.1) --
+#
+# Reachable with no caller mistake: Langsys promotes a plain "{username}" phrase to
+# "{username_gender, select, …}" in gendered target locales, so the app never passes
+# username_gender. It must read as a sentence, not as "{username_gender}".
+
+GENDERED = (
+    "{username_gender, select, female {{username} ha sido invitada} "
+    "male {{username} ha sido invitado} other {{username} ha sido invitade}}"
+)
+
+
+def test_missing_select_argument_takes_the_other_branch():
+    assert interpolate(GENDERED, {"username": "Ana"}, "es-ES") == "Ana ha sido invitade"
+
+
+def test_none_select_argument_counts_as_missing():
+    assert interpolate(GENDERED, {"username": "Ana", "username_gender": None}, "es-ES") == "Ana ha sido invitade"
+
+
+def test_supplied_select_argument_is_untouched():
+    assert interpolate(GENDERED, {"username": "Ana", "username_gender": "female"}, "es-ES") == "Ana ha sido invitada"
+
+
+def test_missing_plural_argument_takes_other_with_a_visible_gap():
+    msg = "{count, plural, one {Tienes # mensaje nuevo.} other {Tienes # mensajes nuevos.}}"
+    assert interpolate(msg, {}, "es-ES") == "Tienes {count} mensajes nuevos."
+    # None is missing too; a real 0 still renders as a number.
+    assert interpolate(msg, {"count": None}, "es-ES") == "Tienes {count} mensajes nuevos."
+    assert interpolate(msg, {"count": 0}, "es-ES") == "Tienes 0 mensajes nuevos."
+
+
+def test_missing_simple_and_number_arguments_stay_visible():
+    assert interpolate("{n, number} por {who}, {g, select, other {ok}}", {}, "es-ES") == "{n} por {who}, ok"
+
+
+def test_missing_argument_in_an_unchosen_branch_costs_nothing():
+    msg = "{g, select, f {Ella} other {{n, plural, one {# amiga} other {# amigas}}}}"
+    assert interpolate(msg, {"g": "f"}, "es-ES") == "Ella"
+    assert interpolate(msg, {}, "es-ES") == "{n} amigas"
+
+
+def test_select_without_other_is_left_as_a_visible_slot():
+    # Malformed: nothing safe to choose, so it stays visible rather than guessing.
+    assert interpolate("{g, select, male {He} female {She}} won", {}, "en") == "{g} won"
