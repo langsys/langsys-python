@@ -28,7 +28,16 @@ import re
 import sys
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Optional,
+    Protocol,
+    Sequence,
+    Union,
+    runtime_checkable,
+)
 
 from ._log import logger
 
@@ -36,6 +45,11 @@ if TYPE_CHECKING:
     from .client import LangsysClient
 
 __all__ = [
+    "HasAppMessageTemplate",
+    "HasMessageTemplate",
+    "app_message",
+    "message_params",
+    "rule_template",
     "DEFAULT_ATTACH_KEY",
     "DEFAULT_LABEL_PLACEHOLDERS",
     "DEFAULT_MESSAGE_CATEGORY",
@@ -245,6 +259,67 @@ def _dig(body: Any, path: str) -> Any:
     return node
 
 
+# -- the message-template contracts (FRM-2, MSG-7) ----------------------------------------------
+
+
+@runtime_checkable
+class HasMessageTemplate(Protocol):
+    """A validation rule's sentence, stated ahead of time (FRM-2).
+
+    A framework hands its validator a finished message with the values already filled in, so the
+    message cannot say where a value goes. `template()` returns the sentence with the framework's
+    label placeholder where the field's label goes and a `{name}` marker for each value, filled
+    from the rule's public attribute of the same name.
+    """
+
+    def template(self) -> str: ...
+
+
+@runtime_checkable
+class HasAppMessageTemplate(Protocol):
+    """A message the app defines itself (MSG-7): `template()` with `{name}` markers filled from the
+    public attributes of the same name, and `code`, its identifier (MSG-1), as an attribute or a
+    method. It carries no label placeholder, since it belongs to no field."""
+
+    def template(self) -> str: ...
+
+
+def rule_template(
+    rule: HasMessageTemplate, label: str,
+    label_placeholders: Sequence[str] = DEFAULT_LABEL_PLACEHOLDERS,
+) -> str:
+    """The template a rule lists for one field: its `template()` with the field's label written in
+    and its markers kept. The listing and the runtime entry both use it, so they agree."""
+    template = str(rule.template())
+    for placeholder in label_placeholders:
+        template = template.replace(placeholder, label)
+    return template
+
+
+def message_params(source: Any, template: str) -> dict[str, Any]:
+    """The values a template's markers take: each marker's public attribute of `source`, and only
+    those, so an attribute no marker names never reaches the entry."""
+    return {name: getattr(source, name) for name in template_markers(template)
+            if hasattr(source, name)}
+
+
+def app_message(message: Any, *, field: Any = None) -> Entry:
+    """The entry an app message sends (MSG-1): its template, its params from its attributes, and
+    its code, exactly as the listing lists it."""
+    template = str(message.template())
+    return server_message(template, message_params(message, template), field=field,
+                          code=_code_of(message))
+
+
+def _code_of(message: Any) -> Any:
+    code = getattr(message, "code", None)
+    return code() if callable(code) else code
+
+
+def _unnamed_markers(source: Any, template: str) -> list[str]:
+    return [name for name in template_markers(template) if not hasattr(source, name)]
+
+
 # -- the template list and its check (MSG-7, MSG-11) --------------------------------------------
 
 
@@ -280,6 +355,10 @@ class TemplateList:
     label_placeholders: Sequence[str] = DEFAULT_LABEL_PLACEHOLDERS
     templates: dict[str, str] = field(default_factory=dict)  # template -> where it came from
     problems: list[TemplateProblem] = field(default_factory=list)
+    codes: dict[str, Any] = field(default_factory=dict)  # an app message's template -> its code
+    _rule_types: set[type] = field(default_factory=set, repr=False)
+    _app_messages: dict[type, str] = field(default_factory=dict, repr=False)
+    _app_problems: dict[type, list[TemplateProblem]] = field(default_factory=dict, repr=False)
 
     def check(self, template: str) -> None:
         """Refuse a template that still holds one of its framework's label placeholders: the label
@@ -297,6 +376,71 @@ class TemplateList:
         """Add one template, or raise `TemplateRefused`."""
         self.check(template)
         self.templates.setdefault(template, source)
+
+    def _try_add(self, template: str, source: str, field_name: str = "") -> bool:
+        try:
+            self.add(template, source)
+        except TemplateRefused as refused:
+            self.problems.append(TemplateProblem(str(refused), source=source, field=field_name))
+            return False
+        return True
+
+    def add_rule(
+        self, rule: Any, *, label: str, message: str, source: str = "", field: str = ""
+    ) -> None:
+        """List one validation rule for one field (FRM-2). A rule implementing `HasMessageTemplate`
+        lists its template with the label written in and its markers kept, and a marker naming no
+        public attribute is reported. Any other rule lists its filled `message`, and is reported
+        naming the interface: a value filled into that message becomes part of the phrase."""
+        kind = type(rule)
+        self._rule_types.add(kind)
+        # A class listed as an app message before it was seen as a rule loses that listing.
+        listed_as_message = self._app_messages.pop(kind, None)
+        if listed_as_message is not None:
+            self.templates.pop(listed_as_message, None)
+            self.codes.pop(listed_as_message, None)
+        for problem in self._app_problems.pop(kind, []):
+            self.problems.remove(problem)
+        origin = source or kind.__qualname__
+        if not callable(getattr(rule, "template", None)):
+            self._try_add(str(message), origin, field)
+            self.problems.append(TemplateProblem(
+                f"{kind.__qualname__} states no template; listed from its filled message",
+                source=origin, field=field,
+                fix="implement langsys.messages.HasMessageTemplate (template() with {name} "
+                    "markers named after its public attributes)",
+            ))
+            return
+        template = rule_template(rule, label, self.label_placeholders)
+        for name in _unnamed_markers(rule, template):
+            self.problems.append(TemplateProblem(
+                f"the marker {{{name}}} in {template!r} names no public attribute of "
+                f"{kind.__qualname__}", source=origin, field=field,
+                fix=f"give {kind.__qualname__} a public {name!r} attribute, or rename the marker",
+            ))
+        self._try_add(template, origin, field)
+
+    def add_app_message(self, message: Any, source: str = "") -> None:
+        """List a message the app defines itself (MSG-7), once, with its code. A class that is also
+        a validation rule keeps its per-field listing and is not listed again."""
+        kind = message if isinstance(message, type) else type(message)
+        if kind in self._rule_types:
+            return
+        origin = source or kind.__qualname__
+        before = len(self.problems)
+        try:
+            template: Optional[str] = str(message.template())
+        except TypeError as exc:
+            template = None
+            self.problems.append(TemplateProblem(
+                f"{kind.__qualname__}.template() could not be read ({exc})", source=origin,
+                fix="pass an instance, or make template() a classmethod",
+            ))
+        if template is not None and self._try_add(template, origin):
+            self._app_messages[kind] = template
+            self.codes[template] = _code_of(message)
+        if len(self.problems) > before:
+            self._app_problems.setdefault(kind, []).extend(self.problems[before:])
 
     def extend(self, declarations: Iterable[Declared], source: str = "") -> None:
         """Add everything a provider declares, collecting refusals and reported problems."""

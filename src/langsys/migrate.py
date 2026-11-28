@@ -177,6 +177,37 @@ def gettext_plural(
     return "{count, plural, =1 {" + branch(singular) + "} other {" + branch(plural) + "}}"
 
 
+def call_phrase(
+    text: str,
+    entry_point: str = "gettext",
+    *,
+    plural: Optional[str] = None,
+    category: Optional[str] = None,
+    passed: Optional[Iterable[str]] = (),
+    legacy: Optional["LegacyKeys"] = None,
+) -> tuple[str, Optional[str], Optional[tuple[Optional[str], str]]]:
+    """The phrase and category a translate-function call looks up, and the legacy entry it hit.
+
+    One conversion for the running call (`translate_legacy()`, `translate()`) and for sync (FRM-2),
+    so sync registers exactly the phrase the runtime looks up. With legacy files the text is a key
+    first (MIG-2); otherwise it is literal source text, converted under its entry point's syntax for
+    the names the call fills. `passed=None` is a call whose values the source does not spell out:
+    every placeholder the text holds counts as filled.
+    """
+    if legacy is not None:
+        phrase, resolved, hit = legacy.resolve(text, category)
+        if hit:
+            return phrase, resolved, legacy.entry_key(text, category)
+    if passed is None:
+        names = _BRACED if entry_point == "blocktranslate" else _PY_NAMED
+        passed = [m.group(1) for part in (text, plural or "") for m in names.finditer(part)]
+    if entry_point == "ngettext":
+        if plural is None:
+            raise ValueError("an ngettext call needs its plural form")
+        return gettext_plural(text, plural, literal=True, passed=passed), category, None
+    return convert_literal(text, entry_point, passed), category, None
+
+
 # -- files -----------------------------------------------------------------------------------------
 
 
@@ -260,6 +291,7 @@ class LegacyKeys:
         self.entries: dict[tuple[Optional[str], str], _Entry] = {}
         #: Each key's first entry under any context, for a call that names no category.
         self._by_key: dict[str, _Entry] = {}
+        self._first_key: dict[str, tuple[Optional[str], str]] = {}
         self.duplicates: list[str] = []
         self.unrecognised: list[str] = []
         for item in files:
@@ -307,6 +339,7 @@ class LegacyKeys:
             return
         self.entries[key] = entry
         self._by_key.setdefault(key[1], entry)
+        self._first_key.setdefault(key[1], key)
 
     def resolve(self, arg: str, category: Optional[str]) -> tuple[str, Optional[str], bool]:
         """MIG-2/3/5 - (phrase, category, hit). A hit's phrase is the source value, never the key;
@@ -320,6 +353,16 @@ class LegacyKeys:
             )
             return arg, category, False
         return entry.phrase, category if category is not None else entry.category, True
+
+    def entry_key(
+        self, arg: str, category: Optional[str] = None
+    ) -> Optional[tuple[Optional[str], str]]:
+        """The `(context, key)` that `resolve()` answers `arg` from, or None for a miss."""
+        if (category, arg) in self.entries:
+            return (category, arg)
+        if category is not None:
+            return (None, arg) if (None, arg) in self.entries else None
+        return self._first_key.get(arg)
 
     def lookup(self, arg: str, category: Optional[str] = None) -> Optional[dict[str, Any]]:
         """A hit as the shared vectors describe it - phrase, category, the answering file, and

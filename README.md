@@ -223,6 +223,46 @@ while a request is served, and the page walk still collects. One sentence still 
 declared value's sentence the catalog lacks while it holds another of the same template's
 sentences, which is a value added since the last sync. It goes out after the response.
 
+### Registering through a sync command
+
+A framework integration that registers through a build-time command, rather than while serving
+requests, builds it from `langsys.sync`. The command itself, finding the app's files and reading
+its templates belong to the integration:
+
+```python
+from langsys import LangsysClient
+from langsys.messages import TemplateList
+from langsys.sync import scan_files
+
+client = LangsysClient(..., legacy_files=["locale/en/messages.json"], runtime_registration=False)
+hits = scan_files(app_python_files)            # every gettext-family call, with its file and line
+listing = TemplateList()                       # the messages listing (validation rules, app errors)
+plan = client.plan_sync(hits, targets={"es-cr": ["locale/es/messages.json"]}, listing=listing)
+client.apply_sync(plan)                        # registers what the catalog lacks
+raise SystemExit(1 if strict and plan.fails_strict() else 0)
+```
+
+A phrase registers exactly as the running call looks it up, converted by the same function. The
+plan sorts each call and each line of the source-language files:
+
+- `plan.in_catalog`: already in the catalog, so nothing is sent.
+- `plan.with_translations`: in the framework's files, sent with their translations.
+- `plan.new`: in neither, sent alone.
+- `plan.reported`: a call whose text is built at runtime, with its file and line. It is never
+  registered and fails `--strict`.
+- `plan.covered`: a key built at runtime inside a literal group (`_(f"validation.{key}")`), when
+  that group's lines register anyway. It passes `--strict`.
+- `plan.via_message_listing`: a sentence the message listing lists. It is never registered beside
+  the listing, uncategorised.
+- `plan.via_validation`: a line holding a label placeholder. It registers once per field, through
+  the validation listing.
+
+A validation rule states its sentence ahead of time by implementing
+`langsys.messages.HasMessageTemplate`: `template()` returns the sentence with the label
+placeholder and `{name}` markers named after its public attributes. A message the app defines
+itself implements `template()` and `code`, and is listed with `listing.add_app_message()`.
+`Planner.offline(hits, ...)` plans with no key and no catalog, for a CI check.
+
 ### Moving content to another category
 
 When you move a phrase or a block to another category, name the category it was registered

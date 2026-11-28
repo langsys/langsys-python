@@ -642,20 +642,10 @@ class LangsysClient:
         phrase under one category for one key. A miss is literal source text in that framework's
         syntax, converted only where the call passes a value (MIG-2).
         """
-        from .migrate import convert_literal, gettext_plural
+        from .migrate import call_phrase
 
-        values = params or {}
-        hit = False
-        if self._legacy is not None:
-            phrase, resolved, hit = self._legacy.resolve(text, category)
-        if hit:
-            category = resolved
-        elif entry_point == "ngettext":
-            if plural is None:
-                raise ValueError("an ngettext call needs its plural form")
-            phrase = gettext_plural(text, plural, literal=True, passed=values)
-        else:
-            phrase = convert_literal(text, entry_point, values)
+        phrase, category, _ = call_phrase(text, entry_point, plural=plural, category=category,
+                                          passed=params or {}, legacy=self._legacy)
         return self._resolve_phrase(phrase, category, params, locale, None, previous_category,
                                     text).text
 
@@ -1128,6 +1118,68 @@ class LangsysClient:
             return fill_template(template, entry.get("params")) if isinstance(template, str) else ""
         params = entry.get("params") or {}
         return interpolate(value, params, self._effective_locale(locale)) if params else value
+
+    # -- sync (FRM-2) -----------------------------------------------------------
+
+    def plan_sync(
+        self,
+        hits: Iterable[Any],
+        *,
+        targets: Optional[Mapping[str, Sequence[Union[str, Path, LegacyFile]]]] = None,
+        covered_groups: Iterable[str] = (),
+        listing: Any = None,
+        label_placeholders: Optional[Sequence[str]] = None,
+    ) -> Any:
+        """FRM-2 - decide every scanned call and every line of the configured legacy files against
+        the catalog, read fresh from the API: in the catalog, in the framework's files (carrying
+        `targets`' lines as translations), or new. Returns a `langsys.sync.SyncPlan`.
+
+        Raises `NetworkError` when the catalog cannot be read: a plan decided against nothing
+        would register everything again."""
+        from .messages import DEFAULT_LABEL_PLACEHOLDERS
+        from .sync import Planner
+
+        fetch = self._catalog.get(self._project_base_locale(), use_cache=False)
+        self._observe_decision(fetch.write_enabled)
+        if not fetch.ok:
+            raise NetworkError("Langsys: the catalog could not be read, so nothing was planned.")
+        planner = Planner(
+            legacy=self._legacy, targets=targets, value_sets=self.value_sets,
+            covered_groups=covered_groups, listing=listing,
+            label_placeholders=(DEFAULT_LABEL_PLACEHOLDERS if label_placeholders is None
+                                else label_placeholders),
+        )
+        return planner.plan(hits, fetch.catalog)
+
+    def apply_sync(self, plan: Any) -> dict[str, Any]:
+        """FRM-2 - register what a plan found the catalog lacks, each phrase with the translations
+        it carries (MIG-9), in one pass through the registration endpoint. A session that may not
+        write registers nothing and says why. An offline plan, decided against no catalog, is
+        refused."""
+        if plan.offline:
+            raise ValueError("an offline plan was decided against no catalog; plan against the "
+                             "API (plan_sync) to apply one")
+        self._refuse_write()
+        result: dict[str, Any] = {"success": False, "reason": None, "phrases": 0,
+                                  "translations": 0}
+        decision = self._resolve_write_enabled()
+        if decision is not True:
+            result.update(skipped=True, reason="not-write-enabled" if decision is False
+                          else "capability-unknown")
+            return result
+        items = plan.registrations()
+        if items:
+            try:
+                self._reg.register_phrases([self._with_move(i) for i in items])
+            except (NetworkError, ApiError) as exc:
+                logger.warning("langsys: the sync was refused (%s); nothing is marked registered.",
+                               exc)
+                result.update(reason="registration-failed", error=str(exc))
+                return result
+            self._catalog.clear()
+        result.update(success=True, phrases=len(items),
+                      translations=sum(len(i.get("translations", {})) for i in items))
+        return result
 
     def import_legacy_translations(
         self, targets: Mapping[str, Sequence[Union[str, Path, LegacyFile]]]

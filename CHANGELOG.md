@@ -17,6 +17,13 @@ rule-by-rule status, the evidence tier behind each row, and the ranked gaps.
   hold each list per display locale in memory and in the cache backend. A locale list asks for its
   one locale with no target locales appended and answers codes in lowercase hyphenated form. No
   call raises: a failure answers empty, is logged, and waits out CACHE-2's window.
+- **FRM-2 — the core's share of a sync command.** `langsys.sync`: `scan_source()`/`scan_files()`
+  read Python source with `ast` for the translate functions; `Planner` (and `plan_sync()`,
+  `apply_sync()`) decides each phrase against the catalog, registering what it lacks with the
+  framework's translations; `Planner.offline()` plans for CI with no key. Rule objects state their
+  sentence through `messages.HasMessageTemplate`, app messages through `HasAppMessageTemplate`
+  (`TemplateList.add_rule()`, `add_app_message()`). `translate_legacy()` and sync share one
+  conversion, `migrate.call_phrase()`.
 - **FRM-7 — declared value sets.** `value_sets=` takes `@translates_as` enums and
   `translatable_values()` contracts; a call passing a declared value looks up the sentence with its
   display word written in. **FRM-2's runtime switch:** `runtime_registration=False` stops the
